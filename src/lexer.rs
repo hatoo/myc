@@ -2,6 +2,7 @@ use std::ops::Range;
 
 use ecow::EcoString;
 
+#[derive(Debug)]
 pub enum Token {
     Ident(EcoString),
     Constant(EcoString),
@@ -15,6 +16,7 @@ pub enum Token {
     SemiColon,
 }
 
+#[derive(Debug)]
 pub struct Spanned {
     pub token: Token,
     pub span: Range<usize>,
@@ -64,6 +66,41 @@ pub fn lexer(src: &[u8]) -> Vec<Spanned> {
                     token,
                     span: start..index,
                 });
+            }
+            b';' => {
+                tokens.push(Spanned {
+                    token: Token::SemiColon,
+                    span: index..index + 1,
+                });
+                index += 1;
+            }
+            b'(' => {
+                tokens.push(Spanned {
+                    token: Token::OpenParen,
+                    span: index..index + 1,
+                });
+                index += 1;
+            }
+            b')' => {
+                tokens.push(Spanned {
+                    token: Token::CloseParen,
+                    span: index..index + 1,
+                });
+                index += 1;
+            }
+            b'{' => {
+                tokens.push(Spanned {
+                    token: Token::OpenBrace,
+                    span: index..index + 1,
+                });
+                index += 1;
+            }
+            b'}' => {
+                tokens.push(Spanned {
+                    token: Token::CloseBrace,
+                    span: index..index + 1,
+                });
+                index += 1;
             }
 
             c => panic!("Unexpected character: {}", c as char),
