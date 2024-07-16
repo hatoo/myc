@@ -2,7 +2,7 @@ use std::ops::Range;
 
 use ecow::EcoString;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Token {
     Ident(EcoString),
     Constant(EcoString),
@@ -49,7 +49,7 @@ impl Error {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Spanned<T> {
     pub data: T,
     pub span: Range<usize>,
