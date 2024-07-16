@@ -1,3 +1,4 @@
+use core::panic;
 use std::ops::Range;
 
 use ecow::EcoString;
@@ -40,6 +41,10 @@ pub fn lexer(src: &[u8]) -> Vec<Spanned> {
                 while index < src.len() && src[index].is_ascii_digit() {
                     index += 1;
                 }
+                if index < src.len() && (src[index].is_ascii_alphanumeric() || src[index] == b'_') {
+                    panic!("Unexpected character {}", src[index] as char);
+                }
+
                 tokens.push(Spanned {
                     token: Token::Constant(EcoString::from(
                         std::str::from_utf8(&src[start..index]).unwrap(),
@@ -101,6 +106,25 @@ pub fn lexer(src: &[u8]) -> Vec<Spanned> {
                     span: index..index + 1,
                 });
                 index += 1;
+            }
+            b'/' => {
+                index += 1;
+                if index < src.len() && src[index] == b'/' {
+                    while index < src.len() && src[index] != b'\n' {
+                        index += 1;
+                    }
+                } else if index < src.len() && src[index] == b'*' {
+                    index += 1;
+                    while index < src.len() {
+                        if src[index] == b'*' && index + 1 < src.len() && src[index + 1] == b'/' {
+                            index += 2;
+                            break;
+                        }
+                        index += 1;
+                    }
+                } else {
+                    panic!("Unexpected character: {}", c as char);
+                }
             }
 
             c => panic!("Unexpected character: {}", c as char),
