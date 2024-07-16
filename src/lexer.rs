@@ -1,4 +1,3 @@
-use core::panic;
 use std::ops::Range;
 
 use ecow::EcoString;
@@ -17,13 +16,46 @@ pub enum Token {
     SemiColon,
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("Unexpected character: {0:?}")]
+    Enexpected(Spanned<char>),
+}
+
+impl Error {
+    pub fn pretty_print(&self, src: &[u8]) {
+        match self {
+            Self::Enexpected(span_char) => {
+                let (ln, col) = if let Some((line_number, last_line_start)) = src
+                    [..span_char.span.start]
+                    .iter()
+                    .enumerate()
+                    .filter(|t| t.1 == &b'\n')
+                    .map(|t| t.0)
+                    .enumerate()
+                    .last()
+                {
+                    (line_number + 2, span_char.span.start - last_line_start)
+                } else {
+                    (1, span_char.span.start + 1)
+                };
+
+                eprintln!(
+                    "Lex Error: Unexpected character: {} at line: {}, column: {}",
+                    span_char.data, ln, col
+                );
+            }
+        }
+    }
+}
+
 #[derive(Debug)]
-pub struct Spanned {
-    pub token: Token,
+pub struct Spanned<T> {
+    pub data: T,
     pub span: Range<usize>,
 }
 
-pub fn lexer(src: &[u8]) -> Vec<Spanned> {
+pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
     let mut tokens = Vec::new();
 
     let mut index = 0;
@@ -42,11 +74,14 @@ pub fn lexer(src: &[u8]) -> Vec<Spanned> {
                     index += 1;
                 }
                 if index < src.len() && (src[index].is_ascii_alphanumeric() || src[index] == b'_') {
-                    panic!("Unexpected character {}", src[index] as char);
+                    return Err(Error::Enexpected(Spanned {
+                        data: src[index] as char,
+                        span: index..index + 1,
+                    }));
                 }
 
                 tokens.push(Spanned {
-                    token: Token::Constant(EcoString::from(
+                    data: Token::Constant(EcoString::from(
                         std::str::from_utf8(&src[start..index]).unwrap(),
                     )),
                     span: start..index,
@@ -68,41 +103,41 @@ pub fn lexer(src: &[u8]) -> Vec<Spanned> {
                     _ => Token::Ident(EcoString::from(ident)),
                 };
                 tokens.push(Spanned {
-                    token,
+                    data: token,
                     span: start..index,
                 });
             }
             b';' => {
                 tokens.push(Spanned {
-                    token: Token::SemiColon,
+                    data: Token::SemiColon,
                     span: index..index + 1,
                 });
                 index += 1;
             }
             b'(' => {
                 tokens.push(Spanned {
-                    token: Token::OpenParen,
+                    data: Token::OpenParen,
                     span: index..index + 1,
                 });
                 index += 1;
             }
             b')' => {
                 tokens.push(Spanned {
-                    token: Token::CloseParen,
+                    data: Token::CloseParen,
                     span: index..index + 1,
                 });
                 index += 1;
             }
             b'{' => {
                 tokens.push(Spanned {
-                    token: Token::OpenBrace,
+                    data: Token::OpenBrace,
                     span: index..index + 1,
                 });
                 index += 1;
             }
             b'}' => {
                 tokens.push(Spanned {
-                    token: Token::CloseBrace,
+                    data: Token::CloseBrace,
                     span: index..index + 1,
                 });
                 index += 1;
@@ -123,13 +158,21 @@ pub fn lexer(src: &[u8]) -> Vec<Spanned> {
                         index += 1;
                     }
                 } else {
-                    panic!("Unexpected character: {}", c as char);
+                    return Err(Error::Enexpected(Spanned {
+                        data: c as char,
+                        span: index..index + 1,
+                    }));
                 }
             }
 
-            c => panic!("Unexpected character: {}", c as char),
+            c => {
+                return Err(Error::Enexpected(Spanned {
+                    data: c as char,
+                    span: index..index + 1,
+                }));
+            }
         }
     }
 
-    tokens
+    Ok(tokens)
 }

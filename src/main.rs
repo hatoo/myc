@@ -14,6 +14,13 @@ struct Opts {
 fn main() {
     let opts = Opts::parse();
     let src = std::fs::read(&opts.input).unwrap();
-    let tokens = lexer(&src);
-    println!("{:#?}", tokens);
+    match lexer(&src) {
+        Ok(tokens) => {
+            dbg!(tokens);
+        }
+        Err(err) => {
+            err.pretty_print(&src);
+            std::process::exit(1);
+        }
+    }
 }
