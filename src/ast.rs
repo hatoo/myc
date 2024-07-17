@@ -2,25 +2,34 @@ use ecow::EcoString;
 
 use crate::lexer::{Spanned, Token};
 
+#[derive(Debug)]
 pub struct Program {
     pub function_definition: Function,
 }
 
+#[derive(Debug)]
 pub struct Function {
     pub name: EcoString,
     pub body: Statement,
 }
 
+#[derive(Debug)]
 pub enum Statement {
     Return(Expression),
 }
 
+#[derive(Debug)]
 pub enum Expression {
     Constant(i32),
 }
 
-struct Parser {
-    tokens: Vec<Spanned<Token>>,
+pub fn parse(tokens: &[Spanned<Token>]) -> Result<Program, Error> {
+    let mut parser = Parser { tokens, index: 0 };
+    parser.parse_program()
+}
+
+struct Parser<'a> {
+    tokens: &'a [Spanned<Token>],
     index: usize,
 }
 
@@ -29,6 +38,7 @@ pub enum ExpectedToken {
     Token(Token),
     Ident,
     Constant,
+    Eof,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -41,7 +51,7 @@ pub enum Error {
     ParseIntError(#[from] std::num::ParseIntError),
 }
 
-impl Parser {
+impl<'a> Parser<'a> {
     fn expect(&mut self, token: Token) -> Result<(), Error> {
         if let Some(spanned) = self.tokens.get(self.index) {
             if spanned.data == token {
@@ -90,9 +100,19 @@ impl Parser {
         }
     }
 
+    fn expect_eof(&mut self) -> Result<(), Error> {
+        if let Some(spanned) = self.tokens.get(self.index) {
+            Err(Error::Unexpected(spanned.clone(), ExpectedToken::Eof))
+        } else {
+            Ok(())
+        }
+    }
+
     fn parse_program(&mut self) -> Result<Program, Error> {
+        let function_definition = self.parse_function()?;
+        self.expect_eof()?;
         Ok(Program {
-            function_definition: self.parse_function()?,
+            function_definition,
         })
     }
 
@@ -100,7 +120,7 @@ impl Parser {
         self.expect(Token::Int)?;
         let name = self.expect_ident()?;
         self.expect(Token::OpenParen)?;
-        self.expect(Token::Ident("void".into()))?;
+        self.expect(Token::Void)?;
         self.expect(Token::CloseParen)?;
         self.expect(Token::OpenBrace)?;
         let body = self.parse_statement()?;
@@ -114,6 +134,7 @@ impl Parser {
     fn parse_statement(&mut self) -> Result<Statement, Error> {
         self.expect(Token::Return)?;
         let expr = self.parse_expression()?;
+        self.expect(Token::SemiColon)?;
         Ok(Statement::Return(expr))
     }
 
