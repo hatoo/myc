@@ -24,12 +24,21 @@ struct Parser {
     index: usize,
 }
 
+#[derive(Debug)]
+pub enum ExpectedToken {
+    Token(Token),
+    Ident,
+    Constant,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("Unexpected token: {0:?}, expected {1:?}")]
-    Unexpected(Token, Spanned<Token>),
-    #[error("Unexpected token: {0:?}, expected Eof")]
-    UnexpectedEof(Token),
+    Unexpected(Spanned<Token>, ExpectedToken),
+    #[error("Unexpected Eof")]
+    UnexpectedEof,
+    #[error(transparent)]
+    ParseIntError(#[from] std::num::ParseIntError),
 }
 
 impl Parser {
@@ -38,10 +47,13 @@ impl Parser {
             if spanned.data == token {
                 self.index += 1;
             } else {
-                return Err(Error::Unexpected(token, spanned.clone()));
+                return Err(Error::Unexpected(
+                    spanned.clone(),
+                    ExpectedToken::Token(token),
+                ));
             }
         } else {
-            return Err(Error::UnexpectedEof(token));
+            return Err(Error::UnexpectedEof);
         }
         Ok(())
     }
@@ -55,10 +67,26 @@ impl Parser {
                     span: spanned.span.clone(),
                 });
             } else {
-                return Err(Error::Unexpected(Token::Ident("".into()), spanned.clone()));
+                return Err(Error::Unexpected(spanned.clone(), ExpectedToken::Ident));
             }
         } else {
-            return Err(Error::UnexpectedEof(Token::Ident("".into())));
+            return Err(Error::UnexpectedEof);
+        }
+    }
+
+    fn expect_constant(&mut self) -> Result<Spanned<EcoString>, Error> {
+        if let Some(spanned) = self.tokens.get(self.index) {
+            if let Token::Constant(t) = &spanned.data {
+                self.index += 1;
+                return Ok(Spanned {
+                    data: t.clone(),
+                    span: spanned.span.clone(),
+                });
+            } else {
+                return Err(Error::Unexpected(spanned.clone(), ExpectedToken::Ident));
+            }
+        } else {
+            return Err(Error::UnexpectedEof);
         }
     }
 
@@ -69,16 +97,28 @@ impl Parser {
     }
 
     fn parse_function(&mut self) -> Result<Function, Error> {
-        self.expect(Token::Int);
-        self.expect(Token::Ident("main".into()));
-        self.expect(Token::OpenParen);
-        self.expect(Token::CloseParen);
-        self.expect(Token::OpenBrace);
-        let body = self.parse_statement();
-        self.expect(Token::CloseBrace);
-        Function {
-            name: "main".into(),
+        self.expect(Token::Int)?;
+        let name = self.expect_ident()?;
+        self.expect(Token::OpenParen)?;
+        self.expect(Token::Ident("void".into()))?;
+        self.expect(Token::CloseParen)?;
+        self.expect(Token::OpenBrace)?;
+        let body = self.parse_statement()?;
+        self.expect(Token::CloseBrace)?;
+        Ok(Function {
+            name: name.data,
             body,
-        }
+        })
+    }
+
+    fn parse_statement(&mut self) -> Result<Statement, Error> {
+        self.expect(Token::Return)?;
+        let expr = self.parse_expression()?;
+        Ok(Statement::Return(expr))
+    }
+
+    fn parse_expression(&mut self) -> Result<Expression, Error> {
+        let constant = self.expect_constant()?;
+        Ok(Expression::Constant(constant.data.parse()?))
     }
 }
