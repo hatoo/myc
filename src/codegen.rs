@@ -51,6 +51,7 @@ fn statement_inst(statement: &ast::Statement) -> Vec<Instruction> {
                 Instruction::Ret,
             ]
         }
+        _ => todo!(),
     }
 }
 

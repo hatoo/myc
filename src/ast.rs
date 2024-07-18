@@ -21,6 +21,19 @@ pub enum Statement {
 #[derive(Debug)]
 pub enum Expression {
     Constant(i32),
+    Unary(Unary),
+}
+
+#[derive(Debug)]
+pub struct Unary {
+    pub op: UnaryOp,
+    pub exp: Box<Expression>,
+}
+
+#[derive(Debug)]
+pub enum UnaryOp {
+    Complement,
+    Negate,
 }
 
 pub fn parse(tokens: &[Spanned<Token>]) -> Result<Program, Error> {
@@ -49,6 +62,8 @@ pub enum Error {
     UnexpectedEof,
     #[error(transparent)]
     ParseIntError(#[from] std::num::ParseIntError),
+    #[error("Malformed expression: {0:?}")]
+    MalfoldExpression(Spanned<Token>),
 }
 
 impl<'a> Parser<'a> {
@@ -84,28 +99,21 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn expect_constant(&mut self) -> Result<Spanned<EcoString>, Error> {
-        if let Some(spanned) = self.tokens.get(self.index) {
-            if let Token::Constant(t) = &spanned.data {
-                self.index += 1;
-                return Ok(Spanned {
-                    data: t.clone(),
-                    span: spanned.span.clone(),
-                });
-            } else {
-                return Err(Error::Unexpected(spanned.clone(), ExpectedToken::Ident));
-            }
-        } else {
-            return Err(Error::UnexpectedEof);
-        }
-    }
-
     fn expect_eof(&mut self) -> Result<(), Error> {
         if let Some(spanned) = self.tokens.get(self.index) {
             Err(Error::Unexpected(spanned.clone(), ExpectedToken::Eof))
         } else {
             Ok(())
         }
+    }
+
+    fn peek(&self) -> Option<&Spanned<Token>> {
+        self.tokens.get(self.index)
+    }
+
+    fn advance(&mut self) {
+        self.index += 1;
+        debug_assert!(self.index <= self.tokens.len());
     }
 
     fn parse_program(&mut self) -> Result<Program, Error> {
@@ -139,7 +147,39 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_expression(&mut self) -> Result<Expression, Error> {
-        let constant = self.expect_constant()?;
-        Ok(Expression::Constant(constant.data.parse()?))
+        if let Some(token) = self.peek() {
+            match &token.data {
+                Token::Constant(s) => {
+                    let value = s.parse()?;
+                    self.advance();
+                    Ok(Expression::Constant(value))
+                }
+                Token::Hyphen => {
+                    self.advance();
+                    let exp = self.parse_expression()?;
+                    Ok(Expression::Unary(Unary {
+                        op: UnaryOp::Negate,
+                        exp: Box::new(exp),
+                    }))
+                }
+                Token::Tilde => {
+                    self.advance();
+                    let exp = self.parse_expression()?;
+                    Ok(Expression::Unary(Unary {
+                        op: UnaryOp::Complement,
+                        exp: Box::new(exp),
+                    }))
+                }
+                Token::OpenParen => {
+                    self.advance();
+                    let exp = self.parse_expression()?;
+                    self.expect(Token::CloseParen)?;
+                    Ok(exp)
+                }
+                _ => Err(Error::MalfoldExpression(token.clone())),
+            }
+        } else {
+            Err(Error::UnexpectedEof)
+        }
     }
 }
