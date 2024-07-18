@@ -50,12 +50,14 @@ fn main() {
 
     let code = myc::codegen::gen_program(&tacky);
 
-    dbg!(code);
+    if opts.codegen {
+        dbg!(code);
+        return;
+    }
 
-    /*
     File::create(opts.input.with_extension("s"))
         .unwrap()
-        .write_all(tacky.to_string().as_bytes())
+        .write_all(code.to_string().as_bytes())
         .unwrap();
 
     process::Command::new("gcc")
@@ -64,5 +66,4 @@ fn main() {
         .arg(opts.input.with_extension(""))
         .status()
         .unwrap();
-    */
 }

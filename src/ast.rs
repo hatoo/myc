@@ -87,15 +87,15 @@ impl<'a> Parser<'a> {
         if let Some(spanned) = self.tokens.get(self.index) {
             if let Token::Ident(t) = &spanned.data {
                 self.index += 1;
-                return Ok(Spanned {
+                Ok(Spanned {
                     data: t.clone(),
                     span: spanned.span.clone(),
-                });
+                })
             } else {
-                return Err(Error::Unexpected(spanned.clone(), ExpectedToken::Ident));
+                Err(Error::Unexpected(spanned.clone(), ExpectedToken::Ident))
             }
         } else {
-            return Err(Error::UnexpectedEof);
+            Err(Error::UnexpectedEof)
         }
     }
 
