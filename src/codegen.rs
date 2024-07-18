@@ -97,13 +97,12 @@ fn val_to_operand(val: &tacky::Val) -> Operand {
 fn pseudo_to_stack(insts: &mut [Instruction]) -> usize {
     let mut known_vars = HashMap::new();
 
-    let mut remove_pseudo = |operand: &mut Operand| match operand {
-        Operand::Pseudo(var) => {
+    let mut remove_pseudo = |operand: &mut Operand| {
+        if let Operand::Pseudo(var) = operand {
             let rsp = (known_vars.len() as i32 + 1) * -4;
             let offset = known_vars.entry(var.clone()).or_insert(rsp);
             *operand = Operand::Stack(*offset);
         }
-        _ => {}
     };
 
     for inst in insts {
