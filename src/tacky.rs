@@ -1,5 +1,3 @@
-use std::fmt::Display;
-
 use ecow::EcoString;
 
 use crate::ast;
@@ -93,30 +91,5 @@ fn gen_function(function: &ast::Function) -> Function {
     Function {
         name: function.name.clone(),
         body: generator.instructions,
-    }
-}
-
-impl Display for Program {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "{}", self.function_definition)?;
-        writeln!(f, ".section .note.GNU-stack,\"\",@progbits")?;
-        Ok(())
-    }
-}
-
-impl Display for Function {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, ".globl {}", self.name)?;
-        writeln!(f, "{}:", self.name)?;
-        for inst in &self.body {
-            writeln!(f, "    {}", inst)?;
-        }
-        Ok(())
-    }
-}
-
-impl Display for Instruction {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        todo!()
     }
 }

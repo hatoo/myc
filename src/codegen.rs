@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::{collections::HashMap, fmt::Display};
 
 use ecow::EcoString;
 
@@ -145,4 +145,80 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
         }
     }
     new_insts
+}
+
+impl Display for Program {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "{}", self.function_definition)?;
+        writeln!(f, ".section .note.GNU-stack,\"\",@progbits")?;
+        Ok(())
+    }
+}
+
+impl Display for Function {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, ".globl {}", self.name)?;
+        writeln!(f, "{}:", self.name)?;
+        writeln!(f, "pushq %rbp")?;
+        writeln!(f, "movq %rsp, %rbp")?;
+        for inst in &self.body {
+            writeln!(f, "{inst}")?;
+        }
+        Ok(())
+    }
+}
+
+impl Display for Instruction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Instruction::Mov { src, dst } => {
+                writeln!(f, "movl {src}, {dst}")?;
+            }
+            Instruction::Unary { op, src } => {
+                writeln!(f, "{op} {src}")?;
+            }
+            Instruction::AllocateStack(n) => {
+                writeln!(f, "subq ${n}, %rsp")?;
+            }
+            Instruction::Ret => {
+                writeln!(f, "movq %rbp, %rsp")?;
+                writeln!(f, "popq %rbp")?;
+                writeln!(f, "ret")?;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Display for UnaryOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            UnaryOp::Neg => write!(f, "negl")?,
+            UnaryOp::Not => write!(f, "notl")?,
+        }
+        Ok(())
+    }
+}
+
+impl Display for Operand {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Operand::Imm(imm) => write!(f, "${}", imm)?,
+            Operand::Reg(reg) => write!(f, "{}", reg)?,
+            Operand::Pseudo(_) => panic!("Pseudo operand should have been removed"),
+            Operand::Stack(offset) => write!(f, "{}(%rbp)", offset)?,
+        }
+
+        Ok(())
+    }
+}
+
+impl Display for Register {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Register::Ax => write!(f, "%eax")?,
+            Register::R10 => write!(f, "%r10d")?,
+        }
+        Ok(())
+    }
 }
