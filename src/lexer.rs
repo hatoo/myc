@@ -14,6 +14,9 @@ pub enum Token {
     OpenBrace,
     CloseBrace,
     SemiColon,
+    Tilde,
+    Hyphen,
+    TwoHyphens,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -162,6 +165,28 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
                         data: c as char,
                         span: index..index + 1,
                     }));
+                }
+            }
+            b'~' => {
+                index += 1;
+                tokens.push(Spanned {
+                    data: Token::Tilde,
+                    span: index..index + 1,
+                });
+            }
+            b'-' => {
+                index += 1;
+                if index < src.len() && src[index] == b'-' {
+                    index += 1;
+                    tokens.push(Spanned {
+                        data: Token::TwoHyphens,
+                        span: index - 2..index,
+                    });
+                } else {
+                    tokens.push(Spanned {
+                        data: Token::Hyphen,
+                        span: index - 1..index,
+                    });
                 }
             }
 
