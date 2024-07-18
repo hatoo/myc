@@ -1,12 +1,10 @@
-use std::fmt::Display;
-
 use ecow::EcoString;
 
-use crate::ast;
+use crate::tacky;
 
 #[derive(Debug)]
 pub struct Program {
-    pub function_denifition: Function,
+    pub function_definition: Function,
 }
 
 #[derive(Debug)]
@@ -17,106 +15,75 @@ pub struct Function {
 
 #[derive(Debug)]
 pub enum Instruction {
-    Return(Val),
-    Unary { op: UnaryOp, src: Val, dst: Val },
+    Mov { src: Operand, dst: Operand },
+    Unary { op: UnaryOp, src: Operand },
+    AllocateStack(usize),
+    Ret,
 }
 
 #[derive(Debug)]
 pub enum UnaryOp {
-    Negate,
-    Complement,
+    Neg,
+    Not,
 }
 
-#[derive(Debug, Clone)]
-pub enum Val {
-    Constant(i32),
-    Var(EcoString),
+#[derive(Debug)]
+pub enum Operand {
+    Imm(i32),
+    Reg(Register),
+    Pseudo(EcoString),
+    Stack(i32),
 }
 
-struct InstructionGenerator {
-    var_counter: usize,
-    instructions: Vec<Instruction>,
+#[derive(Debug)]
+pub enum Register {
+    Ax,
+    R10,
 }
 
-impl InstructionGenerator {
-    fn new() -> Self {
-        Self {
-            var_counter: 0,
-            instructions: Vec::new(),
-        }
-    }
-
-    fn new_var(&mut self) -> Val {
-        let var = EcoString::from(format!("tmp.{}", self.var_counter));
-        self.var_counter += 1;
-        Val::Var(var)
-    }
-
-    fn add_statement(&mut self, statement: &ast::Statement) {
-        match statement {
-            ast::Statement::Return(expression) => {
-                let val = self.add_expression(expression);
-                self.instructions.push(Instruction::Return(val));
-            }
-        }
-    }
-
-    fn add_expression(&mut self, expression: &ast::Expression) -> Val {
-        match expression {
-            ast::Expression::Constant(imm) => Val::Constant(*imm),
-            ast::Expression::Unary(unary) => {
-                let src = self.add_expression(&unary.exp);
-                let dst = self.new_var();
-                self.instructions.push(Instruction::Unary {
-                    op: match unary.op {
-                        ast::UnaryOp::Negate => UnaryOp::Negate,
-                        ast::UnaryOp::Complement => UnaryOp::Complement,
-                    },
-                    src,
-                    dst: dst.clone(),
-                });
-                dst
-            }
-        }
-    }
-}
-
-pub fn gen_program(program: &ast::Program) -> Program {
+pub fn gen_program(program: &tacky::Program) -> Program {
     Program {
-        function_denifition: gen_function(&program.function_definition),
+        function_definition: gen_function(&program.function_definition),
     }
 }
 
-fn gen_function(function: &ast::Function) -> Function {
-    let mut generator = InstructionGenerator::new();
-    generator.add_statement(&function.body);
+fn gen_function(function: &tacky::Function) -> Function {
+    let mut body = Vec::new();
+
+    for inst in &function.body {
+        match inst {
+            tacky::Instruction::Return(val) => {
+                body.push(Instruction::Mov {
+                    src: val_to_operand(val),
+                    dst: Operand::Reg(Register::Ax),
+                });
+                body.push(Instruction::Ret);
+            }
+            tacky::Instruction::Unary { op, src, dst } => {
+                body.push(Instruction::Mov {
+                    src: val_to_operand(src),
+                    dst: val_to_operand(dst),
+                });
+                body.push(Instruction::Unary {
+                    op: match op {
+                        tacky::UnaryOp::Negate => UnaryOp::Neg,
+                        tacky::UnaryOp::Complement => UnaryOp::Not,
+                    },
+                    src: val_to_operand(dst),
+                });
+            }
+        }
+    }
+
     Function {
         name: function.name.clone(),
-        body: generator.instructions,
+        body,
     }
 }
 
-impl Display for Program {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "{}", self.function_denifition)?;
-        writeln!(f, ".section .note.GNU-stack,\"\",@progbits")?;
-        Ok(())
-    }
-}
-
-impl Display for Function {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, ".globl {}", self.name)?;
-        writeln!(f, "{}:", self.name)?;
-        for inst in &self.body {
-            writeln!(f, "    {}", inst)?;
-        }
-        Ok(())
-    }
-}
-
-impl Display for Instruction {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        todo!()
+fn val_to_operand(val: &tacky::Val) -> Operand {
+    match val {
+        tacky::Val::Constant(imm) => Operand::Imm(*imm),
+        tacky::Val::Var(var) => Operand::Pseudo(var.clone()),
     }
 }

@@ -13,6 +13,8 @@ struct Opts {
     parse: bool,
     #[clap(long)]
     tacky: bool,
+    #[clap(long)]
+    codegen: bool,
 }
 
 fn main() {
@@ -39,16 +41,21 @@ fn main() {
         return;
     }
 
-    let code = myc::codegen::gen_program(&program);
+    let tacky = myc::tacky::gen_program(&program);
 
     if opts.tacky {
-        dbg!(code);
+        dbg!(tacky);
         return;
     }
 
+    let code = myc::codegen::gen_program(&tacky);
+
+    dbg!(code);
+
+    /*
     File::create(opts.input.with_extension("s"))
         .unwrap()
-        .write_all(code.to_string().as_bytes())
+        .write_all(tacky.to_string().as_bytes())
         .unwrap();
 
     process::Command::new("gcc")
@@ -57,4 +64,5 @@ fn main() {
         .arg(opts.input.with_extension(""))
         .status()
         .unwrap();
+    */
 }

@@ -22,13 +22,13 @@ pub enum Token {
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("Unexpected character: {0:?}")]
-    Enexpected(Spanned<char>),
+    Unexpected(Spanned<char>),
 }
 
 impl Error {
     pub fn pretty_print(&self, src: &[u8]) {
         match self {
-            Self::Enexpected(span_char) => {
+            Self::Unexpected(span_char) => {
                 let (ln, col) = if let Some((line_number, last_line_start)) = src
                     [..span_char.span.start]
                     .iter()
@@ -77,7 +77,7 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
                     index += 1;
                 }
                 if index < src.len() && (src[index].is_ascii_alphanumeric() || src[index] == b'_') {
-                    return Err(Error::Enexpected(Spanned {
+                    return Err(Error::Unexpected(Spanned {
                         data: src[index] as char,
                         span: index..index + 1,
                     }));
@@ -161,7 +161,7 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
                         index += 1;
                     }
                 } else {
-                    return Err(Error::Enexpected(Spanned {
+                    return Err(Error::Unexpected(Spanned {
                         data: c as char,
                         span: index..index + 1,
                     }));
@@ -191,7 +191,7 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
             }
 
             c => {
-                return Err(Error::Enexpected(Spanned {
+                return Err(Error::Unexpected(Spanned {
                     data: c as char,
                     span: index..index + 1,
                 }));
