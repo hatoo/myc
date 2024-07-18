@@ -12,7 +12,7 @@ struct Opts {
     #[clap(long)]
     parse: bool,
     #[clap(long)]
-    codegen: bool,
+    tacky: bool,
 }
 
 fn main() {
@@ -41,7 +41,7 @@ fn main() {
 
     let code = myc::codegen::gen_program(&program);
 
-    if opts.codegen {
+    if opts.tacky {
         dbg!(code);
         return;
     }
