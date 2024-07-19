@@ -17,6 +17,11 @@ pub enum Token {
     Tilde,
     Hyphen,
     TwoHyphens,
+    Plus,
+    TwoPlus,
+    Asterisk,
+    Slash,
+    Percent,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -161,10 +166,10 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
                         index += 1;
                     }
                 } else {
-                    return Err(Error::Unexpected(Spanned {
-                        data: c as char,
-                        span: index..index + 1,
-                    }));
+                    tokens.push(Spanned {
+                        data: Token::Slash,
+                        span: index - 1..index,
+                    });
                 }
             }
             b'~' => {
@@ -188,6 +193,35 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
                         span: index - 1..index,
                     });
                 }
+            }
+            b'+' => {
+                index += 1;
+                if index < src.len() && src[index] == b'+' {
+                    index += 1;
+                    tokens.push(Spanned {
+                        data: Token::TwoPlus,
+                        span: index - 2..index,
+                    });
+                } else {
+                    tokens.push(Spanned {
+                        data: Token::Plus,
+                        span: index - 1..index,
+                    });
+                }
+            }
+            b'*' => {
+                tokens.push(Spanned {
+                    data: Token::Asterisk,
+                    span: index..index + 1,
+                });
+                index += 1;
+            }
+            b'%' => {
+                tokens.push(Spanned {
+                    data: Token::Percent,
+                    span: index..index + 1,
+                });
+                index += 1;
             }
 
             c => {
