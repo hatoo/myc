@@ -274,7 +274,7 @@ impl Display for Function {
         writeln!(f, "pushq %rbp")?;
         writeln!(f, "movq %rsp, %rbp")?;
         for inst in &self.body {
-            writeln!(f, "{inst}")?;
+            write!(f, "{inst}")?;
         }
         Ok(())
     }

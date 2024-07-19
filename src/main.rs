@@ -15,6 +15,8 @@ struct Opts {
     tacky: bool,
     #[clap(long)]
     codegen: bool,
+    #[clap(long)]
+    asm: bool,
 }
 
 fn main() {
@@ -53,6 +55,10 @@ fn main() {
     if opts.codegen {
         dbg!(code);
         return;
+    }
+
+    if opts.asm {
+        println!("{}", code);
     }
 
     File::create(opts.input.with_extension("s"))
