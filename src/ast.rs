@@ -22,6 +22,7 @@ pub enum Statement {
 pub enum Expression {
     Constant(i32),
     Unary(Unary),
+    Binary(Binary),
 }
 
 #[derive(Debug)]
@@ -34,6 +35,46 @@ pub struct Unary {
 pub enum UnaryOp {
     Complement,
     Negate,
+}
+
+#[derive(Debug)]
+pub struct Binary {
+    pub op: BinaryOp,
+    pub lhs: Box<Expression>,
+    pub rhs: Box<Expression>,
+}
+
+#[derive(Debug)]
+pub enum BinaryOp {
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Remainder,
+}
+
+impl BinaryOp {
+    fn precedence(&self) -> u8 {
+        match self {
+            Self::Add | Self::Subtract => 1,
+            Self::Multiply | Self::Divide | Self::Remainder => 2,
+        }
+    }
+}
+
+impl TryFrom<Token> for BinaryOp {
+    type Error = ();
+
+    fn try_from(token: Token) -> Result<Self, Self::Error> {
+        match token {
+            Token::Plus => Ok(Self::Add),
+            Token::TwoHyphens => Ok(Self::Subtract),
+            Token::Asterisk => Ok(Self::Multiply),
+            Token::Slash => Ok(Self::Divide),
+            Token::Percent => Ok(Self::Remainder),
+            _ => Err(()),
+        }
+    }
 }
 
 pub fn parse(tokens: &[Spanned<Token>]) -> Result<Program, Error> {
