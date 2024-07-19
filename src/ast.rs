@@ -21,27 +21,21 @@ pub enum Statement {
 #[derive(Debug)]
 pub enum Expression {
     Constant(i32),
-    Unary(Unary),
-    Binary(Binary),
-}
-
-#[derive(Debug)]
-pub struct Unary {
-    pub op: UnaryOp,
-    pub exp: Box<Expression>,
+    Unary {
+        op: UnaryOp,
+        exp: Box<Expression>,
+    },
+    Binary {
+        op: BinaryOp,
+        lhs: Box<Expression>,
+        rhs: Box<Expression>,
+    },
 }
 
 #[derive(Debug)]
 pub enum UnaryOp {
     Complement,
     Negate,
-}
-
-#[derive(Debug)]
-pub struct Binary {
-    pub op: BinaryOp,
-    pub lhs: Box<Expression>,
-    pub rhs: Box<Expression>,
 }
 
 #[derive(Debug)]
@@ -198,18 +192,18 @@ impl<'a> Parser<'a> {
                 Token::Hyphen => {
                     self.advance();
                     let exp = self.parse_factor()?;
-                    Ok(Expression::Unary(Unary {
+                    Ok(Expression::Unary {
                         op: UnaryOp::Negate,
                         exp: Box::new(exp),
-                    }))
+                    })
                 }
                 Token::Tilde => {
                     self.advance();
                     let exp = self.parse_factor()?;
-                    Ok(Expression::Unary(Unary {
+                    Ok(Expression::Unary {
                         op: UnaryOp::Complement,
                         exp: Box::new(exp),
-                    }))
+                    })
                 }
                 Token::OpenParen => {
                     self.advance();
@@ -235,11 +229,11 @@ impl<'a> Parser<'a> {
                 if bin_op.precedence() >= min_prec {
                     self.advance();
                     let right = self.parse_expression(bin_op.precedence() + 1)?;
-                    left = Expression::Binary(Binary {
+                    left = Expression::Binary {
                         op: bin_op,
                         lhs: Box::new(left),
                         rhs: Box::new(right),
-                    });
+                    };
                 } else {
                     break;
                 }

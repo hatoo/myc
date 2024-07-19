@@ -81,11 +81,11 @@ impl InstructionGenerator {
     fn add_expression(&mut self, expression: &ast::Expression) -> Val {
         match expression {
             ast::Expression::Constant(imm) => Val::Constant(*imm),
-            ast::Expression::Unary(unary) => {
-                let src = self.add_expression(&unary.exp);
+            ast::Expression::Unary { op, exp } => {
+                let src = self.add_expression(exp);
                 let dst = self.new_var();
                 self.instructions.push(Instruction::Unary {
-                    op: match unary.op {
+                    op: match op {
                         ast::UnaryOp::Negate => UnaryOp::Negate,
                         ast::UnaryOp::Complement => UnaryOp::Complement,
                     },
@@ -94,12 +94,12 @@ impl InstructionGenerator {
                 });
                 dst
             }
-            ast::Expression::Binary(binary) => {
-                let lhs = self.add_expression(&binary.lhs);
-                let rhs = self.add_expression(&binary.rhs);
+            ast::Expression::Binary { op, lhs, rhs } => {
+                let lhs = self.add_expression(lhs);
+                let rhs = self.add_expression(rhs);
                 let dst = self.new_var();
                 self.instructions.push(Instruction::Binary {
-                    op: match binary.op {
+                    op: match op {
                         ast::BinaryOp::Add => BinaryOp::Add,
                         ast::BinaryOp::Subtract => BinaryOp::Subtract,
                         ast::BinaryOp::Multiply => BinaryOp::Multiply,
