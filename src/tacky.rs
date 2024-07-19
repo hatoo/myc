@@ -16,13 +16,32 @@ pub struct Function {
 #[derive(Debug)]
 pub enum Instruction {
     Return(Val),
-    Unary { op: UnaryOp, src: Val, dst: Val },
+    Unary {
+        op: UnaryOp,
+        src: Val,
+        dst: Val,
+    },
+    Binary {
+        op: BinaryOp,
+        lhs: Val,
+        rhs: Val,
+        dst: Val,
+    },
 }
 
 #[derive(Debug)]
 pub enum UnaryOp {
     Negate,
     Complement,
+}
+
+#[derive(Debug)]
+pub enum BinaryOp {
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Remainder,
 }
 
 #[derive(Debug, Clone)]
@@ -75,7 +94,24 @@ impl InstructionGenerator {
                 });
                 dst
             }
-            _ => todo!(),
+            ast::Expression::Binary(binary) => {
+                let lhs = self.add_expression(&binary.lhs);
+                let rhs = self.add_expression(&binary.rhs);
+                let dst = self.new_var();
+                self.instructions.push(Instruction::Binary {
+                    op: match binary.op {
+                        ast::BinaryOp::Add => BinaryOp::Add,
+                        ast::BinaryOp::Subtract => BinaryOp::Subtract,
+                        ast::BinaryOp::Multiply => BinaryOp::Multiply,
+                        ast::BinaryOp::Divide => BinaryOp::Divide,
+                        ast::BinaryOp::Remainder => BinaryOp::Remainder,
+                    },
+                    lhs,
+                    rhs,
+                    dst: dst.clone(),
+                });
+                dst
+            }
         }
     }
 }

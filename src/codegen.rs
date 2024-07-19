@@ -17,8 +17,21 @@ pub struct Function {
 
 #[derive(Debug)]
 pub enum Instruction {
-    Mov { src: Operand, dst: Operand },
-    Unary { op: UnaryOp, src: Operand },
+    Mov {
+        src: Operand,
+        dst: Operand,
+    },
+    Unary {
+        op: UnaryOp,
+        src: Operand,
+    },
+    Binary {
+        op: BinaryOp,
+        lhs: Operand,
+        rhs: Operand,
+    },
+    Idiv(Operand),
+    Cdq,
     AllocateStack(usize),
     Ret,
 }
@@ -30,6 +43,13 @@ pub enum UnaryOp {
 }
 
 #[derive(Debug)]
+pub enum BinaryOp {
+    Add,
+    Sub,
+    Mult,
+}
+
+#[derive(Debug, Clone)]
 pub enum Operand {
     Imm(i32),
     Reg(Register),
@@ -37,10 +57,12 @@ pub enum Operand {
     Stack(i32),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Register {
     Ax,
+    Dx,
     R10,
+    R11,
 }
 
 pub fn gen_program(program: &tacky::Program) -> Program {
@@ -74,6 +96,48 @@ fn gen_function(function: &tacky::Function) -> Function {
                     src: val_to_operand(dst),
                 });
             }
+            tacky::Instruction::Binary { op, lhs, rhs, dst } => match op {
+                tacky::BinaryOp::Add | tacky::BinaryOp::Subtract | tacky::BinaryOp::Multiply => {
+                    body.push(Instruction::Mov {
+                        src: val_to_operand(lhs),
+                        dst: val_to_operand(dst),
+                    });
+                    body.push(Instruction::Binary {
+                        op: match op {
+                            tacky::BinaryOp::Add => BinaryOp::Add,
+                            tacky::BinaryOp::Subtract => BinaryOp::Sub,
+                            tacky::BinaryOp::Multiply => BinaryOp::Mult,
+                            _ => unreachable!(),
+                        },
+                        lhs: val_to_operand(rhs),
+                        rhs: val_to_operand(dst),
+                    });
+                }
+                tacky::BinaryOp::Divide => {
+                    body.push(Instruction::Mov {
+                        src: val_to_operand(lhs),
+                        dst: Operand::Reg(Register::Ax),
+                    });
+                    body.push(Instruction::Cdq);
+                    body.push(Instruction::Idiv(val_to_operand(rhs)));
+                    body.push(Instruction::Mov {
+                        src: Operand::Reg(Register::Ax),
+                        dst: val_to_operand(dst),
+                    });
+                }
+                tacky::BinaryOp::Remainder => {
+                    body.push(Instruction::Mov {
+                        src: val_to_operand(lhs),
+                        dst: Operand::Reg(Register::Ax),
+                    });
+                    body.push(Instruction::Cdq);
+                    body.push(Instruction::Idiv(val_to_operand(rhs)));
+                    body.push(Instruction::Mov {
+                        src: Operand::Reg(Register::Dx),
+                        dst: val_to_operand(dst),
+                    });
+                }
+            },
         }
     }
 
@@ -114,6 +178,14 @@ fn pseudo_to_stack(insts: &mut [Instruction]) -> usize {
             Instruction::Unary { src, .. } => {
                 remove_pseudo(src);
             }
+            Instruction::Binary { lhs, rhs, .. } => {
+                remove_pseudo(lhs);
+                remove_pseudo(rhs);
+            }
+            Instruction::Cdq => {}
+            Instruction::Idiv(op) => {
+                remove_pseudo(op);
+            }
             Instruction::AllocateStack(_) => {}
             Instruction::Ret => {}
         }
@@ -127,10 +199,10 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
 
     for inst in insts {
         match inst {
-            Instruction::Mov { src, dst }
-            // ????
-                if matches!((&src, &dst), (Operand::Stack(_), Operand::Stack(_))) =>
-            {
+            Instruction::Mov {
+                src: src @ Operand::Stack(_),
+                dst: dst @ Operand::Stack(_),
+            } => {
                 new_insts.push(Instruction::Mov {
                     src,
                     dst: Operand::Reg(Register::R10),
@@ -138,6 +210,47 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
                 new_insts.push(Instruction::Mov {
                     src: Operand::Reg(Register::R10),
                     dst,
+                });
+            }
+            Instruction::Idiv(op) if matches!(op, Operand::Imm(_)) => {
+                new_insts.push(Instruction::Mov {
+                    src: op,
+                    dst: Operand::Reg(Register::R10),
+                });
+                new_insts.push(Instruction::Idiv(Operand::Reg(Register::R10)));
+            }
+            Instruction::Binary {
+                op: op @ (BinaryOp::Add | BinaryOp::Sub),
+                lhs,
+                rhs,
+            } if matches!((&lhs, &rhs), (Operand::Stack(_), Operand::Stack(_))) => {
+                new_insts.push(Instruction::Mov {
+                    src: lhs,
+                    dst: Operand::Reg(Register::R10),
+                });
+                new_insts.push(Instruction::Binary {
+                    op,
+                    lhs: Operand::Reg(Register::R10),
+                    rhs,
+                });
+            }
+            Instruction::Binary {
+                op: BinaryOp::Mult,
+                lhs,
+                rhs: rhs @ Operand::Stack(_),
+            } => {
+                new_insts.push(Instruction::Mov {
+                    src: rhs.clone(),
+                    dst: Operand::Reg(Register::R11),
+                });
+                new_insts.push(Instruction::Binary {
+                    op: BinaryOp::Mult,
+                    lhs,
+                    rhs: Operand::Reg(Register::R11),
+                });
+                new_insts.push(Instruction::Mov {
+                    src: Operand::Reg(Register::R11),
+                    dst: rhs,
                 });
             }
             _ => new_insts.push(inst),
@@ -184,6 +297,15 @@ impl Display for Instruction {
                 writeln!(f, "popq %rbp")?;
                 writeln!(f, "ret")?;
             }
+            Instruction::Binary { op, lhs, rhs } => {
+                writeln!(f, "{op} {lhs}, {rhs}")?;
+            }
+            Instruction::Cdq => {
+                writeln!(f, "cdq")?;
+            }
+            Instruction::Idiv(op) => {
+                writeln!(f, "idivl {op}")?;
+            }
         }
         Ok(())
     }
@@ -194,6 +316,17 @@ impl Display for UnaryOp {
         match self {
             UnaryOp::Neg => write!(f, "negl")?,
             UnaryOp::Not => write!(f, "notl")?,
+        }
+        Ok(())
+    }
+}
+
+impl Display for BinaryOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BinaryOp::Add => write!(f, "addl")?,
+            BinaryOp::Sub => write!(f, "subl")?,
+            BinaryOp::Mult => write!(f, "imull")?,
         }
         Ok(())
     }
@@ -217,6 +350,8 @@ impl Display for Register {
         match self {
             Register::Ax => write!(f, "%eax")?,
             Register::R10 => write!(f, "%r10d")?,
+            Register::Dx => write!(f, "%edx")?,
+            Register::R11 => write!(f, "%r11d")?,
         }
         Ok(())
     }

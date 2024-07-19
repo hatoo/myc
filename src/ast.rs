@@ -197,7 +197,7 @@ impl<'a> Parser<'a> {
                 }
                 Token::Hyphen => {
                     self.advance();
-                    let exp = self.parse_expression(0)?;
+                    let exp = self.parse_factor()?;
                     Ok(Expression::Unary(Unary {
                         op: UnaryOp::Negate,
                         exp: Box::new(exp),
@@ -205,7 +205,7 @@ impl<'a> Parser<'a> {
                 }
                 Token::Tilde => {
                     self.advance();
-                    let exp = self.parse_expression(0)?;
+                    let exp = self.parse_factor()?;
                     Ok(Expression::Unary(Unary {
                         op: UnaryOp::Complement,
                         exp: Box::new(exp),
