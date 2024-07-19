@@ -75,6 +75,7 @@ impl InstructionGenerator {
                 });
                 dst
             }
+            _ => todo!(),
         }
     }
 }

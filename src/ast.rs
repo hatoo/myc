@@ -54,7 +54,7 @@ pub enum BinaryOp {
 }
 
 impl BinaryOp {
-    fn precedence(&self) -> u8 {
+    fn precedence(&self) -> usize {
         match self {
             Self::Add | Self::Subtract => 1,
             Self::Multiply | Self::Divide | Self::Remainder => 2,
@@ -62,13 +62,13 @@ impl BinaryOp {
     }
 }
 
-impl TryFrom<Token> for BinaryOp {
+impl TryFrom<&Token> for BinaryOp {
     type Error = ();
 
-    fn try_from(token: Token) -> Result<Self, Self::Error> {
+    fn try_from(token: &Token) -> Result<Self, Self::Error> {
         match token {
             Token::Plus => Ok(Self::Add),
-            Token::TwoHyphens => Ok(Self::Subtract),
+            Token::Hyphen => Ok(Self::Subtract),
             Token::Asterisk => Ok(Self::Multiply),
             Token::Slash => Ok(Self::Divide),
             Token::Percent => Ok(Self::Remainder),
@@ -182,12 +182,12 @@ impl<'a> Parser<'a> {
 
     fn parse_statement(&mut self) -> Result<Statement, Error> {
         self.expect(Token::Return)?;
-        let expr = self.parse_expression()?;
+        let expr = self.parse_expression(0)?;
         self.expect(Token::SemiColon)?;
         Ok(Statement::Return(expr))
     }
 
-    fn parse_expression(&mut self) -> Result<Expression, Error> {
+    fn parse_factor(&mut self) -> Result<Expression, Error> {
         if let Some(token) = self.peek() {
             match &token.data {
                 Token::Constant(s) => {
@@ -197,7 +197,7 @@ impl<'a> Parser<'a> {
                 }
                 Token::Hyphen => {
                     self.advance();
-                    let exp = self.parse_expression()?;
+                    let exp = self.parse_expression(0)?;
                     Ok(Expression::Unary(Unary {
                         op: UnaryOp::Negate,
                         exp: Box::new(exp),
@@ -205,7 +205,7 @@ impl<'a> Parser<'a> {
                 }
                 Token::Tilde => {
                     self.advance();
-                    let exp = self.parse_expression()?;
+                    let exp = self.parse_expression(0)?;
                     Ok(Expression::Unary(Unary {
                         op: UnaryOp::Complement,
                         exp: Box::new(exp),
@@ -213,7 +213,7 @@ impl<'a> Parser<'a> {
                 }
                 Token::OpenParen => {
                     self.advance();
-                    let exp = self.parse_expression()?;
+                    let exp = self.parse_expression(0)?;
                     self.expect(Token::CloseParen)?;
                     Ok(exp)
                 }
@@ -222,5 +222,31 @@ impl<'a> Parser<'a> {
         } else {
             Err(Error::UnexpectedEof)
         }
+    }
+
+    fn parse_expression(&mut self, min_prec: usize) -> Result<Expression, Error> {
+        let mut left = self.parse_factor()?;
+        loop {
+            let Some(token) = self.peek() else {
+                break;
+            };
+
+            if let Ok(bin_op) = BinaryOp::try_from(&token.data) {
+                if bin_op.precedence() >= min_prec {
+                    self.advance();
+                    let right = self.parse_expression(bin_op.precedence() + 1)?;
+                    left = Expression::Binary(Binary {
+                        op: bin_op,
+                        lhs: Box::new(left),
+                        rhs: Box::new(right),
+                    });
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+        Ok(left)
     }
 }
