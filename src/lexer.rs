@@ -24,7 +24,7 @@ pub enum Token {
     Percent,
     Exclamation,
     TwoAmpersands,
-    TwoBars,
+    TwoPipes,
     TwoEquals,
     ExclamationEquals,
     LessThan,
@@ -267,7 +267,7 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
                 if index < src.len() && src[index] == b'|' {
                     index += 1;
                     tokens.push(Spanned {
-                        data: Token::TwoBars,
+                        data: Token::TwoPipes,
                         span: index - 2..index,
                     });
                 } else {

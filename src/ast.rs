@@ -36,6 +36,7 @@ pub enum Expression {
 pub enum UnaryOp {
     Complement,
     Negate,
+    Not,
 }
 
 #[derive(Debug)]
@@ -45,13 +46,25 @@ pub enum BinaryOp {
     Multiply,
     Divide,
     Remainder,
+    And,
+    Or,
+    Equal,
+    NotEqual,
+    LessThan,
+    LessOrEqual,
+    GreaterThan,
+    GreaterOrEqual,
 }
 
 impl BinaryOp {
     fn precedence(&self) -> usize {
         match self {
-            Self::Add | Self::Subtract => 1,
-            Self::Multiply | Self::Divide | Self::Remainder => 2,
+            Self::Or => 5,
+            Self::And => 10,
+            Self::Equal | Self::NotEqual => 30,
+            Self::LessThan | Self::LessOrEqual | Self::GreaterThan | Self::GreaterOrEqual => 35,
+            Self::Add | Self::Subtract => 45,
+            Self::Multiply | Self::Divide | Self::Remainder => 50,
         }
     }
 }
@@ -66,6 +79,14 @@ impl TryFrom<&Token> for BinaryOp {
             Token::Asterisk => Ok(Self::Multiply),
             Token::Slash => Ok(Self::Divide),
             Token::Percent => Ok(Self::Remainder),
+            Token::TwoAmpersands => Ok(Self::And),
+            Token::TwoPipes => Ok(Self::Or),
+            Token::TwoEquals => Ok(Self::Equal),
+            Token::ExclamationEquals => Ok(Self::NotEqual),
+            Token::LessThan => Ok(Self::LessThan),
+            Token::LessThanEquals => Ok(Self::LessOrEqual),
+            Token::GreaterThan => Ok(Self::GreaterThan),
+            Token::GreaterThanEquals => Ok(Self::GreaterOrEqual),
             _ => Err(()),
         }
     }
@@ -202,6 +223,14 @@ impl<'a> Parser<'a> {
                     let exp = self.parse_factor()?;
                     Ok(Expression::Unary {
                         op: UnaryOp::Complement,
+                        exp: Box::new(exp),
+                    })
+                }
+                Token::Exclamation => {
+                    self.advance();
+                    let exp = self.parse_factor()?;
+                    Ok(Expression::Unary {
+                        op: UnaryOp::Not,
                         exp: Box::new(exp),
                     })
                 }

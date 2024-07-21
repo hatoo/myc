@@ -88,6 +88,7 @@ impl InstructionGenerator {
                     op: match op {
                         ast::UnaryOp::Negate => UnaryOp::Negate,
                         ast::UnaryOp::Complement => UnaryOp::Complement,
+                        _ => todo!(),
                     },
                     src,
                     dst: dst.clone(),
@@ -105,6 +106,7 @@ impl InstructionGenerator {
                         ast::BinaryOp::Multiply => BinaryOp::Multiply,
                         ast::BinaryOp::Divide => BinaryOp::Divide,
                         ast::BinaryOp::Remainder => BinaryOp::Remainder,
+                        _ => todo!(),
                     },
                     lhs,
                     rhs,
