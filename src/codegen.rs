@@ -92,6 +92,7 @@ fn gen_function(function: &tacky::Function) -> Function {
                     op: match op {
                         tacky::UnaryOp::Negate => UnaryOp::Neg,
                         tacky::UnaryOp::Complement => UnaryOp::Not,
+                        _ => todo!(),
                     },
                     src: val_to_operand(dst),
                 });
@@ -137,7 +138,9 @@ fn gen_function(function: &tacky::Function) -> Function {
                         dst: val_to_operand(dst),
                     });
                 }
+                _ => todo!(),
             },
+            _ => todo!(),
         }
     }
 
