@@ -30,8 +30,13 @@ pub enum Instruction {
         lhs: Operand,
         rhs: Operand,
     },
+    Cmp(Operand, Operand),
     Idiv(Operand),
     Cdq,
+    Jmp(EcoString),
+    JmpCc(CondCode, EcoString),
+    SetCc(CondCode, Operand),
+    Label(EcoString),
     AllocateStack(usize),
     Ret,
 }
@@ -65,6 +70,21 @@ pub enum Register {
     R11,
 }
 
+pub enum RegisterSize<'a> {
+    Byte(&'a Register),
+    Dword(&'a Register),
+}
+
+#[derive(Debug, Clone)]
+pub enum CondCode {
+    E,
+    Ne,
+    G,
+    Ge,
+    L,
+    Le,
+}
+
 pub fn gen_program(program: &tacky::Program) -> Program {
     Program {
         function_definition: gen_function(&program.function_definition),
@@ -83,7 +103,11 @@ fn gen_function(function: &tacky::Function) -> Function {
                 });
                 body.push(Instruction::Ret);
             }
-            tacky::Instruction::Unary { op, src, dst } => {
+            tacky::Instruction::Unary {
+                op: op @ (tacky::UnaryOp::Negate | tacky::UnaryOp::Complement),
+                src,
+                dst,
+            } => {
                 body.push(Instruction::Mov {
                     src: val_to_operand(src),
                     dst: val_to_operand(dst),
@@ -92,10 +116,22 @@ fn gen_function(function: &tacky::Function) -> Function {
                     op: match op {
                         tacky::UnaryOp::Negate => UnaryOp::Neg,
                         tacky::UnaryOp::Complement => UnaryOp::Not,
-                        _ => todo!(),
+                        _ => unreachable!(),
                     },
                     src: val_to_operand(dst),
                 });
+            }
+            tacky::Instruction::Unary {
+                op: tacky::UnaryOp::Not,
+                src,
+                dst,
+            } => {
+                body.push(Instruction::Cmp(Operand::Imm(0), val_to_operand(src)));
+                body.push(Instruction::Mov {
+                    src: Operand::Imm(0),
+                    dst: val_to_operand(dst),
+                });
+                body.push(Instruction::SetCc(CondCode::E, val_to_operand(dst)));
             }
             tacky::Instruction::Binary { op, lhs, rhs, dst } => match op {
                 tacky::BinaryOp::Add | tacky::BinaryOp::Subtract | tacky::BinaryOp::Multiply => {
@@ -138,9 +174,51 @@ fn gen_function(function: &tacky::Function) -> Function {
                         dst: val_to_operand(dst),
                     });
                 }
-                _ => todo!(),
+                tacky::BinaryOp::Equal
+                | tacky::BinaryOp::NotEqual
+                | tacky::BinaryOp::LessThan
+                | tacky::BinaryOp::LessOrEqual
+                | tacky::BinaryOp::GreaterThan
+                | tacky::BinaryOp::GreaterOrEqual => {
+                    body.push(Instruction::Cmp(val_to_operand(rhs), val_to_operand(lhs)));
+                    body.push(Instruction::Mov {
+                        src: Operand::Imm(0),
+                        dst: val_to_operand(dst),
+                    });
+                    body.push(Instruction::SetCc(
+                        match op {
+                            tacky::BinaryOp::Equal => CondCode::E,
+                            tacky::BinaryOp::NotEqual => CondCode::Ne,
+                            tacky::BinaryOp::LessThan => CondCode::L,
+                            tacky::BinaryOp::LessOrEqual => CondCode::Le,
+                            tacky::BinaryOp::GreaterThan => CondCode::G,
+                            tacky::BinaryOp::GreaterOrEqual => CondCode::Ge,
+                            _ => unreachable!(),
+                        },
+                        val_to_operand(dst),
+                    ));
+                }
             },
-            _ => todo!(),
+            tacky::Instruction::Copy { src, dst } => {
+                body.push(Instruction::Mov {
+                    src: val_to_operand(src),
+                    dst: val_to_operand(dst),
+                });
+            }
+            tacky::Instruction::Jump(label) => {
+                body.push(Instruction::Jmp(label.clone()));
+            }
+            tacky::Instruction::JumpIfZero { src, dst } => {
+                body.push(Instruction::Cmp(Operand::Imm(0), val_to_operand(src)));
+                body.push(Instruction::JmpCc(CondCode::E, dst.clone()));
+            }
+            tacky::Instruction::JumpIfNotZero { src, dst } => {
+                body.push(Instruction::Cmp(Operand::Imm(0), val_to_operand(src)));
+                body.push(Instruction::JmpCc(CondCode::Ne, dst.clone()));
+            }
+            tacky::Instruction::Label(label) => {
+                body.push(Instruction::Label(label.clone()));
+            }
         }
     }
 
@@ -191,6 +269,16 @@ fn pseudo_to_stack(insts: &mut [Instruction]) -> usize {
             }
             Instruction::AllocateStack(_) => {}
             Instruction::Ret => {}
+            Instruction::Cmp(lhs, rhs) => {
+                remove_pseudo(lhs);
+                remove_pseudo(rhs);
+            }
+            Instruction::Jmp(_) => {}
+            Instruction::JmpCc(_, _) => {}
+            Instruction::SetCc(_, dst) => {
+                remove_pseudo(dst);
+            }
+            Instruction::Label(_) => {}
         }
     }
 
@@ -256,6 +344,20 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
                     dst: rhs,
                 });
             }
+            Instruction::Cmp(lhs @ Operand::Stack(_), rhs @ Operand::Stack(_)) => {
+                new_insts.push(Instruction::Mov {
+                    src: lhs,
+                    dst: Operand::Reg(Register::R10),
+                });
+                new_insts.push(Instruction::Cmp(Operand::Reg(Register::R10), rhs));
+            }
+            Instruction::Cmp(lhs, rhs @ Operand::Imm(_)) => {
+                new_insts.push(Instruction::Mov {
+                    src: rhs,
+                    dst: Operand::Reg(Register::R11),
+                });
+                new_insts.push(Instruction::Cmp(lhs, Operand::Reg(Register::R11)));
+            }
             _ => new_insts.push(inst),
         }
     }
@@ -309,6 +411,24 @@ impl Display for Instruction {
             Instruction::Idiv(op) => {
                 writeln!(f, "idivl {op}")?;
             }
+            Instruction::Cmp(lhs, rhs) => {
+                writeln!(f, "cmpl {lhs}, {rhs}")?;
+            }
+            Instruction::Jmp(l) => {
+                writeln!(f, "jmp .L{}", l)?;
+            }
+            Instruction::JmpCc(cond, l) => {
+                writeln!(f, "j{} .L{}", cond, l)?;
+            }
+            Instruction::SetCc(cond, Operand::Reg(reg)) => {
+                writeln!(f, "set{} {}", cond, RegisterSize::Byte(reg))?;
+            }
+            Instruction::SetCc(cond, dst) => {
+                writeln!(f, "set{} {dst}", cond)?;
+            }
+            Instruction::Label(l) => {
+                writeln!(f, ".L{}:", l)?;
+            }
         }
         Ok(())
     }
@@ -339,7 +459,7 @@ impl Display for Operand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Operand::Imm(imm) => write!(f, "${}", imm)?,
-            Operand::Reg(reg) => write!(f, "{}", reg)?,
+            Operand::Reg(reg) => write!(f, "{}", RegisterSize::Dword(reg))?,
             Operand::Pseudo(_) => panic!("Pseudo operand should have been removed"),
             Operand::Stack(offset) => write!(f, "{}(%rbp)", offset)?,
         }
@@ -348,13 +468,35 @@ impl Display for Operand {
     }
 }
 
-impl Display for Register {
+impl<'a> Display for RegisterSize<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Register::Ax => write!(f, "%eax")?,
-            Register::R10 => write!(f, "%r10d")?,
-            Register::Dx => write!(f, "%edx")?,
-            Register::R11 => write!(f, "%r11d")?,
+            RegisterSize::Byte(reg) => match reg {
+                Register::Ax => write!(f, "%al")?,
+                Register::Dx => write!(f, "%dl")?,
+                Register::R10 => write!(f, "%r10b")?,
+                Register::R11 => write!(f, "%r11b")?,
+            },
+            RegisterSize::Dword(reg) => match reg {
+                Register::Ax => write!(f, "%eax")?,
+                Register::Dx => write!(f, "%edx")?,
+                Register::R10 => write!(f, "%r10d")?,
+                Register::R11 => write!(f, "%r11d")?,
+            },
+        }
+        Ok(())
+    }
+}
+
+impl Display for CondCode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CondCode::E => write!(f, "e")?,
+            CondCode::Ne => write!(f, "ne")?,
+            CondCode::G => write!(f, "g")?,
+            CondCode::Ge => write!(f, "ge")?,
+            CondCode::L => write!(f, "l")?,
+            CondCode::Le => write!(f, "le")?,
         }
         Ok(())
     }
