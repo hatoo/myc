@@ -98,7 +98,7 @@ fn gen_function(function: &tacky::Function) -> Function {
         match inst {
             tacky::Instruction::Return(val) => {
                 body.push(Instruction::Mov {
-                    src: val_to_operand(val),
+                    src: val.into(),
                     dst: Operand::Reg(Register::Ax),
                 });
                 body.push(Instruction::Ret);
@@ -109,8 +109,8 @@ fn gen_function(function: &tacky::Function) -> Function {
                 dst,
             } => {
                 body.push(Instruction::Mov {
-                    src: val_to_operand(src),
-                    dst: val_to_operand(dst),
+                    src: src.into(),
+                    dst: dst.into(),
                 });
                 body.push(Instruction::Unary {
                     op: match op {
@@ -118,7 +118,7 @@ fn gen_function(function: &tacky::Function) -> Function {
                         tacky::UnaryOp::Complement => UnaryOp::Not,
                         _ => unreachable!(),
                     },
-                    src: val_to_operand(dst),
+                    src: dst.into(),
                 });
             }
             tacky::Instruction::Unary {
@@ -126,18 +126,18 @@ fn gen_function(function: &tacky::Function) -> Function {
                 src,
                 dst,
             } => {
-                body.push(Instruction::Cmp(Operand::Imm(0), val_to_operand(src)));
+                body.push(Instruction::Cmp(Operand::Imm(0), src.into()));
                 body.push(Instruction::Mov {
                     src: Operand::Imm(0),
-                    dst: val_to_operand(dst),
+                    dst: dst.into(),
                 });
-                body.push(Instruction::SetCc(CondCode::E, val_to_operand(dst)));
+                body.push(Instruction::SetCc(CondCode::E, dst.into()));
             }
             tacky::Instruction::Binary { op, lhs, rhs, dst } => match op {
                 tacky::BinaryOp::Add | tacky::BinaryOp::Subtract | tacky::BinaryOp::Multiply => {
                     body.push(Instruction::Mov {
-                        src: val_to_operand(lhs),
-                        dst: val_to_operand(dst),
+                        src: lhs.into(),
+                        dst: dst.into(),
                     });
                     body.push(Instruction::Binary {
                         op: match op {
@@ -146,32 +146,32 @@ fn gen_function(function: &tacky::Function) -> Function {
                             tacky::BinaryOp::Multiply => BinaryOp::Mult,
                             _ => unreachable!(),
                         },
-                        lhs: val_to_operand(rhs),
-                        rhs: val_to_operand(dst),
+                        lhs: rhs.into(),
+                        rhs: dst.into(),
                     });
                 }
                 tacky::BinaryOp::Divide => {
                     body.push(Instruction::Mov {
-                        src: val_to_operand(lhs),
+                        src: lhs.into(),
                         dst: Operand::Reg(Register::Ax),
                     });
                     body.push(Instruction::Cdq);
-                    body.push(Instruction::Idiv(val_to_operand(rhs)));
+                    body.push(Instruction::Idiv(rhs.into()));
                     body.push(Instruction::Mov {
                         src: Operand::Reg(Register::Ax),
-                        dst: val_to_operand(dst),
+                        dst: dst.into(),
                     });
                 }
                 tacky::BinaryOp::Remainder => {
                     body.push(Instruction::Mov {
-                        src: val_to_operand(lhs),
+                        src: lhs.into(),
                         dst: Operand::Reg(Register::Ax),
                     });
                     body.push(Instruction::Cdq);
-                    body.push(Instruction::Idiv(val_to_operand(rhs)));
+                    body.push(Instruction::Idiv(rhs.into()));
                     body.push(Instruction::Mov {
                         src: Operand::Reg(Register::Dx),
-                        dst: val_to_operand(dst),
+                        dst: dst.into(),
                     });
                 }
                 tacky::BinaryOp::Equal
@@ -180,10 +180,10 @@ fn gen_function(function: &tacky::Function) -> Function {
                 | tacky::BinaryOp::LessOrEqual
                 | tacky::BinaryOp::GreaterThan
                 | tacky::BinaryOp::GreaterOrEqual => {
-                    body.push(Instruction::Cmp(val_to_operand(rhs), val_to_operand(lhs)));
+                    body.push(Instruction::Cmp(rhs.into(), lhs.into()));
                     body.push(Instruction::Mov {
                         src: Operand::Imm(0),
-                        dst: val_to_operand(dst),
+                        dst: dst.into(),
                     });
                     body.push(Instruction::SetCc(
                         match op {
@@ -195,25 +195,25 @@ fn gen_function(function: &tacky::Function) -> Function {
                             tacky::BinaryOp::GreaterOrEqual => CondCode::Ge,
                             _ => unreachable!(),
                         },
-                        val_to_operand(dst),
+                        dst.into(),
                     ));
                 }
             },
             tacky::Instruction::Copy { src, dst } => {
                 body.push(Instruction::Mov {
-                    src: val_to_operand(src),
-                    dst: val_to_operand(dst),
+                    src: src.into(),
+                    dst: dst.into(),
                 });
             }
             tacky::Instruction::Jump(label) => {
                 body.push(Instruction::Jmp(label.clone()));
             }
             tacky::Instruction::JumpIfZero { src, dst } => {
-                body.push(Instruction::Cmp(Operand::Imm(0), val_to_operand(src)));
+                body.push(Instruction::Cmp(Operand::Imm(0), src.into()));
                 body.push(Instruction::JmpCc(CondCode::E, dst.clone()));
             }
             tacky::Instruction::JumpIfNotZero { src, dst } => {
-                body.push(Instruction::Cmp(Operand::Imm(0), val_to_operand(src)));
+                body.push(Instruction::Cmp(Operand::Imm(0), src.into()));
                 body.push(Instruction::JmpCc(CondCode::Ne, dst.clone()));
             }
             tacky::Instruction::Label(label) => {
@@ -232,10 +232,12 @@ fn gen_function(function: &tacky::Function) -> Function {
     }
 }
 
-fn val_to_operand(val: &tacky::Val) -> Operand {
-    match val {
-        tacky::Val::Constant(imm) => Operand::Imm(*imm),
-        tacky::Val::Var(var) => Operand::Pseudo(var.clone()),
+impl From<&tacky::Val> for Operand {
+    fn from(val: &tacky::Val) -> Self {
+        match val {
+            tacky::Val::Constant(imm) => Operand::Imm(*imm),
+            tacky::Val::Var(var) => Operand::Pseudo(var.clone()),
+        }
     }
 }
 
