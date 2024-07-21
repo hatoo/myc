@@ -59,6 +59,7 @@ fn main() {
 
     if opts.asm {
         println!("{}", code);
+        return;
     }
 
     File::create(opts.input.with_extension("s"))
