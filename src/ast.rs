@@ -39,6 +39,19 @@ pub enum UnaryOp {
     Not,
 }
 
+impl TryFrom<&Token> for UnaryOp {
+    type Error = ();
+
+    fn try_from(token: &Token) -> Result<Self, Self::Error> {
+        match token {
+            Token::Tilde => Ok(Self::Complement),
+            Token::Hyphen => Ok(Self::Negate),
+            Token::Exclamation => Ok(Self::Not),
+            _ => Err(()),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum BinaryOp {
     Add,
@@ -210,27 +223,12 @@ impl<'a> Parser<'a> {
                     self.advance();
                     Ok(Expression::Constant(value))
                 }
-                Token::Hyphen => {
+                _ if UnaryOp::try_from(&token.data).is_ok() => {
+                    let op = UnaryOp::try_from(&token.data).unwrap();
                     self.advance();
                     let exp = self.parse_factor()?;
                     Ok(Expression::Unary {
-                        op: UnaryOp::Negate,
-                        exp: Box::new(exp),
-                    })
-                }
-                Token::Tilde => {
-                    self.advance();
-                    let exp = self.parse_factor()?;
-                    Ok(Expression::Unary {
-                        op: UnaryOp::Complement,
-                        exp: Box::new(exp),
-                    })
-                }
-                Token::Exclamation => {
-                    self.advance();
-                    let exp = self.parse_factor()?;
-                    Ok(Expression::Unary {
-                        op: UnaryOp::Not,
+                        op,
                         exp: Box::new(exp),
                     })
                 }
