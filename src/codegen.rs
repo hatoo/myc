@@ -103,35 +103,38 @@ fn gen_function(function: &tacky::Function) -> Function {
                 });
                 body.push(Instruction::Ret);
             }
-            tacky::Instruction::Unary {
-                op: op @ (tacky::UnaryOp::Negate | tacky::UnaryOp::Complement),
-                src,
-                dst,
-            } => {
-                body.push(Instruction::Mov {
-                    src: src.into(),
-                    dst: dst.into(),
-                });
-                body.push(Instruction::Unary {
-                    op: match op {
-                        tacky::UnaryOp::Negate => UnaryOp::Neg,
-                        tacky::UnaryOp::Complement => UnaryOp::Not,
-                        _ => unreachable!(),
-                    },
-                    src: dst.into(),
-                });
-            }
-            tacky::Instruction::Unary {
-                op: tacky::UnaryOp::Not,
-                src,
-                dst,
-            } => {
-                body.push(Instruction::Cmp(Operand::Imm(0), src.into()));
-                body.push(Instruction::Mov {
-                    src: Operand::Imm(0),
-                    dst: dst.into(),
-                });
-                body.push(Instruction::SetCc(CondCode::E, dst.into()));
+            tacky::Instruction::Unary { op, src, dst } => {
+                enum Unary {
+                    Simple(UnaryOp),
+                    Not,
+                }
+
+                let op = match op {
+                    tacky::UnaryOp::Negate => Unary::Simple(UnaryOp::Neg),
+                    tacky::UnaryOp::Complement => Unary::Simple(UnaryOp::Not),
+                    tacky::UnaryOp::Not => Unary::Not,
+                };
+
+                match op {
+                    Unary::Simple(op) => {
+                        body.push(Instruction::Mov {
+                            src: src.into(),
+                            dst: dst.into(),
+                        });
+                        body.push(Instruction::Unary {
+                            op,
+                            src: dst.into(),
+                        });
+                    }
+                    Unary::Not => {
+                        body.push(Instruction::Cmp(Operand::Imm(0), src.into()));
+                        body.push(Instruction::Mov {
+                            src: Operand::Imm(0),
+                            dst: dst.into(),
+                        });
+                        body.push(Instruction::SetCc(CondCode::E, dst.into()));
+                    }
+                }
             }
             tacky::Instruction::Binary { op, lhs, rhs, dst } => match op {
                 tacky::BinaryOp::Add | tacky::BinaryOp::Subtract | tacky::BinaryOp::Multiply => {
