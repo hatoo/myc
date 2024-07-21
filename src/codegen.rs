@@ -136,72 +136,74 @@ fn gen_function(function: &tacky::Function) -> Function {
                     }
                 }
             }
-            tacky::Instruction::Binary { op, lhs, rhs, dst } => match op {
-                tacky::BinaryOp::Add | tacky::BinaryOp::Subtract | tacky::BinaryOp::Multiply => {
-                    body.push(Instruction::Mov {
-                        src: lhs.into(),
-                        dst: dst.into(),
-                    });
-                    body.push(Instruction::Binary {
-                        op: match op {
-                            tacky::BinaryOp::Add => BinaryOp::Add,
-                            tacky::BinaryOp::Subtract => BinaryOp::Sub,
-                            tacky::BinaryOp::Multiply => BinaryOp::Mult,
-                            _ => unreachable!(),
-                        },
-                        lhs: rhs.into(),
-                        rhs: dst.into(),
-                    });
+            tacky::Instruction::Binary { op, lhs, rhs, dst } => {
+                enum Binary {
+                    Simple(BinaryOp),
+                    Divide,
+                    Remainder,
+                    Compare(CondCode),
                 }
-                tacky::BinaryOp::Divide => {
-                    body.push(Instruction::Mov {
-                        src: lhs.into(),
-                        dst: Operand::Reg(Register::Ax),
-                    });
-                    body.push(Instruction::Cdq);
-                    body.push(Instruction::Idiv(rhs.into()));
-                    body.push(Instruction::Mov {
-                        src: Operand::Reg(Register::Ax),
-                        dst: dst.into(),
-                    });
+
+                let op = match op {
+                    tacky::BinaryOp::Add => Binary::Simple(BinaryOp::Add),
+                    tacky::BinaryOp::Subtract => Binary::Simple(BinaryOp::Sub),
+                    tacky::BinaryOp::Multiply => Binary::Simple(BinaryOp::Mult),
+                    tacky::BinaryOp::Divide => Binary::Divide,
+                    tacky::BinaryOp::Remainder => Binary::Remainder,
+                    tacky::BinaryOp::Equal => Binary::Compare(CondCode::E),
+                    tacky::BinaryOp::NotEqual => Binary::Compare(CondCode::Ne),
+                    tacky::BinaryOp::LessThan => Binary::Compare(CondCode::L),
+                    tacky::BinaryOp::LessOrEqual => Binary::Compare(CondCode::Le),
+                    tacky::BinaryOp::GreaterThan => Binary::Compare(CondCode::G),
+                    tacky::BinaryOp::GreaterOrEqual => Binary::Compare(CondCode::Ge),
+                };
+
+                match op {
+                    Binary::Simple(op) => {
+                        body.push(Instruction::Mov {
+                            src: lhs.into(),
+                            dst: dst.into(),
+                        });
+                        body.push(Instruction::Binary {
+                            op,
+                            lhs: rhs.into(),
+                            rhs: dst.into(),
+                        });
+                    }
+                    Binary::Divide => {
+                        body.push(Instruction::Mov {
+                            src: lhs.into(),
+                            dst: Operand::Reg(Register::Ax),
+                        });
+                        body.push(Instruction::Cdq);
+                        body.push(Instruction::Idiv(rhs.into()));
+                        body.push(Instruction::Mov {
+                            src: Operand::Reg(Register::Ax),
+                            dst: dst.into(),
+                        });
+                    }
+                    Binary::Remainder => {
+                        body.push(Instruction::Mov {
+                            src: lhs.into(),
+                            dst: Operand::Reg(Register::Ax),
+                        });
+                        body.push(Instruction::Cdq);
+                        body.push(Instruction::Idiv(rhs.into()));
+                        body.push(Instruction::Mov {
+                            src: Operand::Reg(Register::Dx),
+                            dst: dst.into(),
+                        });
+                    }
+                    Binary::Compare(cond) => {
+                        body.push(Instruction::Cmp(rhs.into(), lhs.into()));
+                        body.push(Instruction::Mov {
+                            src: Operand::Imm(0),
+                            dst: dst.into(),
+                        });
+                        body.push(Instruction::SetCc(cond, dst.into()));
+                    }
                 }
-                tacky::BinaryOp::Remainder => {
-                    body.push(Instruction::Mov {
-                        src: lhs.into(),
-                        dst: Operand::Reg(Register::Ax),
-                    });
-                    body.push(Instruction::Cdq);
-                    body.push(Instruction::Idiv(rhs.into()));
-                    body.push(Instruction::Mov {
-                        src: Operand::Reg(Register::Dx),
-                        dst: dst.into(),
-                    });
-                }
-                tacky::BinaryOp::Equal
-                | tacky::BinaryOp::NotEqual
-                | tacky::BinaryOp::LessThan
-                | tacky::BinaryOp::LessOrEqual
-                | tacky::BinaryOp::GreaterThan
-                | tacky::BinaryOp::GreaterOrEqual => {
-                    body.push(Instruction::Cmp(rhs.into(), lhs.into()));
-                    body.push(Instruction::Mov {
-                        src: Operand::Imm(0),
-                        dst: dst.into(),
-                    });
-                    body.push(Instruction::SetCc(
-                        match op {
-                            tacky::BinaryOp::Equal => CondCode::E,
-                            tacky::BinaryOp::NotEqual => CondCode::Ne,
-                            tacky::BinaryOp::LessThan => CondCode::L,
-                            tacky::BinaryOp::LessOrEqual => CondCode::Le,
-                            tacky::BinaryOp::GreaterThan => CondCode::G,
-                            tacky::BinaryOp::GreaterOrEqual => CondCode::Ge,
-                            _ => unreachable!(),
-                        },
-                        dst.into(),
-                    ));
-                }
-            },
+            }
             tacky::Instruction::Copy { src, dst } => {
                 body.push(Instruction::Mov {
                     src: src.into(),
