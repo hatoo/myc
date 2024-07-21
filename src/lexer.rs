@@ -323,6 +323,13 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
                 }
             }
 
+            // TODO
+            b'#' => {
+                while index < src.len() && src[index] != b'\n' {
+                    index += 1;
+                }
+            }
+
             c => {
                 return Err(Error::Unexpected(Spanned {
                     data: c as char,
