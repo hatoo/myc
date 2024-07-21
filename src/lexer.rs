@@ -22,6 +22,15 @@ pub enum Token {
     Asterisk,
     Slash,
     Percent,
+    Exclamation,
+    TwoAmpersands,
+    TwoBars,
+    TwoEquals,
+    ExclamationEquals,
+    LessThan,
+    GreaterThan,
+    LessThanEquals,
+    GreaterThanEquals,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -222,6 +231,96 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
                     span: index..index + 1,
                 });
                 index += 1;
+            }
+            b'!' => {
+                index += 1;
+                if index < src.len() && src[index] == b'=' {
+                    index += 1;
+                    tokens.push(Spanned {
+                        data: Token::ExclamationEquals,
+                        span: index - 2..index,
+                    });
+                } else {
+                    tokens.push(Spanned {
+                        data: Token::Exclamation,
+                        span: index - 1..index,
+                    });
+                }
+            }
+            b'&' => {
+                index += 1;
+                if index < src.len() && src[index] == b'&' {
+                    index += 1;
+                    tokens.push(Spanned {
+                        data: Token::TwoAmpersands,
+                        span: index - 2..index,
+                    });
+                } else {
+                    return Err(Error::Unexpected(Spanned {
+                        data: src[index] as char,
+                        span: index..index + 1,
+                    }));
+                }
+            }
+            b'|' => {
+                index += 1;
+                if index < src.len() && src[index] == b'|' {
+                    index += 1;
+                    tokens.push(Spanned {
+                        data: Token::TwoBars,
+                        span: index - 2..index,
+                    });
+                } else {
+                    return Err(Error::Unexpected(Spanned {
+                        data: src[index] as char,
+                        span: index..index + 1,
+                    }));
+                }
+            }
+            b'=' => {
+                index += 1;
+                if index < src.len() && src[index] == b'=' {
+                    index += 1;
+                    tokens.push(Spanned {
+                        data: Token::TwoEquals,
+                        span: index - 2..index,
+                    });
+                } else {
+                    return Err(Error::Unexpected(Spanned {
+                        data: src[index] as char,
+                        span: index..index + 1,
+                    }));
+                }
+            }
+            b'<' => {
+                index += 1;
+                if index < src.len() && src[index] == b'=' {
+                    index += 1;
+                    tokens.push(Spanned {
+                        data: Token::LessThanEquals,
+                        span: index - 2..index,
+                    });
+                } else {
+                    tokens.push(Spanned {
+                        data: Token::LessThan,
+                        span: index - 1..index,
+                    });
+                }
+            }
+            b'>' => {
+                index += 1;
+                if index < src.len() && src[index] == b'=' {
+                    index += 1;
+                    tokens.push(Spanned {
+                        data: Token::GreaterThanEquals,
+                        span: index - 2..index,
+                    });
+                } else {
+                    tokens.push(Spanned {
+                        data: Token::GreaterThan,
+                        span: index - 1..index,
+                    });
+                }
             }
 
             c => {
