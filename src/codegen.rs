@@ -319,9 +319,9 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
             }
             Instruction::Binary {
                 op: op @ (BinaryOp::Add | BinaryOp::Sub),
-                lhs,
-                rhs,
-            } if matches!((&lhs, &rhs), (Operand::Stack(_), Operand::Stack(_))) => {
+                lhs: lhs @ Operand::Stack(_),
+                rhs: rhs @ Operand::Stack(_),
+            } => {
                 new_insts.push(Instruction::Mov {
                     src: lhs,
                     dst: Operand::Reg(Register::R10),
