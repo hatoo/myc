@@ -96,13 +96,33 @@ impl InstructionGenerator {
         label
     }
 
+    fn add_block_item(&mut self, block_item: &ast::BlockItem) {
+        match block_item {
+            ast::BlockItem::Declaration(decl) => {
+                if let Some(exp) = &decl.exp {
+                    let val = self.add_expression(exp);
+                    self.instructions.push(Instruction::Copy {
+                        src: val,
+                        dst: Val::Var(decl.ident.clone()),
+                    });
+                }
+            }
+            ast::BlockItem::Statement(stmt) => {
+                self.add_statement(stmt);
+            }
+        }
+    }
+
     fn add_statement(&mut self, statement: &ast::Statement) {
         match statement {
             ast::Statement::Return(expression) => {
                 let val = self.add_expression(expression);
                 self.instructions.push(Instruction::Return(val));
             }
-            _ => todo!(),
+            ast::Statement::Expression(exp) => {
+                self.add_expression(exp);
+            }
+            ast::Statement::Null => {}
         }
     }
 
@@ -211,7 +231,19 @@ impl InstructionGenerator {
                 });
                 dst
             }
-            _ => todo!(),
+            ast::Expression::Var(var) => Val::Var(var.clone()),
+            ast::Expression::Assignment { lhs, rhs } => {
+                if let ast::Expression::Var(var) = lhs.as_ref() {
+                    let rhs = self.add_expression(rhs);
+                    self.instructions.push(Instruction::Copy {
+                        src: rhs,
+                        dst: Val::Var(var.clone()),
+                    });
+                    Val::Var(var.clone())
+                } else {
+                    panic!("invalid lvalue");
+                }
+            }
         }
     }
 }
@@ -224,7 +256,10 @@ pub fn gen_program(program: &ast::Program) -> Program {
 
 fn gen_function(function: &ast::Function) -> Function {
     let mut generator = InstructionGenerator::new();
-    // generator.add_statement(&function.body);
+    for block_item in &function.body {
+        generator.add_block_item(block_item);
+    }
+    generator.add_statement(&ast::Statement::Return(ast::Expression::Constant(0)));
     Function {
         name: function.name.clone(),
         body: generator.instructions,
