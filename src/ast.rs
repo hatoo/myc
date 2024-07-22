@@ -1,6 +1,6 @@
 use ecow::EcoString;
 
-use crate::lexer::{Spanned, Token};
+use crate::{lexer::Token, span::Spanned};
 
 pub type Identifier = Spanned<EcoString>;
 

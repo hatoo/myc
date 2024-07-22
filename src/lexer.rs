@@ -1,6 +1,6 @@
-use std::ops::Range;
-
 use ecow::EcoString;
+
+use crate::span::Spanned;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Token {
@@ -65,12 +65,6 @@ impl Error {
             }
         }
     }
-}
-
-#[derive(Debug, Clone)]
-pub struct Spanned<T> {
-    pub data: T,
-    pub span: Range<usize>,
 }
 
 pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
