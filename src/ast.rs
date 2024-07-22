@@ -10,16 +10,25 @@ pub struct Program {
 #[derive(Debug)]
 pub struct Function {
     pub name: EcoString,
-    pub body: Statement,
+    pub body: Vec<BlockItem>,
+}
+
+#[derive(Debug)]
+pub enum BlockItem {
+    Declaration(Declaration),
+    Statement(Statement),
 }
 
 #[derive(Debug)]
 pub enum Statement {
     Return(Expression),
+    Expression(Expression),
+    Null,
 }
 
 #[derive(Debug)]
 pub enum Expression {
+    Var(EcoString),
     Constant(i32),
     Unary {
         op: UnaryOp,
@@ -30,6 +39,16 @@ pub enum Expression {
         lhs: Box<Expression>,
         rhs: Box<Expression>,
     },
+    Assignment {
+        lhs: Box<Expression>,
+        rhs: Box<Expression>,
+    },
+}
+
+#[derive(Debug)]
+pub struct Declaration {
+    ident: EcoString,
+    exp: Option<Expression>,
 }
 
 #[derive(Debug)]
@@ -132,7 +151,9 @@ pub enum Error {
     #[error(transparent)]
     ParseIntError(#[from] std::num::ParseIntError),
     #[error("Malformed expression: {0:?}")]
-    MalfoldExpression(Spanned<Token>),
+    MalformedExpression(Spanned<Token>),
+    #[error("Malformed body: {0:?}")]
+    MalformedBody(Spanned<Token>),
 }
 
 impl<'a> Parser<'a> {
@@ -200,7 +221,23 @@ impl<'a> Parser<'a> {
         self.expect(Token::Void)?;
         self.expect(Token::CloseParen)?;
         self.expect(Token::OpenBrace)?;
-        let body = self.parse_statement()?;
+        let mut body = Vec::new();
+        while !matches!(
+            self.peek(),
+            Some(Spanned {
+                data: Token::CloseBrace,
+                ..
+            })
+        ) {
+            let index = self.index;
+            if let Ok(decl) = self.parse_declaration() {
+                body.push(BlockItem::Declaration(decl));
+            } else {
+                self.index = index;
+                body.push(BlockItem::Statement(self.parse_statement()?));
+            }
+        }
+
         self.expect(Token::CloseBrace)?;
         Ok(Function {
             name: name.data,
@@ -209,10 +246,49 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_statement(&mut self) -> Result<Statement, Error> {
-        self.expect(Token::Return)?;
-        let expr = self.parse_expression(0)?;
-        self.expect(Token::SemiColon)?;
-        Ok(Statement::Return(expr))
+        match self.peek() {
+            Some(Spanned {
+                data: Token::Return,
+                ..
+            }) => {
+                self.advance();
+                let expr = self.parse_expression(0)?;
+                self.expect(Token::SemiColon)?;
+                Ok(Statement::Return(expr))
+            }
+            Some(Spanned {
+                data: Token::SemiColon,
+                ..
+            }) => {
+                self.advance();
+                Ok(Statement::Null)
+            }
+            Some(_) => {
+                let exp = self.parse_expression(0)?;
+                self.expect(Token::SemiColon)?;
+                Ok(Statement::Expression(exp))
+            }
+            None => Err(Error::UnexpectedEof),
+        }
+    }
+
+    fn parse_declaration(&mut self) -> Result<Declaration, Error> {
+        self.expect(Token::Int)?;
+        let ident = self.expect_ident()?;
+        if self.expect(Token::Equal).is_ok() {
+            let exp = self.parse_expression(0)?;
+            self.expect(Token::SemiColon)?;
+            Ok(Declaration {
+                ident: ident.data,
+                exp: Some(exp),
+            })
+        } else {
+            self.expect(Token::SemiColon)?;
+            Ok(Declaration {
+                ident: ident.data,
+                exp: None,
+            })
+        }
     }
 
     fn parse_factor(&mut self) -> Result<Expression, Error> {
@@ -238,7 +314,12 @@ impl<'a> Parser<'a> {
                     self.expect(Token::CloseParen)?;
                     Ok(exp)
                 }
-                _ => Err(Error::MalfoldExpression(token.clone())),
+                Token::Ident(ident) => {
+                    let exp = Expression::Var(ident.clone());
+                    self.advance();
+                    Ok(exp)
+                }
+                _ => Err(Error::MalformedExpression(token.clone())),
             }
         } else {
             Err(Error::UnexpectedEof)
@@ -252,17 +333,46 @@ impl<'a> Parser<'a> {
                 break;
             };
 
-            if let Ok(bin_op) = BinaryOp::try_from(&token.data) {
-                if bin_op.precedence() >= min_prec {
-                    self.advance();
-                    let right = self.parse_expression(bin_op.precedence() + 1)?;
-                    left = Expression::Binary {
-                        op: bin_op,
-                        lhs: Box::new(left),
-                        rhs: Box::new(right),
-                    };
-                } else {
-                    break;
+            enum Op {
+                Binary(BinaryOp),
+                Assign,
+            }
+
+            impl Op {
+                fn precedence(&self) -> usize {
+                    match self {
+                        Self::Binary(op) => op.precedence(),
+                        Self::Assign => 1,
+                    }
+                }
+            }
+
+            let op = match token.data {
+                Token::Equal => Op::Assign,
+                _ if BinaryOp::try_from(&token.data).is_ok() => {
+                    Op::Binary(BinaryOp::try_from(&token.data).unwrap())
+                }
+                _ => break,
+            };
+
+            if op.precedence() >= min_prec {
+                self.advance();
+                match op {
+                    Op::Assign => {
+                        let right = self.parse_expression(op.precedence())?;
+                        left = Expression::Assignment {
+                            lhs: Box::new(left),
+                            rhs: Box::new(right),
+                        };
+                    }
+                    Op::Binary(bin_op) => {
+                        let right = self.parse_expression(bin_op.precedence() + 1)?;
+                        left = Expression::Binary {
+                            op: bin_op,
+                            lhs: Box::new(left),
+                            rhs: Box::new(right),
+                        };
+                    }
                 }
             } else {
                 break;

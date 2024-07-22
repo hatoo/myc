@@ -109,7 +109,7 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
                 let start = index;
                 while index < src.len() && {
                     let c = src[index];
-                    c.is_ascii_alphabetic() || c == b'_'
+                    c.is_ascii_alphanumeric() || c == b'_'
                 } {
                     index += 1;
                 }

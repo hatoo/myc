@@ -102,6 +102,7 @@ impl InstructionGenerator {
                 let val = self.add_expression(expression);
                 self.instructions.push(Instruction::Return(val));
             }
+            _ => todo!(),
         }
     }
 
@@ -210,6 +211,7 @@ impl InstructionGenerator {
                 });
                 dst
             }
+            _ => todo!(),
         }
     }
 }
@@ -222,7 +224,7 @@ pub fn gen_program(program: &ast::Program) -> Program {
 
 fn gen_function(function: &ast::Function) -> Function {
     let mut generator = InstructionGenerator::new();
-    generator.add_statement(&function.body);
+    // generator.add_statement(&function.body);
     Function {
         name: function.name.clone(),
         body: generator.instructions,
