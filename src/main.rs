@@ -43,7 +43,9 @@ fn main() {
         return;
     }
 
-    VarResolver::default().resolve_program(&mut program);
+    VarResolver::default()
+        .resolve_program(&mut program)
+        .unwrap();
 
     if opts.validate {
         dbg!(program);
