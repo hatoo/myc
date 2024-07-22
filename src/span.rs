@@ -86,7 +86,7 @@ pub fn pretty_print(f: &mut Formatter, src: &[u8], span: Range<usize>) -> std::f
         "{}",
         String::from_utf8(
             src[last_line_start..]
-                .into_iter()
+                .iter()
                 .copied()
                 .take_while(|c| *c != b'\n')
                 .collect::<Vec<u8>>()
