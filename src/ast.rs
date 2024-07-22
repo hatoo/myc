@@ -34,13 +34,13 @@ pub enum Statement {
 #[derive(Debug)]
 pub enum Expression {
     Var(Spanned<EcoString>),
-    Constant(i32),
+    Constant(Spanned<i32>),
     Unary {
-        op: UnaryOp,
+        op: Spanned<UnaryOp>,
         exp: Box<Expression>,
     },
     Binary {
-        op: BinaryOp,
+        op: Spanned<BinaryOp>,
         lhs: Box<Expression>,
         rhs: Box<Expression>,
     },
@@ -310,11 +310,13 @@ impl<'a> Parser<'a> {
             match &token.data {
                 Token::Constant(s) => {
                     let value = s.parse()?;
+                    let constant = token.clone().map(|_| value);
                     self.advance();
-                    Ok(Expression::Constant(value))
+                    Ok(Expression::Constant(constant))
                 }
                 _ if UnaryOp::try_from(&token.data).is_ok() => {
                     let op = UnaryOp::try_from(&token.data).unwrap();
+                    let op = token.clone().map(|_| op);
                     self.advance();
                     let exp = self.parse_factor()?;
                     Ok(Expression::Unary {
@@ -373,6 +375,7 @@ impl<'a> Parser<'a> {
             };
 
             if op.precedence() >= min_prec {
+                let span = token.span.clone();
                 self.advance();
                 match op {
                     Op::Assign => {
@@ -385,7 +388,10 @@ impl<'a> Parser<'a> {
                     Op::Binary(bin_op) => {
                         let right = self.parse_expression(bin_op.precedence() + 1)?;
                         left = Expression::Binary {
-                            op: bin_op,
+                            op: Spanned {
+                                data: bin_op,
+                                span: span.clone(),
+                            },
                             lhs: Box::new(left),
                             rhs: Box::new(right),
                         };

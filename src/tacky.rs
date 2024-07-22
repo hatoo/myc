@@ -128,8 +128,11 @@ impl InstructionGenerator {
 
     fn add_expression(&mut self, expression: &ast::Expression) -> Val {
         match expression {
-            ast::Expression::Constant(imm) => Val::Constant(*imm),
-            ast::Expression::Unary { op, exp } => {
+            ast::Expression::Constant(Spanned { data: imm, .. }) => Val::Constant(*imm),
+            ast::Expression::Unary {
+                op: Spanned { data: op, .. },
+                exp,
+            } => {
                 let src = self.add_expression(exp);
                 let dst = self.new_var();
                 self.instructions.push(Instruction::Unary {
@@ -144,7 +147,11 @@ impl InstructionGenerator {
                 dst
             }
             ast::Expression::Binary {
-                op: ast::BinaryOp::And,
+                op:
+                    Spanned {
+                        data: ast::BinaryOp::And,
+                        ..
+                    },
                 lhs,
                 rhs,
             } => {
@@ -176,7 +183,11 @@ impl InstructionGenerator {
                 dst
             }
             ast::Expression::Binary {
-                op: ast::BinaryOp::Or,
+                op:
+                    Spanned {
+                        data: ast::BinaryOp::Or,
+                        ..
+                    },
                 lhs,
                 rhs,
             } => {
@@ -206,7 +217,11 @@ impl InstructionGenerator {
                 self.instructions.push(Instruction::Label(end));
                 dst
             }
-            ast::Expression::Binary { op, lhs, rhs } => {
+            ast::Expression::Binary {
+                op: Spanned { data: op, .. },
+                lhs,
+                rhs,
+            } => {
                 let lhs = self.add_expression(lhs);
                 let rhs = self.add_expression(rhs);
                 let dst = self.new_var();
@@ -259,7 +274,12 @@ fn gen_function(function: &ast::Function) -> Function {
     for block_item in &function.body {
         generator.add_block_item(block_item);
     }
-    generator.add_statement(&ast::Statement::Return(ast::Expression::Constant(0)));
+    generator.add_statement(&ast::Statement::Return(ast::Expression::Constant(
+        Spanned {
+            data: 0,
+            span: 0..0,
+        },
+    )));
     Function {
         name: function.name.clone(),
         body: generator.instructions,
