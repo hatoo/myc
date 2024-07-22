@@ -2,6 +2,8 @@ use ecow::EcoString;
 
 use crate::lexer::{Spanned, Token};
 
+pub type Identifier = Spanned<EcoString>;
+
 #[derive(Debug)]
 pub struct Program {
     pub function_definition: Function,
