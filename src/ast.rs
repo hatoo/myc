@@ -2,7 +2,7 @@ use ecow::EcoString;
 
 use crate::{
     lexer::Token,
-    span::{MayHasSpan, Spanned},
+    span::{HasSpan, MayHasSpan, Spanned},
 };
 
 pub type Identifier = Spanned<EcoString>;
@@ -31,7 +31,7 @@ pub enum Statement {
     Null,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Expression {
     Var(Spanned<EcoString>),
     Constant(Spanned<i32>),
@@ -40,7 +40,7 @@ pub enum Expression {
         exp: Box<Expression>,
     },
     Binary {
-        op: Spanned<BinaryOp>,
+        op: BinaryOp,
         lhs: Box<Expression>,
         rhs: Box<Expression>,
     },
@@ -50,13 +50,25 @@ pub enum Expression {
     },
 }
 
+impl HasSpan for Expression {
+    fn span(&self) -> std::ops::Range<usize> {
+        match self {
+            Self::Var(ident) => ident.span.clone(),
+            Self::Constant(constant) => constant.span.clone(),
+            Self::Unary { op, exp } => op.span.start..exp.span().end,
+            Self::Binary { lhs, rhs, .. } => lhs.span().start..rhs.span().end,
+            Self::Assignment { lhs, rhs } => lhs.span().start..rhs.span().end,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Declaration {
     pub ident: Spanned<EcoString>,
     pub exp: Option<Expression>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum UnaryOp {
     Complement,
     Negate,
@@ -76,7 +88,7 @@ impl TryFrom<&Token> for UnaryOp {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum BinaryOp {
     Add,
     Subtract,
@@ -162,7 +174,7 @@ pub enum Error {
 }
 
 impl MayHasSpan for Error {
-    fn span(&self) -> Option<std::ops::Range<usize>> {
+    fn may_span(&self) -> Option<std::ops::Range<usize>> {
         match self {
             Error::Unexpected(spanned, _) => Some(spanned.span.clone()),
             Error::UnexpectedEof => None,
@@ -375,7 +387,6 @@ impl<'a> Parser<'a> {
             };
 
             if op.precedence() >= min_prec {
-                let span = token.span.clone();
                 self.advance();
                 match op {
                     Op::Assign => {
@@ -388,10 +399,7 @@ impl<'a> Parser<'a> {
                     Op::Binary(bin_op) => {
                         let right = self.parse_expression(bin_op.precedence() + 1)?;
                         left = Expression::Binary {
-                            op: Spanned {
-                                data: bin_op,
-                                span: span.clone(),
-                            },
+                            op: bin_op,
                             lhs: Box::new(left),
                             rhs: Box::new(right),
                         };

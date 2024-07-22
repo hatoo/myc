@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use ecow::EcoString;
 
 use crate::{
-    ast,
-    span::{MayHasSpan, Spanned},
+    ast::{self, Expression},
+    span::{HasSpan, Spanned},
 };
 
 #[derive(Debug, Default)]
@@ -19,16 +19,16 @@ pub enum Error {
     VariableNotDeclared(Spanned<EcoString>),
     #[error("Variable already declared: {0}")]
     VariableAlreadyDeclared(Spanned<EcoString>),
-    #[error("Invalid lvalue")]
-    InvalidLValue,
+    #[error("Invalid lvalue: {0:?}")]
+    InvalidLValue(Expression),
 }
 
-impl MayHasSpan for Error {
-    fn span(&self) -> Option<std::ops::Range<usize>> {
+impl HasSpan for Error {
+    fn span(&self) -> std::ops::Range<usize> {
         match self {
-            Error::VariableNotDeclared(ident) => Some(ident.span.clone()),
-            Error::VariableAlreadyDeclared(ident) => Some(ident.span.clone()),
-            Error::InvalidLValue => None,
+            Error::VariableNotDeclared(ident) => ident.span.clone(),
+            Error::VariableAlreadyDeclared(ident) => ident.span.clone(),
+            Error::InvalidLValue(exp) => exp.span(),
         }
     }
 }
@@ -97,7 +97,7 @@ impl VarResolver {
             }
             ast::Expression::Assignment { lhs, rhs } => {
                 if !matches!(lhs.as_ref(), ast::Expression::Var(_)) {
-                    return Err(Error::InvalidLValue);
+                    return Err(Error::InvalidLValue(lhs.as_ref().clone()));
                 }
                 self.resolve_expression(lhs)?;
                 self.resolve_expression(rhs)?;

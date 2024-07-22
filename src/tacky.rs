@@ -147,11 +147,7 @@ impl InstructionGenerator {
                 dst
             }
             ast::Expression::Binary {
-                op:
-                    Spanned {
-                        data: ast::BinaryOp::And,
-                        ..
-                    },
+                op: ast::BinaryOp::And,
                 lhs,
                 rhs,
             } => {
@@ -183,11 +179,7 @@ impl InstructionGenerator {
                 dst
             }
             ast::Expression::Binary {
-                op:
-                    Spanned {
-                        data: ast::BinaryOp::Or,
-                        ..
-                    },
+                op: ast::BinaryOp::Or,
                 lhs,
                 rhs,
             } => {
@@ -217,11 +209,7 @@ impl InstructionGenerator {
                 self.instructions.push(Instruction::Label(end));
                 dst
             }
-            ast::Expression::Binary {
-                op: Spanned { data: op, .. },
-                lhs,
-                rhs,
-            } => {
+            ast::Expression::Binary { op, lhs, rhs } => {
                 let lhs = self.add_expression(lhs);
                 let rhs = self.add_expression(rhs);
                 let dst = self.new_var();

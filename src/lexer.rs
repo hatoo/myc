@@ -41,7 +41,7 @@ pub enum Error {
 }
 
 impl MayHasSpan for Error {
-    fn span(&self) -> Option<std::ops::Range<usize>> {
+    fn may_span(&self) -> Option<std::ops::Range<usize>> {
         match self {
             Error::Unexpected(spanned) => Some(spanned.span.clone()),
         }
