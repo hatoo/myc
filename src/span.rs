@@ -12,6 +12,24 @@ pub struct Spanned<T> {
     pub span: Range<usize>,
 }
 
+impl<T> Display for Spanned<T>
+where
+    T: Display,
+{
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
+        write!(f, "{}", self.data)
+    }
+}
+
+impl<T> Spanned<T> {
+    pub fn map<U>(self, f: impl FnOnce(T) -> U) -> Spanned<U> {
+        Spanned {
+            data: f(self.data),
+            span: self.span,
+        }
+    }
+}
+
 pub trait MayHasSpan {
     fn span(&self) -> Option<Range<usize>>;
 }

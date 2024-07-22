@@ -1,6 +1,6 @@
 use ecow::EcoString;
 
-use crate::ast;
+use crate::{ast, span::Spanned};
 
 #[derive(Debug)]
 pub struct Program {
@@ -103,7 +103,7 @@ impl InstructionGenerator {
                     let val = self.add_expression(exp);
                     self.instructions.push(Instruction::Copy {
                         src: val,
-                        dst: Val::Var(decl.ident.clone()),
+                        dst: Val::Var(decl.ident.data.clone()),
                     });
                 }
             }
@@ -231,9 +231,9 @@ impl InstructionGenerator {
                 });
                 dst
             }
-            ast::Expression::Var(var) => Val::Var(var.clone()),
+            ast::Expression::Var(Spanned { data: var, .. }) => Val::Var(var.clone()),
             ast::Expression::Assignment { lhs, rhs } => {
-                if let ast::Expression::Var(var) = lhs.as_ref() {
+                if let ast::Expression::Var(Spanned { data: var, .. }) = lhs.as_ref() {
                     let rhs = self.add_expression(rhs);
                     self.instructions.push(Instruction::Copy {
                         src: rhs,

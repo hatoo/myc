@@ -45,6 +45,7 @@ fn main() {
 
     VarResolver::default()
         .resolve_program(&mut program)
+        .map_err(|err| SpannedError::new(err, src.clone()))
         .unwrap();
 
     if opts.validate {

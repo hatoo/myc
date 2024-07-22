@@ -2,7 +2,10 @@ use std::collections::HashMap;
 
 use ecow::EcoString;
 
-use crate::ast;
+use crate::{
+    ast,
+    span::{MayHasSpan, Spanned},
+};
 
 #[derive(Debug, Default)]
 pub struct VarResolver {
@@ -13,11 +16,21 @@ pub struct VarResolver {
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("Variable not declared: {0}")]
-    VariableNotDeclared(EcoString),
+    VariableNotDeclared(Spanned<EcoString>),
     #[error("Variable already declared: {0}")]
-    VariableAlreadyDeclared(EcoString),
+    VariableAlreadyDeclared(Spanned<EcoString>),
     #[error("Invalid lvalue")]
     InvalidLValue,
+}
+
+impl MayHasSpan for Error {
+    fn span(&self) -> Option<std::ops::Range<usize>> {
+        match self {
+            Error::VariableNotDeclared(ident) => Some(ident.span.clone()),
+            Error::VariableAlreadyDeclared(ident) => Some(ident.span.clone()),
+            Error::InvalidLValue => None,
+        }
+    }
 }
 
 impl VarResolver {
@@ -52,13 +65,13 @@ impl VarResolver {
     pub fn resolve_declaration(&mut self, decl: &mut ast::Declaration) -> Result<(), Error> {
         let ast::Declaration { ident, exp } = decl;
 
-        if self.var_map.contains_key(ident) {
+        if self.var_map.contains_key(&ident.data) {
             return Err(Error::VariableAlreadyDeclared(ident.clone()));
         }
 
-        let unique_name = self.new_var(ident);
-        self.var_map.insert(ident.clone(), unique_name.clone());
-        *ident = unique_name.clone();
+        let unique_name = self.new_var(&ident.data);
+        self.var_map.insert(ident.data.clone(), unique_name.clone());
+        ident.data = unique_name;
         if let Some(exp) = exp {
             self.resolve_expression(exp)?;
         }
@@ -74,12 +87,12 @@ impl VarResolver {
                 self.resolve_expression(rhs)?;
                 Ok(())
             }
-            ast::Expression::Var(ident) => {
-                if let Some(unique_name) = self.var_map.get(ident) {
-                    *ident = unique_name.clone();
+            ast::Expression::Var(var) => {
+                if let Some(unique_name) = self.var_map.get(&var.data) {
+                    var.data = unique_name.clone();
                     Ok(())
                 } else {
-                    return Err(Error::VariableNotDeclared(ident.clone()));
+                    return Err(Error::VariableNotDeclared(var.clone()));
                 }
             }
             ast::Expression::Assignment { lhs, rhs } => {

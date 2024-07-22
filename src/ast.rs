@@ -33,7 +33,7 @@ pub enum Statement {
 
 #[derive(Debug)]
 pub enum Expression {
-    Var(EcoString),
+    Var(Spanned<EcoString>),
     Constant(i32),
     Unary {
         op: UnaryOp,
@@ -52,7 +52,7 @@ pub enum Expression {
 
 #[derive(Debug)]
 pub struct Declaration {
-    pub ident: EcoString,
+    pub ident: Spanned<EcoString>,
     pub exp: Option<Expression>,
 }
 
@@ -296,15 +296,12 @@ impl<'a> Parser<'a> {
             let exp = self.parse_expression(0)?;
             self.expect(Token::SemiColon)?;
             Ok(Declaration {
-                ident: ident.data,
+                ident,
                 exp: Some(exp),
             })
         } else {
             self.expect(Token::SemiColon)?;
-            Ok(Declaration {
-                ident: ident.data,
-                exp: None,
-            })
+            Ok(Declaration { ident, exp: None })
         }
     }
 
@@ -332,7 +329,10 @@ impl<'a> Parser<'a> {
                     Ok(exp)
                 }
                 Token::Ident(ident) => {
-                    let exp = Expression::Var(ident.clone());
+                    let exp = Expression::Var(Spanned {
+                        data: ident.clone(),
+                        span: token.span.clone(),
+                    });
                     self.advance();
                     Ok(exp)
                 }
