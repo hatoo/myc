@@ -25,6 +25,7 @@ pub enum Token {
     Exclamation,
     TwoAmpersands,
     TwoPipes,
+    Equal,
     TwoEquals,
     ExclamationEquals,
     LessThan,
@@ -286,10 +287,10 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
                         span: index - 2..index,
                     });
                 } else {
-                    return Err(Error::Unexpected(Spanned {
-                        data: src[index] as char,
-                        span: index..index + 1,
-                    }));
+                    tokens.push(Spanned {
+                        data: Token::Equal,
+                        span: index - 1..index,
+                    });
                 }
             }
             b'<' => {
