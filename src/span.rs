@@ -12,8 +12,8 @@ pub struct Spanned<T> {
     pub span: Range<usize>,
 }
 
-pub trait HasSpan {
-    fn span(&self) -> Range<usize>;
+pub trait MayHasSpan {
+    fn span(&self) -> Option<Range<usize>>;
 }
 
 pub struct SpannedError<E> {
@@ -27,15 +27,17 @@ impl<E> SpannedError<E> {
     }
 }
 
-impl<E> Error for SpannedError<E> where E: Debug + Display + HasSpan {}
+impl<E> Error for SpannedError<E> where E: Debug + Display + MayHasSpan {}
 
 impl<E> Debug for SpannedError<E>
 where
-    E: Display + HasSpan,
+    E: Display + MayHasSpan,
 {
     fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
         writeln!(f)?;
-        pretty_print(f, &self.src, self.error.span())?;
+        if let Some(span) = self.error.span() {
+            pretty_print(f, &self.src, span)?;
+        }
         write!(f, "{}", self.error)?;
         Ok(())
     }
@@ -43,10 +45,12 @@ where
 
 impl<E> Display for SpannedError<E>
 where
-    E: Display + HasSpan,
+    E: Display + MayHasSpan,
 {
     fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
-        pretty_print(f, &self.src, self.error.span())?;
+        if let Some(span) = self.error.span() {
+            pretty_print(f, &self.src, span)?;
+        }
         write!(f, "{}", self.error)?;
         Ok(())
     }

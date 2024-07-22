@@ -1,6 +1,9 @@
 use ecow::EcoString;
 
-use crate::{lexer::Token, span::Spanned};
+use crate::{
+    lexer::Token,
+    span::{MayHasSpan, Spanned},
+};
 
 pub type Identifier = Spanned<EcoString>;
 
@@ -156,6 +159,18 @@ pub enum Error {
     MalformedExpression(Spanned<Token>),
     #[error("Malformed body: {0:?}")]
     MalformedBody(Spanned<Token>),
+}
+
+impl MayHasSpan for Error {
+    fn span(&self) -> Option<std::ops::Range<usize>> {
+        match self {
+            Error::Unexpected(spanned, _) => Some(spanned.span.clone()),
+            Error::UnexpectedEof => None,
+            Error::ParseIntError(_) => None,
+            Error::MalformedExpression(spanned) => Some(spanned.span.clone()),
+            Error::MalformedBody(spanned) => Some(spanned.span.clone()),
+        }
+    }
 }
 
 impl<'a> Parser<'a> {

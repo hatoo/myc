@@ -1,6 +1,6 @@
 use ecow::EcoString;
 
-use crate::span::{HasSpan, Spanned};
+use crate::span::{MayHasSpan, Spanned};
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Token {
@@ -40,10 +40,10 @@ pub enum Error {
     Unexpected(Spanned<char>),
 }
 
-impl HasSpan for Error {
-    fn span(&self) -> std::ops::Range<usize> {
+impl MayHasSpan for Error {
+    fn span(&self) -> Option<std::ops::Range<usize>> {
         match self {
-            Error::Unexpected(spanned) => spanned.span.clone(),
+            Error::Unexpected(spanned) => Some(spanned.span.clone()),
         }
     }
 }

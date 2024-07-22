@@ -32,7 +32,9 @@ fn main() {
         return;
     }
 
-    let program = parse(&tokens).unwrap();
+    let program = parse(&tokens)
+        .map_err(|err| SpannedError::new(err, src.clone()))
+        .unwrap();
 
     if opts.parse {
         dbg!(program);
