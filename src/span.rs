@@ -1,4 +1,10 @@
-use std::ops::Range;
+use std::{
+    error::Error,
+    fmt::Debug,
+    fmt::{Display, Formatter},
+    ops::Range,
+    sync::Arc,
+};
 
 #[derive(Debug, Clone)]
 pub struct Spanned<T> {
@@ -6,7 +12,47 @@ pub struct Spanned<T> {
     pub span: Range<usize>,
 }
 
-pub fn pretty_print(src: &[u8], span: Range<usize>) {
+pub trait HasSpan {
+    fn span(&self) -> Range<usize>;
+}
+
+pub struct SpannedError<E> {
+    pub error: E,
+    pub src: Arc<Vec<u8>>,
+}
+
+impl<E> SpannedError<E> {
+    pub fn new(error: E, src: Arc<Vec<u8>>) -> Self {
+        Self { error, src }
+    }
+}
+
+impl<E> Error for SpannedError<E> where E: Debug + Display + HasSpan {}
+
+impl<E> Debug for SpannedError<E>
+where
+    E: Display + HasSpan,
+{
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
+        writeln!(f)?;
+        pretty_print(f, &self.src, self.error.span())?;
+        write!(f, "{}", self.error)?;
+        Ok(())
+    }
+}
+
+impl<E> Display for SpannedError<E>
+where
+    E: Display + HasSpan,
+{
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
+        pretty_print(f, &self.src, self.error.span())?;
+        write!(f, "{}", self.error)?;
+        Ok(())
+    }
+}
+
+pub fn pretty_print(f: &mut Formatter, src: &[u8], span: Range<usize>) -> std::fmt::Result {
     let (ln, col, last_line_start) = if let Some((line_number, last_line_start)) = src[..span.start]
         .iter()
         .enumerate()
@@ -24,13 +70,15 @@ pub fn pretty_print(src: &[u8], span: Range<usize>) {
         (1, span.start + 1, 0)
     };
 
-    eprintln!(
+    writeln!(
+        f,
         "{} line: {}, column: {}",
         std::str::from_utf8(&src[span]).unwrap(),
         ln,
         col
-    );
-    eprintln!(
+    )?;
+    writeln!(
+        f,
         "{}",
         String::from_utf8(
             src[last_line_start..]
@@ -40,5 +88,6 @@ pub fn pretty_print(src: &[u8], span: Range<usize>) {
                 .collect::<Vec<u8>>()
         )
         .unwrap()
-    );
+    )?;
+    Ok(())
 }

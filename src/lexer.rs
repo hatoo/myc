@@ -1,6 +1,6 @@
 use ecow::EcoString;
 
-use crate::span::Spanned;
+use crate::span::{HasSpan, Spanned};
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Token {
@@ -40,29 +40,10 @@ pub enum Error {
     Unexpected(Spanned<char>),
 }
 
-impl Error {
-    pub fn pretty_print(&self, src: &[u8]) {
+impl HasSpan for Error {
+    fn span(&self) -> std::ops::Range<usize> {
         match self {
-            Self::Unexpected(span_char) => {
-                let (ln, col) = if let Some((line_number, last_line_start)) = src
-                    [..span_char.span.start]
-                    .iter()
-                    .enumerate()
-                    .filter(|t| t.1 == &b'\n')
-                    .map(|t| t.0)
-                    .enumerate()
-                    .last()
-                {
-                    (line_number + 2, span_char.span.start - last_line_start)
-                } else {
-                    (1, span_char.span.start + 1)
-                };
-
-                eprintln!(
-                    "Lex Error: Unexpected character: {} at line: {}, column: {}",
-                    span_char.data, ln, col
-                );
-            }
+            Error::Unexpected(spanned) => spanned.span.clone(),
         }
     }
 }

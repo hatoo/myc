@@ -1,8 +1,8 @@
-use std::{fs::File, io::Write, path::PathBuf, process};
+use std::{fs::File, io::Write, path::PathBuf, process, sync::Arc};
 
 use clap::Parser;
 
-use myc::{ast::parse, lexer::lexer};
+use myc::{ast::parse, lexer::lexer, span::SpannedError};
 
 #[derive(Debug, Parser)]
 struct Opts {
@@ -21,15 +21,11 @@ struct Opts {
 
 fn main() {
     let opts = Opts::parse();
-    let src = std::fs::read(&opts.input).unwrap();
+    let src = Arc::new(std::fs::read(&opts.input).unwrap());
 
-    let tokens = match lexer(&src) {
-        Ok(tokens) => tokens,
-        Err(err) => {
-            err.pretty_print(&src);
-            std::process::exit(1);
-        }
-    };
+    let tokens = lexer(&src)
+        .map_err(|err| SpannedError::new(err, src.clone()))
+        .unwrap();
 
     if opts.lex {
         dbg!(tokens);
