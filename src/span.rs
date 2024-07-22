@@ -108,7 +108,7 @@ pub fn pretty_print(f: &mut Formatter, src: &[u8], span: Range<usize>) -> std::f
     writeln!(
         f,
         "{} line: {}, column: {}",
-        std::str::from_utf8(&src[span]).unwrap(),
+        std::str::from_utf8(&src[span.clone()]).unwrap(),
         ln,
         col
     )?;
@@ -124,5 +124,12 @@ pub fn pretty_print(f: &mut Formatter, src: &[u8], span: Range<usize>) -> std::f
         )
         .unwrap()
     )?;
+    for _ in 1..col {
+        write!(f, " ")?;
+    }
+    for _ in span {
+        write!(f, "^")?;
+    }
+    writeln!(f)?;
     Ok(())
 }
