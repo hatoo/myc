@@ -2,7 +2,7 @@ use std::{fs::File, io::Write, path::PathBuf, process, sync::Arc};
 
 use clap::Parser;
 
-use myc::{ast::parse, lexer::lexer, span::SpannedError};
+use myc::{ast::parse, lexer::lexer, semantics::VarResolver, span::SpannedError};
 
 #[derive(Debug, Parser)]
 struct Opts {
@@ -11,6 +11,8 @@ struct Opts {
     lex: bool,
     #[clap(long)]
     parse: bool,
+    #[clap(long)]
+    validate: bool,
     #[clap(long)]
     tacky: bool,
     #[clap(long)]
@@ -32,11 +34,18 @@ fn main() {
         return;
     }
 
-    let program = parse(&tokens)
+    let mut program = parse(&tokens)
         .map_err(|err| SpannedError::new(err, src.clone()))
         .unwrap();
 
     if opts.parse {
+        dbg!(program);
+        return;
+    }
+
+    VarResolver::default().resolve_program(&mut program);
+
+    if opts.validate {
         dbg!(program);
         return;
     }

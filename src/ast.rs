@@ -52,8 +52,8 @@ pub enum Expression {
 
 #[derive(Debug)]
 pub struct Declaration {
-    ident: EcoString,
-    exp: Option<Expression>,
+    pub ident: EcoString,
+    pub exp: Option<Expression>,
 }
 
 #[derive(Debug)]
