@@ -123,6 +123,7 @@ impl InstructionGenerator {
                 self.add_expression(exp);
             }
             ast::Statement::Null => {}
+            _ => todo!(),
         }
     }
 
@@ -247,6 +248,7 @@ impl InstructionGenerator {
                     panic!("invalid lvalue");
                 }
             }
+            _ => todo!(),
         }
     }
 }

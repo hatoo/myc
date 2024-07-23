@@ -58,6 +58,18 @@ impl VarResolver {
         match stmts {
             ast::Statement::Return(decl) => self.resolve_expression(decl),
             ast::Statement::Expression(exp) => self.resolve_expression(exp),
+            ast::Statement::If {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
+                self.resolve_expression(condition)?;
+                self.resolve_statements(then_branch)?;
+                if let Some(else_branch) = else_branch {
+                    self.resolve_statements(else_branch)?;
+                }
+                Ok(())
+            }
             ast::Statement::Null => Ok(()),
         }
     }
@@ -101,6 +113,16 @@ impl VarResolver {
                 }
                 self.resolve_expression(lhs)?;
                 self.resolve_expression(rhs)?;
+                Ok(())
+            }
+            ast::Expression::Conditional {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
+                self.resolve_expression(condition)?;
+                self.resolve_expression(then_branch)?;
+                self.resolve_expression(else_branch)?;
                 Ok(())
             }
         }

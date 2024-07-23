@@ -28,6 +28,11 @@ pub enum BlockItem {
 pub enum Statement {
     Return(Expression),
     Expression(Expression),
+    If {
+        condition: Expression,
+        then_branch: Box<Statement>,
+        else_branch: Option<Box<Statement>>,
+    },
     Null,
 }
 
@@ -48,6 +53,11 @@ pub enum Expression {
         lhs: Box<Expression>,
         rhs: Box<Expression>,
     },
+    Conditional {
+        condition: Box<Expression>,
+        then_branch: Box<Expression>,
+        else_branch: Box<Expression>,
+    },
 }
 
 impl HasSpan for Expression {
@@ -58,6 +68,11 @@ impl HasSpan for Expression {
             Self::Unary { op, exp } => op.span.start..exp.span().end,
             Self::Binary { lhs, rhs, .. } => lhs.span().start..rhs.span().end,
             Self::Assignment { lhs, rhs } => lhs.span().start..rhs.span().end,
+            Self::Conditional {
+                condition,
+                else_branch,
+                ..
+            } => condition.span().start..else_branch.span().end,
         }
     }
 }
@@ -292,6 +307,29 @@ impl<'a> Parser<'a> {
                 self.advance();
                 Ok(Statement::Null)
             }
+            Some(Spanned {
+                data: Token::If, ..
+            }) => {
+                self.advance();
+                self.expect(Token::OpenParen)?;
+                let condition = self.parse_expression(0)?;
+                self.expect(Token::CloseParen)?;
+                let then_branch = Box::new(self.parse_statement()?);
+                let else_branch = if let Some(Spanned {
+                    data: Token::Else, ..
+                }) = self.peek()
+                {
+                    self.advance();
+                    Some(Box::new(self.parse_statement()?))
+                } else {
+                    None
+                };
+                Ok(Statement::If {
+                    condition,
+                    then_branch,
+                    else_branch,
+                })
+            }
             Some(_) => {
                 let exp = self.parse_expression(0)?;
                 self.expect(Token::SemiColon)?;
@@ -367,6 +405,7 @@ impl<'a> Parser<'a> {
             enum Op {
                 Binary(BinaryOp),
                 Assign,
+                Condition,
             }
 
             impl Op {
@@ -374,12 +413,14 @@ impl<'a> Parser<'a> {
                     match self {
                         Self::Binary(op) => op.precedence(),
                         Self::Assign => 1,
+                        Self::Condition => 3,
                     }
                 }
             }
 
             let op = match token.data {
                 Token::Equal => Op::Assign,
+                Token::Question => Op::Condition,
                 _ if BinaryOp::try_from(&token.data).is_ok() => {
                     Op::Binary(BinaryOp::try_from(&token.data).unwrap())
                 }
@@ -394,6 +435,16 @@ impl<'a> Parser<'a> {
                         left = Expression::Assignment {
                             lhs: Box::new(left),
                             rhs: Box::new(right),
+                        };
+                    }
+                    Op::Condition => {
+                        let then_branch = self.parse_expression(0)?;
+                        self.expect(Token::Colon)?;
+                        let else_branch = self.parse_expression(0)?;
+                        left = Expression::Conditional {
+                            condition: Box::new(left),
+                            then_branch: Box::new(then_branch),
+                            else_branch: Box::new(else_branch),
                         };
                     }
                     Op::Binary(bin_op) => {
