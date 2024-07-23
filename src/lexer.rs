@@ -32,6 +32,10 @@ pub enum Token {
     GreaterThan,
     LessThanEquals,
     GreaterThanEquals,
+    If,
+    Else,
+    Question,
+    Colon,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -93,6 +97,8 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
                     "int" => Token::Int,
                     "void" => Token::Void,
                     "return" => Token::Return,
+                    "if" => Token::If,
+                    "else" => Token::Else,
                     _ => Token::Ident(EcoString::from(ident)),
                 };
                 tokens.push(Spanned {
@@ -297,6 +303,20 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
                         span: index - 1..index,
                     });
                 }
+            }
+            b'?' => {
+                tokens.push(Spanned {
+                    data: Token::Question,
+                    span: index..index + 1,
+                });
+                index += 1;
+            }
+            b':' => {
+                tokens.push(Spanned {
+                    data: Token::Colon,
+                    span: index..index + 1,
+                });
+                index += 1;
             }
 
             // TODO
