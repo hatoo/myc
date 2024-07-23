@@ -123,7 +123,35 @@ impl InstructionGenerator {
                 self.add_expression(exp);
             }
             ast::Statement::Null => {}
-            _ => todo!(),
+            ast::Statement::If {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
+                if let Some(else_branch) = else_branch {
+                    let else_label = self.new_label("if_else");
+                    let end_label = self.new_label("if_end");
+                    let cond = self.add_expression(condition);
+                    self.instructions.push(Instruction::JumpIfZero {
+                        src: cond,
+                        dst: else_label.clone(),
+                    });
+                    self.add_statement(then_branch);
+                    self.instructions.push(Instruction::Jump(end_label.clone()));
+                    self.instructions.push(Instruction::Label(else_label));
+                    self.add_statement(else_branch);
+                    self.instructions.push(Instruction::Label(end_label));
+                } else {
+                    let end_label = self.new_label("if_end");
+                    let cond = self.add_expression(condition);
+                    self.instructions.push(Instruction::JumpIfZero {
+                        src: cond,
+                        dst: end_label.clone(),
+                    });
+                    self.add_statement(then_branch);
+                    self.instructions.push(Instruction::Label(end_label));
+                }
+            }
         }
     }
 
@@ -248,7 +276,34 @@ impl InstructionGenerator {
                     panic!("invalid lvalue");
                 }
             }
-            _ => todo!(),
+            ast::Expression::Conditional {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
+                let dst = self.new_var();
+                let else_label = self.new_label("cond_else");
+                let end_label = self.new_label("cond_end");
+                let cond = self.add_expression(condition);
+                self.instructions.push(Instruction::JumpIfZero {
+                    src: cond,
+                    dst: else_label.clone(),
+                });
+                let v1 = self.add_expression(then_branch);
+                self.instructions.push(Instruction::Copy {
+                    src: v1,
+                    dst: dst.clone(),
+                });
+                self.instructions.push(Instruction::Jump(end_label.clone()));
+                self.instructions.push(Instruction::Label(else_label));
+                let v2 = self.add_expression(else_branch);
+                self.instructions.push(Instruction::Copy {
+                    src: v2,
+                    dst: dst.clone(),
+                });
+                self.instructions.push(Instruction::Label(end_label));
+                dst
+            }
         }
     }
 }
