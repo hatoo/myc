@@ -440,7 +440,7 @@ impl<'a> Parser<'a> {
                     Op::Condition => {
                         let then_branch = self.parse_expression(0)?;
                         self.expect(Token::Colon)?;
-                        let else_branch = self.parse_expression(0)?;
+                        let else_branch = self.parse_expression(op.precedence())?;
                         left = Expression::Conditional {
                             condition: Box::new(left),
                             then_branch: Box::new(then_branch),
