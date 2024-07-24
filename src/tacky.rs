@@ -1,6 +1,9 @@
 use ecow::EcoString;
 
-use crate::{ast, span::Spanned};
+use crate::{
+    ast::{self, Block},
+    span::Spanned,
+};
 
 #[derive(Debug)]
 pub struct Program {
@@ -152,7 +155,11 @@ impl InstructionGenerator {
                     self.instructions.push(Instruction::Label(end_label));
                 }
             }
-            _ => todo!(),
+            ast::Statement::Compound(Block(items)) => {
+                for block_item in items {
+                    self.add_block_item(block_item);
+                }
+            }
         }
     }
 
