@@ -41,7 +41,7 @@ impl VarResolver {
     }
 
     pub fn resolve_program(&mut self, program: &mut ast::Program) -> Result<(), Error> {
-        for block_item in &mut program.function_definition.body {
+        for block_item in &mut program.function_definition.body.0 {
             self.resolve_block_item(block_item)?;
         }
         Ok(())
@@ -71,6 +71,7 @@ impl VarResolver {
                 Ok(())
             }
             ast::Statement::Null => Ok(()),
+            _ => todo!(),
         }
     }
 

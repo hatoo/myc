@@ -152,6 +152,7 @@ impl InstructionGenerator {
                     self.instructions.push(Instruction::Label(end_label));
                 }
             }
+            _ => todo!(),
         }
     }
 
@@ -316,7 +317,7 @@ pub fn gen_program(program: &ast::Program) -> Program {
 
 fn gen_function(function: &ast::Function) -> Function {
     let mut generator = InstructionGenerator::new();
-    for block_item in &function.body {
+    for block_item in &function.body.0 {
         generator.add_block_item(block_item);
     }
     generator.add_statement(&ast::Statement::Return(ast::Expression::Constant(

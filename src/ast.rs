@@ -15,8 +15,11 @@ pub struct Program {
 #[derive(Debug)]
 pub struct Function {
     pub name: EcoString,
-    pub body: Vec<BlockItem>,
+    pub body: Block,
 }
+
+#[derive(Debug)]
+pub struct Block(pub Vec<BlockItem>);
 
 #[derive(Debug)]
 pub enum BlockItem {
@@ -33,6 +36,7 @@ pub enum Statement {
         then_branch: Box<Statement>,
         else_branch: Option<Box<Statement>>,
     },
+    Compound(Block),
     Null,
 }
 
@@ -241,6 +245,29 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn expect_block(&mut self) -> Result<Block, Error> {
+        self.expect(Token::OpenBrace)?;
+        let mut body = Vec::new();
+        while !matches!(
+            self.peek(),
+            Some(Spanned {
+                data: Token::CloseBrace,
+                ..
+            })
+        ) {
+            let index = self.index;
+            if let Ok(decl) = self.parse_declaration() {
+                body.push(BlockItem::Declaration(decl));
+            } else {
+                self.index = index;
+                body.push(BlockItem::Statement(self.parse_statement()?));
+            }
+        }
+        self.expect(Token::CloseBrace)?;
+
+        Ok(Block(body))
+    }
+
     fn peek(&self) -> Option<&Spanned<Token>> {
         self.tokens.get(self.index)
     }
@@ -264,25 +291,7 @@ impl<'a> Parser<'a> {
         self.expect(Token::OpenParen)?;
         self.expect(Token::Void)?;
         self.expect(Token::CloseParen)?;
-        self.expect(Token::OpenBrace)?;
-        let mut body = Vec::new();
-        while !matches!(
-            self.peek(),
-            Some(Spanned {
-                data: Token::CloseBrace,
-                ..
-            })
-        ) {
-            let index = self.index;
-            if let Ok(decl) = self.parse_declaration() {
-                body.push(BlockItem::Declaration(decl));
-            } else {
-                self.index = index;
-                body.push(BlockItem::Statement(self.parse_statement()?));
-            }
-        }
-
-        self.expect(Token::CloseBrace)?;
+        let body = self.expect_block()?;
         Ok(Function {
             name: name.data,
             body,
@@ -329,6 +338,13 @@ impl<'a> Parser<'a> {
                     then_branch,
                     else_branch,
                 })
+            }
+            Some(Spanned {
+                data: Token::OpenBrace,
+                ..
+            }) => {
+                let block = self.expect_block()?;
+                Ok(Statement::Compound(block))
             }
             Some(_) => {
                 let exp = self.parse_expression(0)?;
