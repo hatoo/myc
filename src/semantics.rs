@@ -10,7 +10,7 @@ use crate::{
 #[derive(Debug, Default)]
 pub struct VarResolver {
     var_counter: usize,
-    var_map: HashMap<EcoString, EcoString>,
+    scopes: Vec<HashMap<EcoString, EcoString>>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -40,10 +40,25 @@ impl VarResolver {
         var
     }
 
+    pub fn lookup(&self, ident: &EcoString) -> Option<EcoString> {
+        for scope in self.scopes.iter().rev() {
+            if let Some(unique_name) = scope.get(ident) {
+                return Some(unique_name.clone());
+            }
+        }
+        None
+    }
+
+    pub fn current_scope(&mut self) -> &mut HashMap<EcoString, EcoString> {
+        self.scopes.last_mut().unwrap()
+    }
+
     pub fn resolve_program(&mut self, program: &mut ast::Program) -> Result<(), Error> {
+        self.scopes.push(HashMap::new());
         for block_item in &mut program.function_definition.body.0 {
             self.resolve_block_item(block_item)?;
         }
+        self.scopes.pop().unwrap();
         Ok(())
     }
 
@@ -71,19 +86,27 @@ impl VarResolver {
                 Ok(())
             }
             ast::Statement::Null => Ok(()),
-            _ => todo!(),
+            ast::Statement::Compound(stmts) => {
+                self.scopes.push(HashMap::new());
+                for block_item in &mut stmts.0 {
+                    self.resolve_block_item(block_item)?;
+                }
+                self.scopes.pop().unwrap();
+                Ok(())
+            }
         }
     }
 
     pub fn resolve_declaration(&mut self, decl: &mut ast::Declaration) -> Result<(), Error> {
         let ast::Declaration { ident, exp } = decl;
 
-        if self.var_map.contains_key(&ident.data) {
+        if self.current_scope().contains_key(&ident.data) {
             return Err(Error::VariableAlreadyDeclared(ident.clone()));
         }
 
         let unique_name = self.new_var(&ident.data);
-        self.var_map.insert(ident.data.clone(), unique_name.clone());
+        self.current_scope()
+            .insert(ident.data.clone(), unique_name.clone());
         ident.data = unique_name;
         if let Some(exp) = exp {
             self.resolve_expression(exp)?;
@@ -101,7 +124,7 @@ impl VarResolver {
                 Ok(())
             }
             ast::Expression::Var(var) => {
-                if let Some(unique_name) = self.var_map.get(&var.data) {
+                if let Some(unique_name) = self.lookup(&var.data) {
                     var.data = unique_name.clone();
                     Ok(())
                 } else {
