@@ -99,7 +99,7 @@ pub fn pretty_print(f: &mut Formatter, src: &[u8], span: Range<usize>) -> std::f
         (
             line_number + 2,
             span.start - last_line_start,
-            last_line_start,
+            last_line_start + 1,
         )
     } else {
         (1, span.start + 1, 0)
