@@ -36,6 +36,11 @@ pub enum Token {
     Else,
     Question,
     Colon,
+    Do,
+    While,
+    For,
+    Break,
+    Continue,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -99,6 +104,11 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
                     "return" => Token::Return,
                     "if" => Token::If,
                     "else" => Token::Else,
+                    "do" => Token::Do,
+                    "while" => Token::While,
+                    "for" => Token::For,
+                    "break" => Token::Break,
+                    "continue" => Token::Continue,
                     _ => Token::Ident(EcoString::from(ident)),
                 };
                 tokens.push(Spanned {
