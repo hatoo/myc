@@ -67,9 +67,8 @@ where
     fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
         writeln!(f)?;
         if let Some(span) = self.error.may_span() {
-            pretty_print(f, &self.src, span)?;
+            pretty_print(f, &self.src, span, &self.error)?;
         }
-        write!(f, "{}", self.error)?;
         Ok(())
     }
 }
@@ -80,14 +79,18 @@ where
 {
     fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
         if let Some(span) = self.error.may_span() {
-            pretty_print(f, &self.src, span)?;
+            pretty_print(f, &self.src, span, &self.error)?;
         }
-        write!(f, "{}", self.error)?;
         Ok(())
     }
 }
 
-pub fn pretty_print(f: &mut Formatter, src: &[u8], span: Range<usize>) -> std::fmt::Result {
+pub fn pretty_print<E: Display>(
+    f: &mut Formatter,
+    src: &[u8],
+    span: Range<usize>,
+    error: E,
+) -> std::fmt::Result {
     let (ln, col, last_line_start) = if let Some((line_number, last_line_start)) = src[..span.start]
         .iter()
         .enumerate()
@@ -105,13 +108,7 @@ pub fn pretty_print(f: &mut Formatter, src: &[u8], span: Range<usize>) -> std::f
         (1, span.start + 1, 0)
     };
 
-    writeln!(
-        f,
-        "{} line: {}, column: {}",
-        std::str::from_utf8(&src[span.clone()]).unwrap(),
-        ln,
-        col
-    )?;
+    writeln!(f, "{}:{} {}", ln, col, error)?;
     writeln!(
         f,
         "{}",
