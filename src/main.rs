@@ -2,7 +2,12 @@ use std::{fs::File, io::Write, path::PathBuf, process, sync::Arc};
 
 use clap::Parser;
 
-use myc::{ast::parse, lexer::lexer, semantics::VarResolver, span::SpannedError};
+use myc::{
+    ast::parse,
+    lexer::lexer,
+    semantics::{LoopLabel, VarResolver},
+    span::SpannedError,
+};
 
 #[derive(Debug, Parser)]
 struct Opts {
@@ -45,6 +50,11 @@ fn main() {
 
     VarResolver::default()
         .resolve_program(&mut program)
+        .map_err(|err| SpannedError::new(err, src.clone()))
+        .unwrap();
+
+    LoopLabel::default()
+        .label_program(&mut program)
         .map_err(|err| SpannedError::new(err, src.clone()))
         .unwrap();
 
