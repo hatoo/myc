@@ -28,6 +28,12 @@ pub enum BlockItem {
 }
 
 #[derive(Debug)]
+pub enum ForInit {
+    Declaration(Declaration),
+    Expression(Expression),
+}
+
+#[derive(Debug)]
 pub enum Statement {
     Return(Expression),
     Expression(Expression),
@@ -37,6 +43,22 @@ pub enum Statement {
         else_branch: Option<Box<Statement>>,
     },
     Compound(Block),
+    Break(EcoString),
+    Continue(EcoString),
+    While {
+        condition: Expression,
+        body: Box<Statement>,
+    },
+    DoWhile {
+        condition: Expression,
+        body: Box<Statement>,
+    },
+    For {
+        init: Option<ForInit>,
+        condition: Option<Expression>,
+        step: Option<Expression>,
+        body: Box<Statement>,
+    },
     Null,
 }
 
@@ -266,6 +288,21 @@ impl<'a> Parser<'a> {
         self.expect(Token::CloseBrace)?;
 
         Ok(Block(body))
+    }
+
+    fn expect_for_init(&mut self) -> Result<Option<ForInit>, Error> {
+        if self.expect(Token::SemiColon).is_ok() {
+            return Ok(None);
+        }
+        let index = self.index;
+        if let Ok(decl) = self.parse_declaration() {
+            Ok(Some(ForInit::Declaration(decl)))
+        } else {
+            self.index = index;
+            let exp = self.parse_expression(0)?;
+            self.expect(Token::SemiColon)?;
+            Ok(Some(ForInit::Expression(exp)))
+        }
     }
 
     fn peek(&self) -> Option<&Spanned<Token>> {
