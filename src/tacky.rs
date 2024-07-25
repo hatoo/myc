@@ -101,17 +101,28 @@ impl InstructionGenerator {
 
     fn add_block_item(&mut self, block_item: &ast::BlockItem) {
         match block_item {
-            ast::BlockItem::Declaration(decl) => {
-                if let Some(exp) = &decl.exp {
-                    let val = self.add_expression(exp);
-                    self.instructions.push(Instruction::Copy {
-                        src: val,
-                        dst: Val::Var(decl.ident.data.clone()),
-                    });
-                }
-            }
+            ast::BlockItem::Declaration(decl) => self.add_declaration(decl),
             ast::BlockItem::Statement(stmt) => {
                 self.add_statement(stmt);
+            }
+        }
+    }
+
+    fn add_declaration(&mut self, decl: &ast::Declaration) {
+        if let Some(exp) = &decl.exp {
+            let val = self.add_expression(exp);
+            self.instructions.push(Instruction::Copy {
+                src: val,
+                dst: Val::Var(decl.ident.data.clone()),
+            });
+        }
+    }
+
+    fn add_for_init(&mut self, init: &ast::ForInit) {
+        match init {
+            ast::ForInit::Declaration(decl) => self.add_declaration(decl),
+            ast::ForInit::Expression(exp) => {
+                self.add_expression(exp);
             }
         }
     }
@@ -160,7 +171,85 @@ impl InstructionGenerator {
                     self.add_block_item(block_item);
                 }
             }
-            _ => todo!(),
+            ast::Statement::Break { label, .. } => {
+                self.instructions
+                    .push(Instruction::Jump(format!("break_{}", label).into()));
+            }
+            ast::Statement::Continue { label, .. } => {
+                self.instructions
+                    .push(Instruction::Jump(format!("continue_{}", label).into()));
+            }
+            ast::Statement::DoWhile {
+                label,
+                condition,
+                body,
+            } => {
+                let start_label: EcoString = format!("do_{}", label).into();
+                self.instructions
+                    .push(Instruction::Label(start_label.clone()));
+                self.add_statement(body);
+                self.instructions
+                    .push(Instruction::Label(format!("continue_{}", label).into()));
+
+                let cond = self.add_expression(condition);
+                self.instructions.push(Instruction::JumpIfNotZero {
+                    src: cond,
+                    dst: start_label,
+                });
+                self.instructions
+                    .push(Instruction::Label(format!("break_{}", label).into()));
+            }
+            ast::Statement::While {
+                label,
+                condition,
+                body,
+            } => {
+                self.instructions
+                    .push(Instruction::Label(format!("continue_{}", label).into()));
+                let cond = self.add_expression(condition);
+                self.instructions.push(Instruction::JumpIfZero {
+                    src: cond,
+                    dst: format!("break_{}", label).into(),
+                });
+                self.add_statement(body);
+                self.instructions
+                    .push(Instruction::Jump(format!("continue_{}", label).into()));
+                self.instructions
+                    .push(Instruction::Label(format!("break_{}", label).into()));
+            }
+            ast::Statement::For {
+                label,
+                init,
+                condition,
+                step,
+                body,
+            } => {
+                if let Some(init) = init {
+                    self.add_for_init(init);
+                }
+                self.instructions
+                    .push(Instruction::Label(format!("start_{}", label).into()));
+
+                if let Some(condition) = condition {
+                    let cond = self.add_expression(condition);
+                    self.instructions.push(Instruction::JumpIfZero {
+                        src: cond,
+                        dst: format!("break_{}", label).into(),
+                    });
+                }
+
+                self.add_statement(body);
+                self.instructions
+                    .push(Instruction::Label(format!("continue_{}", label).into()));
+
+                if let Some(step) = step {
+                    self.add_expression(step);
+                }
+                self.instructions
+                    .push(Instruction::Jump(format!("start_{}", label).into()));
+                self.instructions
+                    .push(Instruction::Label(format!("break_{}", label).into()));
+            }
         }
     }
 

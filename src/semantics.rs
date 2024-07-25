@@ -99,12 +99,16 @@ pub mod var_resolve {
                 }
                 ast::Statement::Break { .. } => Ok(()),
                 ast::Statement::Continue { .. } => Ok(()),
-                ast::Statement::While { condition, body } => {
+                ast::Statement::While {
+                    condition, body, ..
+                } => {
                     self.resolve_expression(condition)?;
                     self.resolve_statement(body)?;
                     Ok(())
                 }
-                ast::Statement::DoWhile { condition, body } => {
+                ast::Statement::DoWhile {
+                    condition, body, ..
+                } => {
                     self.resolve_expression(condition)?;
                     self.resolve_statement(body)?;
                     Ok(())
@@ -114,6 +118,7 @@ pub mod var_resolve {
                     condition,
                     step,
                     body,
+                    ..
                 } => {
                     self.scopes.push(HashMap::new());
                     if let Some(for_init) = init {
@@ -269,24 +274,36 @@ pub mod loop_label {
                     }
                     Ok(())
                 }
-                ast::Statement::While { condition: _, body } => {
-                    let label = self.new_label();
-                    self.label_statement(Some(label.clone()), body)?;
+                ast::Statement::While {
+                    label,
+                    condition: _,
+                    body,
+                } => {
+                    let new_label = self.new_label();
+                    *label = new_label.clone();
+                    self.label_statement(Some(new_label.clone()), body)?;
                     Ok(())
                 }
-                ast::Statement::DoWhile { condition: _, body } => {
-                    let label = self.new_label();
-                    self.label_statement(Some(label.clone()), body)?;
+                ast::Statement::DoWhile {
+                    label,
+                    condition: _,
+                    body,
+                } => {
+                    let new_label = self.new_label();
+                    *label = new_label.clone();
+                    self.label_statement(Some(new_label.clone()), body)?;
                     Ok(())
                 }
                 ast::Statement::For {
+                    label,
                     init: _,
                     condition: _,
                     step: _,
                     body,
                 } => {
-                    let label = self.new_label();
-                    self.label_statement(Some(label.clone()), body)?;
+                    let new_label = self.new_label();
+                    *label = new_label.clone();
+                    self.label_statement(Some(new_label.clone()), body)?;
                     Ok(())
                 }
                 ast::Statement::Null => Ok(()),

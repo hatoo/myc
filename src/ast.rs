@@ -52,14 +52,17 @@ pub enum Statement {
         span: std::ops::Range<usize>,
     },
     While {
+        label: EcoString,
         condition: Expression,
         body: Box<Statement>,
     },
     DoWhile {
+        label: EcoString,
         condition: Expression,
         body: Box<Statement>,
     },
     For {
+        label: EcoString,
         init: Option<ForInit>,
         condition: Option<Expression>,
         step: Option<Expression>,
@@ -421,7 +424,11 @@ impl<'a> Parser<'a> {
                 let condition = self.parse_expression(0)?;
                 self.expect(Token::CloseParen)?;
                 let body = Box::new(self.parse_statement()?);
-                Ok(Statement::While { condition, body })
+                Ok(Statement::While {
+                    label: "!!!dummy_while_label!!!".into(),
+                    condition,
+                    body,
+                })
             }
             Some(Spanned {
                 data: Token::Do, ..
@@ -433,7 +440,11 @@ impl<'a> Parser<'a> {
                 let condition = self.parse_expression(0)?;
                 self.expect(Token::CloseParen)?;
                 self.expect(Token::SemiColon)?;
-                Ok(Statement::DoWhile { condition, body })
+                Ok(Statement::DoWhile {
+                    label: "!!!dummy_dowhile_label!!!".into(),
+                    condition,
+                    body,
+                })
             }
             Some(Spanned {
                 data: Token::For, ..
@@ -457,6 +468,7 @@ impl<'a> Parser<'a> {
                 };
                 let body = Box::new(self.parse_statement()?);
                 Ok(Statement::For {
+                    label: "!!!dummy_for_label!!!".into(),
                     init,
                     condition,
                     step,
