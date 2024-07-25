@@ -65,12 +65,12 @@ impl VarResolver {
     pub fn resolve_block_item(&mut self, block_item: &mut ast::BlockItem) -> Result<(), Error> {
         match block_item {
             ast::BlockItem::Declaration(decl) => self.resolve_declaration(decl),
-            ast::BlockItem::Statement(stmt) => self.resolve_statements(stmt),
+            ast::BlockItem::Statement(stmt) => self.resolve_statement(stmt),
         }
     }
 
-    pub fn resolve_statements(&mut self, stmts: &mut ast::Statement) -> Result<(), Error> {
-        match stmts {
+    pub fn resolve_statement(&mut self, stmt: &mut ast::Statement) -> Result<(), Error> {
+        match stmt {
             ast::Statement::Return(decl) => self.resolve_expression(decl),
             ast::Statement::Expression(exp) => self.resolve_expression(exp),
             ast::Statement::If {
@@ -79,9 +79,9 @@ impl VarResolver {
                 else_branch,
             } => {
                 self.resolve_expression(condition)?;
-                self.resolve_statements(then_branch)?;
+                self.resolve_statement(then_branch)?;
                 if let Some(else_branch) = else_branch {
-                    self.resolve_statements(else_branch)?;
+                    self.resolve_statement(else_branch)?;
                 }
                 Ok(())
             }
@@ -94,7 +94,45 @@ impl VarResolver {
                 self.scopes.pop().unwrap();
                 Ok(())
             }
-            _ => todo!(),
+            ast::Statement::Break { .. } => Ok(()),
+            ast::Statement::Continue { .. } => Ok(()),
+            ast::Statement::While { condition, body } => {
+                self.resolve_expression(condition)?;
+                self.resolve_statement(body)?;
+                Ok(())
+            }
+            ast::Statement::DoWhile { condition, body } => {
+                self.resolve_expression(condition)?;
+                self.resolve_statement(body)?;
+                Ok(())
+            }
+            ast::Statement::For {
+                init,
+                condition,
+                step,
+                body,
+            } => {
+                self.scopes.push(HashMap::new());
+                if let Some(for_init) = init {
+                    match for_init {
+                        ast::ForInit::Declaration(decl) => {
+                            self.resolve_declaration(decl)?;
+                        }
+                        ast::ForInit::Expression(exp) => {
+                            self.resolve_expression(exp)?;
+                        }
+                    }
+                }
+                if let Some(condition) = condition {
+                    self.resolve_expression(condition)?;
+                }
+                if let Some(step) = step {
+                    self.resolve_expression(step)?;
+                }
+                self.resolve_statement(body)?;
+                self.scopes.pop().unwrap();
+                Ok(())
+            }
         }
     }
 
