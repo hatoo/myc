@@ -94,6 +94,7 @@ impl VarResolver {
                 self.scopes.pop().unwrap();
                 Ok(())
             }
+            _ => todo!(),
         }
     }
 

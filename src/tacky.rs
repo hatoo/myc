@@ -160,6 +160,7 @@ impl InstructionGenerator {
                     self.add_block_item(block_item);
                 }
             }
+            _ => todo!(),
         }
     }
 

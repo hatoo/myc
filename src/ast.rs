@@ -43,8 +43,14 @@ pub enum Statement {
         else_branch: Option<Box<Statement>>,
     },
     Compound(Block),
-    Break(EcoString),
-    Continue(EcoString),
+    Break {
+        label: EcoString,
+        span: std::ops::Range<usize>,
+    },
+    Continue {
+        label: EcoString,
+        span: std::ops::Range<usize>,
+    },
     While {
         condition: Expression,
         body: Box<Statement>,
@@ -382,6 +388,80 @@ impl<'a> Parser<'a> {
             }) => {
                 let block = self.expect_block()?;
                 Ok(Statement::Compound(block))
+            }
+            Some(Spanned {
+                data: Token::Break,
+                span,
+            }) => {
+                let span = span.clone();
+                self.advance();
+                self.expect(Token::SemiColon)?;
+                Ok(Statement::Break {
+                    label: "!!!dummy_break_label!!!".into(),
+                    span,
+                })
+            }
+            Some(Spanned {
+                data: Token::Continue,
+                span,
+            }) => {
+                let span = span.clone();
+                self.advance();
+                self.expect(Token::SemiColon)?;
+                Ok(Statement::Continue {
+                    label: "!!!dummy_continue_label!!!".into(),
+                    span,
+                })
+            }
+            Some(Spanned {
+                data: Token::While, ..
+            }) => {
+                self.advance();
+                self.expect(Token::OpenParen)?;
+                let condition = self.parse_expression(0)?;
+                self.expect(Token::CloseParen)?;
+                let body = Box::new(self.parse_statement()?);
+                Ok(Statement::While { condition, body })
+            }
+            Some(Spanned {
+                data: Token::Do, ..
+            }) => {
+                self.advance();
+                let body = Box::new(self.parse_statement()?);
+                self.expect(Token::While)?;
+                self.expect(Token::OpenParen)?;
+                let condition = self.parse_expression(0)?;
+                self.expect(Token::CloseParen)?;
+                self.expect(Token::SemiColon)?;
+                Ok(Statement::DoWhile { condition, body })
+            }
+            Some(Spanned {
+                data: Token::For, ..
+            }) => {
+                self.advance();
+                self.expect(Token::OpenParen)?;
+                let init = self.expect_for_init()?;
+                let condition = if self.expect(Token::SemiColon).is_ok() {
+                    None
+                } else {
+                    let cond = Some(self.parse_expression(0)?);
+                    self.expect(Token::SemiColon)?;
+                    cond
+                };
+                let step = if self.expect(Token::CloseParen).is_ok() {
+                    None
+                } else {
+                    let step = Some(self.parse_expression(0)?);
+                    self.expect(Token::CloseParen)?;
+                    step
+                };
+                let body = Box::new(self.parse_statement()?);
+                Ok(Statement::For {
+                    init,
+                    condition,
+                    step,
+                    body,
+                })
             }
             Some(_) => {
                 let exp = self.parse_expression(0)?;
