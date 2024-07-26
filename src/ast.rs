@@ -9,13 +9,14 @@ pub type Identifier = Spanned<EcoString>;
 
 #[derive(Debug)]
 pub struct Program {
-    pub function_definition: Function,
+    pub function_definition: Vec<FunDecl>,
 }
 
 #[derive(Debug)]
-pub struct Function {
+pub struct FunDecl {
     pub name: EcoString,
-    pub body: Block,
+    pub params: Vec<EcoString>,
+    pub body: Option<Block>,
 }
 
 #[derive(Debug)]
@@ -29,7 +30,7 @@ pub enum BlockItem {
 
 #[derive(Debug)]
 pub enum ForInit {
-    Declaration(Declaration),
+    VarDecl(VarDecl),
     Expression(Expression),
 }
 
@@ -93,6 +94,11 @@ pub enum Expression {
         then_branch: Box<Expression>,
         else_branch: Box<Expression>,
     },
+    FunctionCall {
+        name: EcoString,
+        args: Vec<Expression>,
+        span: std::ops::Range<usize>,
+    },
 }
 
 impl HasSpan for Expression {
@@ -108,14 +114,20 @@ impl HasSpan for Expression {
                 else_branch,
                 ..
             } => condition.span().start..else_branch.span().end,
+            Self::FunctionCall { span, .. } => span.clone(),
         }
     }
 }
+#[derive(Debug)]
+pub struct VarDecl {
+    ident: Spanned<EcoString>,
+    exp: Option<Expression>,
+}
 
 #[derive(Debug)]
-pub struct Declaration {
-    pub ident: Spanned<EcoString>,
-    pub exp: Option<Expression>,
+pub enum Declaration {
+    VarDecl(VarDecl),
+    FunDecl(FunDecl),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -236,10 +248,11 @@ impl MayHasSpan for Error {
 }
 
 impl<'a> Parser<'a> {
-    fn expect(&mut self, token: Token) -> Result<(), Error> {
+    fn expect(&mut self, token: Token) -> Result<&Spanned<Token>, Error> {
         if let Some(spanned) = self.tokens.get(self.index) {
             if spanned.data == token {
                 self.index += 1;
+                Ok(&self.tokens[self.index - 1])
             } else {
                 return Err(Error::Unexpected(
                     spanned.clone(),
@@ -249,7 +262,6 @@ impl<'a> Parser<'a> {
         } else {
             return Err(Error::UnexpectedEof);
         }
-        Ok(())
     }
 
     fn expect_ident(&mut self) -> Result<Spanned<EcoString>, Error> {
@@ -304,8 +316,8 @@ impl<'a> Parser<'a> {
             return Ok(None);
         }
         let index = self.index;
-        if let Ok(decl) = self.parse_declaration() {
-            Ok(Some(ForInit::Declaration(decl)))
+        if let Ok(decl) = self.parse_var_decl() {
+            Ok(Some(ForInit::VarDecl(decl)))
         } else {
             self.index = index;
             let exp = self.parse_expression(0)?;
@@ -324,23 +336,15 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_program(&mut self) -> Result<Program, Error> {
-        let function_definition = self.parse_function()?;
-        self.expect_eof()?;
+        let mut fun_decls = Vec::new();
+        loop {
+            if self.expect_eof().is_ok() {
+                break;
+            }
+            fun_decls.push(self.parse_fun_decl()?);
+        }
         Ok(Program {
-            function_definition,
-        })
-    }
-
-    fn parse_function(&mut self) -> Result<Function, Error> {
-        self.expect(Token::Int)?;
-        let name = self.expect_ident()?;
-        self.expect(Token::OpenParen)?;
-        self.expect(Token::Void)?;
-        self.expect(Token::CloseParen)?;
-        let body = self.expect_block()?;
-        Ok(Function {
-            name: name.data,
-            body,
+            function_definition: fun_decls,
         })
     }
 
@@ -484,19 +488,66 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_declaration(&mut self) -> Result<Declaration, Error> {
+    fn parse_var_decl(&mut self) -> Result<VarDecl, Error> {
         self.expect(Token::Int)?;
         let ident = self.expect_ident()?;
         if self.expect(Token::Equal).is_ok() {
             let exp = self.parse_expression(0)?;
             self.expect(Token::SemiColon)?;
-            Ok(Declaration {
+            Ok(VarDecl {
                 ident,
                 exp: Some(exp),
             })
         } else {
             self.expect(Token::SemiColon)?;
-            Ok(Declaration { ident, exp: None })
+            Ok(VarDecl { ident, exp: None })
+        }
+    }
+
+    fn parse_param_list(&mut self) -> Result<Vec<EcoString>, Error> {
+        if self.expect(Token::Void).is_ok() {
+            return Ok(Vec::new());
+        }
+
+        let mut params = Vec::new();
+        loop {
+            self.expect(Token::Int)?;
+            let ident = self.expect_ident()?;
+            params.push(ident.data);
+            if self.expect(Token::Comma).is_err() {
+                break;
+            }
+        }
+
+        Ok(params)
+    }
+
+    fn parse_fun_decl(&mut self) -> Result<FunDecl, Error> {
+        self.expect(Token::Int)?;
+        let name = self.expect_ident()?;
+        self.expect(Token::OpenParen)?;
+        let params = self.parse_param_list()?;
+        self.expect(Token::CloseParen)?;
+        let body = if self.expect(Token::SemiColon).is_ok() {
+            None
+        } else {
+            Some(self.expect_block()?)
+        };
+        Ok(FunDecl {
+            name: name.data,
+            params,
+            body,
+        })
+    }
+
+    fn parse_declaration(&mut self) -> Result<Declaration, Error> {
+        let index = self.index;
+
+        if let Ok(decl) = self.parse_var_decl() {
+            Ok(Declaration::VarDecl(decl))
+        } else {
+            self.index = index;
+            Ok(Declaration::FunDecl(self.parse_fun_decl()?))
         }
     }
 
@@ -526,12 +577,41 @@ impl<'a> Parser<'a> {
                     Ok(exp)
                 }
                 Token::Ident(ident) => {
-                    let exp = Expression::Var(Spanned {
-                        data: ident.clone(),
-                        span: token.span.clone(),
-                    });
+                    let span = token.span.clone();
+                    let ident = ident.clone();
+
                     self.advance();
-                    Ok(exp)
+
+                    if let Some(Spanned {
+                        data: Token::OpenParen,
+                        ..
+                    }) = self.peek()
+                    {
+                        self.advance();
+                        let mut args = Vec::new();
+                        let end = if let Ok(Spanned { span, .. }) = self.expect(Token::CloseParen) {
+                            span.end
+                        } else {
+                            loop {
+                                args.push(self.parse_expression(0)?);
+                                if self.expect(Token::Comma).is_err() {
+                                    break;
+                                }
+                            }
+                            self.expect(Token::CloseParen)?.span.end
+                        };
+
+                        Ok(Expression::FunctionCall {
+                            name: ident,
+                            args,
+                            span: span.start..end,
+                        })
+                    } else {
+                        Ok(Expression::Var(Spanned {
+                            data: ident,
+                            span: span.clone(),
+                        }))
+                    }
                 }
                 _ => Err(Error::MalformedExpression(token.clone())),
             }

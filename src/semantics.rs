@@ -57,12 +57,15 @@ pub mod var_resolve {
         }
 
         pub fn resolve_program(&mut self, program: &mut ast::Program) -> Result<(), Error> {
+            todo!()
+            /*
             self.scopes.push(HashMap::new());
             for block_item in &mut program.function_definition.body.0 {
                 self.resolve_block_item(block_item)?;
             }
             self.scopes.pop().unwrap();
             Ok(())
+            */
         }
 
         pub fn resolve_block_item(&mut self, block_item: &mut ast::BlockItem) -> Result<(), Error> {
@@ -120,10 +123,12 @@ pub mod var_resolve {
                     body,
                     ..
                 } => {
+                    todo!()
+                    /*
                     self.scopes.push(HashMap::new());
                     if let Some(for_init) = init {
                         match for_init {
-                            ast::ForInit::Declaration(decl) => {
+                            ast::ForInit::VarDecl(decl) => {
                                 self.resolve_declaration(decl)?;
                             }
                             ast::ForInit::Expression(exp) => {
@@ -140,11 +145,13 @@ pub mod var_resolve {
                     self.resolve_statement(body)?;
                     self.scopes.pop().unwrap();
                     Ok(())
+                    */
                 }
             }
         }
 
         pub fn resolve_declaration(&mut self, decl: &mut ast::Declaration) -> Result<(), Error> {
+            /*
             let ast::Declaration { ident, exp } = decl;
 
             if self.current_scope().contains_key(&ident.data) {
@@ -159,6 +166,8 @@ pub mod var_resolve {
                 self.resolve_expression(exp)?;
             }
             Ok(())
+            */
+            todo!()
         }
 
         pub fn resolve_expression(&mut self, exp: &mut ast::Expression) -> Result<(), Error> {
@@ -196,6 +205,7 @@ pub mod var_resolve {
                     self.resolve_expression(else_branch)?;
                     Ok(())
                 }
+                _ => todo!(),
             }
         }
     }
@@ -235,7 +245,8 @@ pub mod loop_label {
         }
 
         pub fn label_program(&mut self, program: &mut ast::Program) -> Result<(), Error> {
-            self.label_block(None, &mut program.function_definition.body)
+            // self.label_block(None, &mut program.function_definition.body)
+            todo!()
         }
 
         fn label_statement(

@@ -109,6 +109,7 @@ impl InstructionGenerator {
     }
 
     fn add_declaration(&mut self, decl: &ast::Declaration) {
+        /*
         if let Some(exp) = &decl.exp {
             let val = self.add_expression(exp);
             self.instructions.push(Instruction::Copy {
@@ -116,15 +117,20 @@ impl InstructionGenerator {
                 dst: Val::Var(decl.ident.data.clone()),
             });
         }
+        */
+        todo!()
     }
 
     fn add_for_init(&mut self, init: &ast::ForInit) {
+        /*
         match init {
-            ast::ForInit::Declaration(decl) => self.add_declaration(decl),
+            ast::ForInit::VarDecl(decl) => self.add_declaration(decl),
             ast::ForInit::Expression(exp) => {
                 self.add_expression(exp);
             }
         }
+        */
+        todo!()
     }
 
     fn add_statement(&mut self, statement: &ast::Statement) {
@@ -402,17 +408,22 @@ impl InstructionGenerator {
                 self.instructions.push(Instruction::Label(end_label));
                 dst
             }
+            _ => todo!(),
         }
     }
 }
 
 pub fn gen_program(program: &ast::Program) -> Program {
+    todo!()
+    /*
     Program {
         function_definition: gen_function(&program.function_definition),
     }
+    */
 }
 
-fn gen_function(function: &ast::Function) -> Function {
+fn gen_function(function: &ast::FunDecl) -> Function {
+    /*
     let mut generator = InstructionGenerator::new();
     for block_item in &function.body.0 {
         generator.add_block_item(block_item);
@@ -427,4 +438,6 @@ fn gen_function(function: &ast::Function) -> Function {
         name: function.name.clone(),
         body: generator.instructions,
     }
+    */
+    todo!()
 }
