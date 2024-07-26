@@ -86,9 +86,12 @@ pub enum CondCode {
 }
 
 pub fn gen_program(program: &tacky::Program) -> Program {
+    todo!()
+    /*
     Program {
-        function_definition: gen_function(&program.function_definition),
+        function_definition: gen_function(&program.function_definitions),
     }
+    */
 }
 
 fn gen_function(function: &tacky::Function) -> Function {
@@ -223,6 +226,9 @@ fn gen_function(function: &tacky::Function) -> Function {
             }
             tacky::Instruction::Label(label) => {
                 body.push(Instruction::Label(label.clone()));
+            }
+            _ => {
+                todo!()
             }
         }
     }

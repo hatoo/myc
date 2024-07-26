@@ -7,12 +7,13 @@ use crate::{
 
 #[derive(Debug)]
 pub struct Program {
-    pub function_definition: Function,
+    pub function_definitions: Vec<Function>,
 }
 
 #[derive(Debug)]
 pub struct Function {
     pub name: EcoString,
+    pub params: Vec<EcoString>,
     pub body: Vec<Instruction>,
 }
 
@@ -44,6 +45,11 @@ pub enum Instruction {
         dst: EcoString,
     },
     Label(EcoString),
+    FunCall {
+        name: EcoString,
+        args: Vec<Val>,
+        dst: Val,
+    },
 }
 
 #[derive(Debug)]
@@ -101,15 +107,19 @@ impl InstructionGenerator {
 
     fn add_block_item(&mut self, block_item: &ast::BlockItem) {
         match block_item {
-            ast::BlockItem::Declaration(decl) => self.add_declaration(decl),
+            ast::BlockItem::Declaration(decl) => match decl {
+                ast::Declaration::VarDecl(decl) => {
+                    self.add_var_declaration(decl);
+                }
+                ast::Declaration::FunDecl(_) => {}
+            },
             ast::BlockItem::Statement(stmt) => {
                 self.add_statement(stmt);
             }
         }
     }
 
-    fn add_declaration(&mut self, decl: &ast::Declaration) {
-        /*
+    fn add_var_declaration(&mut self, decl: &ast::VarDecl) {
         if let Some(exp) = &decl.exp {
             let val = self.add_expression(exp);
             self.instructions.push(Instruction::Copy {
@@ -117,20 +127,15 @@ impl InstructionGenerator {
                 dst: Val::Var(decl.ident.data.clone()),
             });
         }
-        */
-        todo!()
     }
 
     fn add_for_init(&mut self, init: &ast::ForInit) {
-        /*
         match init {
-            ast::ForInit::VarDecl(decl) => self.add_declaration(decl),
+            ast::ForInit::VarDecl(decl) => self.add_var_declaration(decl),
             ast::ForInit::Expression(exp) => {
                 self.add_expression(exp);
             }
         }
-        */
-        todo!()
     }
 
     fn add_statement(&mut self, statement: &ast::Statement) {
@@ -408,36 +413,51 @@ impl InstructionGenerator {
                 self.instructions.push(Instruction::Label(end_label));
                 dst
             }
-            _ => todo!(),
+            ast::Expression::FunctionCall { name, args } => {
+                let dst = self.new_var();
+                let args = args
+                    .iter()
+                    .map(|arg| self.add_expression(arg))
+                    .collect::<Vec<_>>();
+                self.instructions.push(Instruction::FunCall {
+                    name: name.data.clone(),
+                    args,
+                    dst: dst.clone(),
+                });
+                dst
+            }
         }
     }
 }
 
 pub fn gen_program(program: &ast::Program) -> Program {
-    todo!()
-    /*
+    let mut generator = InstructionGenerator::new();
     Program {
-        function_definition: gen_function(&program.function_definition),
+        function_definitions: program
+            .function_definition
+            .iter()
+            .filter_map(|f| gen_function(&mut generator, f))
+            .collect(),
     }
-    */
 }
 
-fn gen_function(function: &ast::FunDecl) -> Function {
-    /*
-    let mut generator = InstructionGenerator::new();
-    for block_item in &function.body.0 {
-        generator.add_block_item(block_item);
+fn gen_function(generator: &mut InstructionGenerator, function: &ast::FunDecl) -> Option<Function> {
+    if let Some(block) = &function.body {
+        for block_item in &block.0 {
+            generator.add_block_item(block_item);
+        }
+        generator.add_statement(&ast::Statement::Return(ast::Expression::Constant(
+            Spanned {
+                data: 0,
+                span: 0..0,
+            },
+        )));
+        Some(Function {
+            name: function.name.data.clone(),
+            params: function.params.iter().map(|s| s.data.clone()).collect(),
+            body: std::mem::take(&mut generator.instructions),
+        })
+    } else {
+        None
     }
-    generator.add_statement(&ast::Statement::Return(ast::Expression::Constant(
-        Spanned {
-            data: 0,
-            span: 0..0,
-        },
-    )));
-    Function {
-        name: function.name.clone(),
-        body: generator.instructions,
-    }
-    */
-    todo!()
 }
