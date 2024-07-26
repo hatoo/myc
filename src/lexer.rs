@@ -41,6 +41,7 @@ pub enum Token {
     For,
     Break,
     Continue,
+    Comma,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -324,6 +325,13 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
             b':' => {
                 tokens.push(Spanned {
                     data: Token::Colon,
+                    span: index..index + 1,
+                });
+                index += 1;
+            }
+            b',' => {
+                tokens.push(Spanned {
+                    data: Token::Comma,
                     span: index..index + 1,
                 });
                 index += 1;
