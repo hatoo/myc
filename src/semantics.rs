@@ -68,7 +68,7 @@ pub mod var_resolve {
 
         pub fn resolve_program(&mut self, program: &mut ast::Program) -> Result<(), Error> {
             self.scopes.push(HashMap::new());
-            for fun_decl in &mut program.function_definition {
+            for fun_decl in &mut program.function_definitions {
                 self.resolve_fun_decl(fun_decl)?;
             }
             self.scopes.pop().unwrap();
@@ -316,7 +316,7 @@ pub mod loop_label {
         }
 
         pub fn label_program(&mut self, program: &mut ast::Program) -> Result<(), Error> {
-            for fun_decl in &mut program.function_definition {
+            for fun_decl in &mut program.function_definitions {
                 if let Some(body) = &mut fun_decl.body {
                     self.label_block(None, body)?;
                 }
@@ -451,7 +451,7 @@ pub mod type_check {
 
     impl TypeChecker {
         pub fn check_program(&mut self, program: &crate::ast::Program) -> Result<(), Error> {
-            for fun_decl in &program.function_definition {
+            for fun_decl in &program.function_definitions {
                 self.check_fun_decl(fun_decl)?;
             }
             Ok(())

@@ -9,7 +9,7 @@ pub type Identifier = Spanned<EcoString>;
 
 #[derive(Debug)]
 pub struct Program {
-    pub function_definition: Vec<FunDecl>,
+    pub function_definitions: Vec<FunDecl>,
 }
 
 #[derive(Debug)]
@@ -343,7 +343,7 @@ impl<'a> Parser<'a> {
             fun_decls.push(self.parse_fun_decl()?);
         }
         Ok(Program {
-            function_definition: fun_decls,
+            function_definitions: fun_decls,
         })
     }
 

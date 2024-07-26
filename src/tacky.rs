@@ -434,7 +434,7 @@ pub fn gen_program(program: &ast::Program) -> Program {
     let mut generator = InstructionGenerator::new();
     Program {
         function_definitions: program
-            .function_definition
+            .function_definitions
             .iter()
             .filter_map(|f| gen_function(&mut generator, f))
             .collect(),
