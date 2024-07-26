@@ -5,8 +5,6 @@ use crate::{
     span::{HasSpan, MayHasSpan, Spanned},
 };
 
-pub type Identifier = Spanned<EcoString>;
-
 #[derive(Debug)]
 pub struct Program {
     pub function_definitions: Vec<FunDecl>,
