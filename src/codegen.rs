@@ -6,7 +6,7 @@ use crate::tacky;
 
 #[derive(Debug)]
 pub struct Program {
-    pub function_definition: Function,
+    pub function_definitions: Vec<Function>,
 }
 
 #[derive(Debug)]
@@ -39,6 +39,9 @@ pub enum Instruction {
     Label(EcoString),
     AllocateStack(usize),
     Ret,
+    DeallocateStack(usize),
+    Push(Operand),
+    Call(EcoString),
 }
 
 #[derive(Debug)]
@@ -65,7 +68,12 @@ pub enum Operand {
 #[derive(Debug, Clone)]
 pub enum Register {
     Ax,
+    Cx,
     Dx,
+    Di,
+    Si,
+    R8,
+    R9,
     R10,
     R11,
 }
@@ -73,6 +81,7 @@ pub enum Register {
 pub enum RegisterSize<'a> {
     Byte(&'a Register),
     Dword(&'a Register),
+    Qword(&'a Register),
 }
 
 #[derive(Debug, Clone)]
@@ -86,16 +95,64 @@ pub enum CondCode {
 }
 
 pub fn gen_program(program: &tacky::Program) -> Program {
-    todo!()
-    /*
     Program {
-        function_definition: gen_function(&program.function_definitions),
+        function_definitions: program
+            .function_definitions
+            .iter()
+            .map(gen_function)
+            .collect(),
     }
-    */
 }
 
 fn gen_function(function: &tacky::Function) -> Function {
     let mut body = Vec::new();
+
+    for (i, param) in function.params.iter().enumerate() {
+        match i {
+            0 => {
+                body.push(Instruction::Mov {
+                    src: Operand::Reg(Register::Di),
+                    dst: Operand::Pseudo(param.clone()),
+                });
+            }
+            1 => {
+                body.push(Instruction::Mov {
+                    src: Operand::Reg(Register::Si),
+                    dst: Operand::Pseudo(param.clone()),
+                });
+            }
+            2 => {
+                body.push(Instruction::Mov {
+                    src: Operand::Reg(Register::Dx),
+                    dst: Operand::Pseudo(param.clone()),
+                });
+            }
+            3 => {
+                body.push(Instruction::Mov {
+                    src: Operand::Reg(Register::Cx),
+                    dst: Operand::Pseudo(param.clone()),
+                });
+            }
+            4 => {
+                body.push(Instruction::Mov {
+                    src: Operand::Reg(Register::R8),
+                    dst: Operand::Pseudo(param.clone()),
+                });
+            }
+            5 => {
+                body.push(Instruction::Mov {
+                    src: Operand::Reg(Register::R9),
+                    dst: Operand::Pseudo(param.clone()),
+                });
+            }
+            _ => {
+                body.push(Instruction::Mov {
+                    src: Operand::Stack((16 + (i - 6) * 8) as i32),
+                    dst: Operand::Pseudo(param.clone()),
+                });
+            }
+        }
+    }
 
     for inst in &function.body {
         match inst {
@@ -227,13 +284,85 @@ fn gen_function(function: &tacky::Function) -> Function {
             tacky::Instruction::Label(label) => {
                 body.push(Instruction::Label(label.clone()));
             }
-            _ => {
-                todo!()
+            tacky::Instruction::FunCall { name, args, dst } => {
+                let stack_padding = if args.len() > 6 {
+                    8 * ((args.len() - 6) % 2)
+                } else {
+                    0
+                };
+
+                if stack_padding > 0 {
+                    body.push(Instruction::AllocateStack(stack_padding));
+                }
+
+                for (i, arg) in args[..std::cmp::min(args.len(), 6)].iter().enumerate() {
+                    match i {
+                        0 => body.push(Instruction::Mov {
+                            src: arg.into(),
+                            dst: Operand::Reg(Register::Di),
+                        }),
+                        1 => body.push(Instruction::Mov {
+                            src: arg.into(),
+                            dst: Operand::Reg(Register::Si),
+                        }),
+                        2 => body.push(Instruction::Mov {
+                            src: arg.into(),
+                            dst: Operand::Reg(Register::Dx),
+                        }),
+                        3 => body.push(Instruction::Mov {
+                            src: arg.into(),
+                            dst: Operand::Reg(Register::Cx),
+                        }),
+                        4 => body.push(Instruction::Mov {
+                            src: arg.into(),
+                            dst: Operand::Reg(Register::R8),
+                        }),
+                        5 => body.push(Instruction::Mov {
+                            src: arg.into(),
+                            dst: Operand::Reg(Register::R9),
+                        }),
+                        _ => {
+                            unreachable!();
+                        }
+                    }
+                }
+
+                if args.len() > 6 {
+                    for arg in args[6..].iter().rev() {
+                        match arg {
+                            tacky::Val::Constant(imm) => {
+                                body.push(Instruction::Push(Operand::Imm(*imm)));
+                            }
+                            tacky::Val::Var(var) => {
+                                body.push(Instruction::Mov {
+                                    src: Operand::Pseudo(var.clone()),
+                                    dst: Operand::Reg(Register::Ax),
+                                });
+                                body.push(Instruction::Push(Operand::Reg(Register::Ax)));
+                            }
+                        }
+                    }
+                }
+                body.push(Instruction::Call(name.clone()));
+
+                let bytes_to_remove =
+                    8 * (if args.len() > 6 { args.len() - 6 } else { 0 }) + stack_padding;
+
+                if bytes_to_remove > 0 {
+                    body.push(Instruction::DeallocateStack(bytes_to_remove));
+                }
+
+                let dst = dst.into();
+                body.push(Instruction::Mov {
+                    src: Operand::Reg(Register::Ax),
+                    dst,
+                });
             }
         }
     }
 
     let stack_size = pseudo_to_stack(&mut body);
+    let stack_size = (stack_size + 15) / 16 * 16;
     body.insert(0, Instruction::AllocateStack(stack_size));
     body = avoid_mov_mem_mem(body);
 
@@ -292,6 +421,11 @@ fn pseudo_to_stack(insts: &mut [Instruction]) -> usize {
                 remove_pseudo(dst);
             }
             Instruction::Label(_) => {}
+            Instruction::DeallocateStack(_) => {}
+            Instruction::Push(op) => {
+                remove_pseudo(op);
+            }
+            Instruction::Call(_) => {}
         }
     }
 
@@ -379,7 +513,9 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
 
 impl Display for Program {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "{}", self.function_definition)?;
+        for function in &self.function_definitions {
+            writeln!(f, "{}", function)?;
+        }
         writeln!(f, ".section .note.GNU-stack,\"\",@progbits")?;
         Ok(())
     }
@@ -442,6 +578,21 @@ impl Display for Instruction {
             Instruction::Label(l) => {
                 writeln!(f, ".L{}:", l)?;
             }
+            Instruction::DeallocateStack(n) => {
+                writeln!(f, "addq ${n}, %rsp")?;
+            }
+            Instruction::Push(op) => match op {
+                Operand::Imm(imm) => {
+                    writeln!(f, "pushq ${}", imm)?;
+                }
+                Operand::Reg(reg) => {
+                    writeln!(f, "pushq {}", RegisterSize::Qword(reg))?;
+                }
+                _ => unimplemented!(),
+            },
+            Instruction::Call(name) => {
+                writeln!(f, "call {}@PLT", name)?;
+            }
         }
         Ok(())
     }
@@ -486,15 +637,36 @@ impl<'a> Display for RegisterSize<'a> {
         match self {
             RegisterSize::Byte(reg) => match reg {
                 Register::Ax => write!(f, "%al")?,
+                Register::Cx => write!(f, "%cl")?,
                 Register::Dx => write!(f, "%dl")?,
+                Register::Di => write!(f, "%dil")?,
+                Register::Si => write!(f, "%sil")?,
                 Register::R10 => write!(f, "%r10b")?,
                 Register::R11 => write!(f, "%r11b")?,
+                Register::R8 => write!(f, "%r8b")?,
+                Register::R9 => write!(f, "%r9b")?,
             },
             RegisterSize::Dword(reg) => match reg {
                 Register::Ax => write!(f, "%eax")?,
+                Register::Cx => write!(f, "%ecx")?,
                 Register::Dx => write!(f, "%edx")?,
+                Register::Di => write!(f, "%edi")?,
+                Register::Si => write!(f, "%esi")?,
                 Register::R10 => write!(f, "%r10d")?,
                 Register::R11 => write!(f, "%r11d")?,
+                Register::R8 => write!(f, "%r8d")?,
+                Register::R9 => write!(f, "%r9d")?,
+            },
+            RegisterSize::Qword(reg) => match reg {
+                Register::Ax => write!(f, "%rax")?,
+                Register::Cx => write!(f, "%rcx")?,
+                Register::Dx => write!(f, "%rdx")?,
+                Register::Di => write!(f, "%rdi")?,
+                Register::Si => write!(f, "%rsi")?,
+                Register::R10 => write!(f, "%r10")?,
+                Register::R11 => write!(f, "%r11")?,
+                Register::R8 => write!(f, "%r8")?,
+                Register::R9 => write!(f, "%r9")?,
             },
         }
         Ok(())
