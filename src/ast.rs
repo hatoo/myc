@@ -251,13 +251,13 @@ impl<'a> Parser<'a> {
                 self.index += 1;
                 Ok(&self.tokens[self.index - 1])
             } else {
-                return Err(Error::Unexpected(
+                Err(Error::Unexpected(
                     spanned.clone(),
                     ExpectedToken::Token(token),
-                ));
+                ))
             }
         } else {
-            return Err(Error::UnexpectedEof);
+            Err(Error::UnexpectedEof)
         }
     }
 

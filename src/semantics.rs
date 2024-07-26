@@ -245,7 +245,7 @@ pub mod var_resolve {
                         var.data = unique_name.new_name.clone();
                         Ok(())
                     } else {
-                        return Err(Error::VariableNotDeclared(var.clone()));
+                        Err(Error::VariableNotDeclared(var.clone()))
                     }
                 }
                 ast::Expression::Assignment { lhs, rhs } => {
