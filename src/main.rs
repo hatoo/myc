@@ -24,6 +24,8 @@ struct Opts {
     codegen: bool,
     #[clap(long)]
     asm: bool,
+    #[clap(short)]
+    compile: bool,
 }
 
 fn main() {
@@ -87,10 +89,20 @@ fn main() {
         .write_all(code.to_string().as_bytes())
         .unwrap();
 
-    process::Command::new("gcc")
-        .arg(opts.input.with_extension("s"))
-        .arg("-o")
-        .arg(opts.input.with_extension(""))
-        .status()
-        .unwrap();
+    if opts.compile {
+        process::Command::new("gcc")
+            .arg("-c")
+            .arg(opts.input.with_extension("s"))
+            .arg("-o")
+            .arg(opts.input.with_extension("o"))
+            .status()
+            .unwrap();
+    } else {
+        process::Command::new("gcc")
+            .arg(opts.input.with_extension("s"))
+            .arg("-o")
+            .arg(opts.input.with_extension(""))
+            .status()
+            .unwrap();
+    }
 }
