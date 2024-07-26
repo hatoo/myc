@@ -1,4 +1,5 @@
 pub use loop_label::LoopLabel;
+pub use type_check::TypeChecker;
 pub use var_resolve::VarResolver;
 
 pub mod var_resolve {
@@ -418,7 +419,7 @@ pub mod type_check {
 
     use ecow::EcoString;
 
-    use crate::span::Spanned;
+    use crate::span::{HasSpan, Spanned};
 
     #[derive(Debug, Default)]
     pub struct TypeChecker {
@@ -437,6 +438,15 @@ pub mod type_check {
         IncompatibleTypes(Spanned<EcoString>),
         #[error("Function redefined: {0}")]
         Redefined(Spanned<EcoString>),
+    }
+
+    impl HasSpan for Error {
+        fn span(&self) -> std::ops::Range<usize> {
+            match self {
+                Error::IncompatibleTypes(ident) => ident.span.clone(),
+                Error::Redefined(ident) => ident.span.clone(),
+            }
+        }
     }
 
     impl TypeChecker {
@@ -466,13 +476,13 @@ pub mod type_check {
                         defined: body.is_some(),
                     },
                 );
+            }
 
-                if let Some(body) = body {
-                    for param in params {
-                        self.sym_table.insert(param.data.clone(), Ty::Int);
-                    }
-                    self.check_block(body)?;
+            if let Some(body) = body {
+                for param in params {
+                    self.sym_table.insert(param.data.clone(), Ty::Int);
                 }
+                self.check_block(body)?;
             }
 
             Ok(())
@@ -491,7 +501,12 @@ pub mod type_check {
         fn check_decl(&mut self, decl: &crate::ast::Declaration) -> Result<(), Error> {
             match decl {
                 crate::ast::Declaration::VarDecl(decl) => self.check_var_decl(decl),
-                crate::ast::Declaration::FunDecl(decl) => self.check_fun_decl(decl),
+                crate::ast::Declaration::FunDecl(decl) => {
+                    if decl.body.is_some() {
+                        return Err(Error::IncompatibleTypes(decl.name.clone()));
+                    }
+                    self.check_fun_decl(decl)
+                }
             }
         }
 
@@ -509,7 +524,13 @@ pub mod type_check {
 
         fn check_expression(&mut self, exp: &crate::ast::Expression) -> Result<(), Error> {
             match exp {
-                crate::ast::Expression::Var(_) => Ok(()),
+                crate::ast::Expression::Var(name) => {
+                    if let Some(Ty::Int) = self.sym_table.get(&name.data) {
+                        Ok(())
+                    } else {
+                        Err(Error::IncompatibleTypes(name.clone()))
+                    }
+                }
                 crate::ast::Expression::Constant(_) => Ok(()),
                 crate::ast::Expression::Unary { op: _, exp } => self.check_expression(exp),
                 crate::ast::Expression::Binary { op: _, lhs, rhs } => {

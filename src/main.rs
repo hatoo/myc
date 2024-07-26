@@ -5,7 +5,7 @@ use clap::Parser;
 use myc::{
     ast::parse,
     lexer::lexer,
-    semantics::{LoopLabel, VarResolver},
+    semantics::{LoopLabel, TypeChecker, VarResolver},
     span::SpannedError,
 };
 
@@ -57,6 +57,11 @@ fn main() {
 
     LoopLabel::default()
         .label_program(&mut program)
+        .map_err(|err| SpannedError::new(err, src.clone()))
+        .unwrap();
+
+    TypeChecker::default()
+        .check_program(&program)
         .map_err(|err| SpannedError::new(err, src.clone()))
         .unwrap();
 
