@@ -13,7 +13,13 @@ pub mod var_resolve {
     #[derive(Debug, Default)]
     pub struct VarResolver {
         var_counter: usize,
-        scopes: Vec<HashMap<EcoString, EcoString>>,
+        scopes: Vec<HashMap<EcoString, VarInfo>>,
+    }
+
+    #[derive(Debug, Clone)]
+    struct VarInfo {
+        new_name: EcoString,
+        has_linkage: bool,
     }
 
     #[derive(Debug, thiserror::Error)]
@@ -24,6 +30,8 @@ pub mod var_resolve {
         VariableAlreadyDeclared(Spanned<EcoString>),
         #[error("Invalid lvalue: {0:?}")]
         InvalidLValue(Expression),
+        #[error("Undeclared function: {0:?}")]
+        UndeclaredFunction(Expression),
     }
 
     impl HasSpan for Error {
@@ -32,6 +40,7 @@ pub mod var_resolve {
                 Error::VariableNotDeclared(ident) => ident.span.clone(),
                 Error::VariableAlreadyDeclared(ident) => ident.span.clone(),
                 Error::InvalidLValue(exp) => exp.span(),
+                Error::UndeclaredFunction(exp) => exp.span(),
             }
         }
     }
@@ -43,34 +52,31 @@ pub mod var_resolve {
             var
         }
 
-        pub fn lookup(&self, ident: &EcoString) -> Option<EcoString> {
+        fn lookup(&self, ident: &EcoString) -> Option<&VarInfo> {
             for scope in self.scopes.iter().rev() {
-                if let Some(unique_name) = scope.get(ident) {
-                    return Some(unique_name.clone());
+                if let Some(var_info) = scope.get(ident) {
+                    return Some(var_info);
                 }
             }
             None
         }
 
-        pub fn current_scope(&mut self) -> &mut HashMap<EcoString, EcoString> {
+        fn current_scope(&mut self) -> &mut HashMap<EcoString, VarInfo> {
             self.scopes.last_mut().unwrap()
         }
 
         pub fn resolve_program(&mut self, program: &mut ast::Program) -> Result<(), Error> {
-            todo!()
-            /*
             self.scopes.push(HashMap::new());
-            for block_item in &mut program.function_definition.body.0 {
-                self.resolve_block_item(block_item)?;
+            for fun_decl in &mut program.function_definition {
+                self.resolve_fun_decl(fun_decl)?;
             }
             self.scopes.pop().unwrap();
             Ok(())
-            */
         }
 
         pub fn resolve_block_item(&mut self, block_item: &mut ast::BlockItem) -> Result<(), Error> {
             match block_item {
-                ast::BlockItem::Declaration(decl) => self.resolve_declaration(decl),
+                ast::BlockItem::Declaration(decl) => self.resolve_decl(decl),
                 ast::BlockItem::Statement(stmt) => self.resolve_statement(stmt),
             }
         }
@@ -123,13 +129,11 @@ pub mod var_resolve {
                     body,
                     ..
                 } => {
-                    todo!()
-                    /*
                     self.scopes.push(HashMap::new());
                     if let Some(for_init) = init {
                         match for_init {
                             ast::ForInit::VarDecl(decl) => {
-                                self.resolve_declaration(decl)?;
+                                self.resolve_var_decl(decl)?;
                             }
                             ast::ForInit::Expression(exp) => {
                                 self.resolve_expression(exp)?;
@@ -145,29 +149,85 @@ pub mod var_resolve {
                     self.resolve_statement(body)?;
                     self.scopes.pop().unwrap();
                     Ok(())
-                    */
                 }
             }
         }
 
-        pub fn resolve_declaration(&mut self, decl: &mut ast::Declaration) -> Result<(), Error> {
-            /*
-            let ast::Declaration { ident, exp } = decl;
+        pub fn resolve_decl(&mut self, decl: &mut ast::Declaration) -> Result<(), Error> {
+            match decl {
+                ast::Declaration::VarDecl(decl) => self.resolve_var_decl(decl),
+                ast::Declaration::FunDecl(decl) => self.resolve_fun_decl(decl),
+            }
+        }
+
+        pub fn resolve_fun_decl(&mut self, decl: &mut ast::FunDecl) -> Result<(), Error> {
+            let ast::FunDecl { name, params, body } = decl;
+
+            if let Some(VarInfo {
+                has_linkage: false, ..
+            }) = self.current_scope().get(&name.data)
+            {
+                return Err(Error::VariableAlreadyDeclared(name.clone()));
+            }
+
+            self.current_scope().insert(
+                name.data.clone(),
+                VarInfo {
+                    new_name: name.data.clone(),
+                    has_linkage: true,
+                },
+            );
+
+            self.scopes.push(HashMap::new());
+
+            for param in params {
+                let unique_name = self.new_var(&param.data);
+                if self
+                    .current_scope()
+                    .insert(
+                        param.data.clone(),
+                        VarInfo {
+                            new_name: unique_name.clone(),
+                            has_linkage: false,
+                        },
+                    )
+                    .is_some()
+                {
+                    return Err(Error::VariableAlreadyDeclared(param.clone()));
+                }
+                param.data = unique_name;
+            }
+
+            if let Some(body) = body {
+                for block_item in &mut body.0 {
+                    self.resolve_block_item(block_item)?;
+                }
+            }
+
+            self.scopes.pop().unwrap();
+            Ok(())
+        }
+
+        pub fn resolve_var_decl(&mut self, decl: &mut ast::VarDecl) -> Result<(), Error> {
+            let ast::VarDecl { ident, exp } = decl;
 
             if self.current_scope().contains_key(&ident.data) {
                 return Err(Error::VariableAlreadyDeclared(ident.clone()));
             }
 
             let unique_name = self.new_var(&ident.data);
-            self.current_scope()
-                .insert(ident.data.clone(), unique_name.clone());
+            self.current_scope().insert(
+                ident.data.clone(),
+                VarInfo {
+                    new_name: unique_name.clone(),
+                    has_linkage: false,
+                },
+            );
             ident.data = unique_name;
             if let Some(exp) = exp {
                 self.resolve_expression(exp)?;
             }
             Ok(())
-            */
-            todo!()
         }
 
         pub fn resolve_expression(&mut self, exp: &mut ast::Expression) -> Result<(), Error> {
@@ -181,7 +241,7 @@ pub mod var_resolve {
                 }
                 ast::Expression::Var(var) => {
                     if let Some(unique_name) = self.lookup(&var.data) {
-                        var.data = unique_name.clone();
+                        var.data = unique_name.new_name.clone();
                         Ok(())
                     } else {
                         return Err(Error::VariableNotDeclared(var.clone()));
@@ -205,7 +265,17 @@ pub mod var_resolve {
                     self.resolve_expression(else_branch)?;
                     Ok(())
                 }
-                _ => todo!(),
+                ast::Expression::FunctionCall { name, args, .. } => {
+                    if let Some(var_info) = self.lookup(name) {
+                        *name = var_info.new_name.clone();
+                        for arg in args {
+                            self.resolve_expression(arg)?;
+                        }
+                        Ok(())
+                    } else {
+                        Err(Error::UndeclaredFunction(exp.clone()))
+                    }
+                }
             }
         }
     }
@@ -245,8 +315,12 @@ pub mod loop_label {
         }
 
         pub fn label_program(&mut self, program: &mut ast::Program) -> Result<(), Error> {
-            // self.label_block(None, &mut program.function_definition.body)
-            todo!()
+            for fun_decl in &mut program.function_definition {
+                if let Some(body) = &mut fun_decl.body {
+                    self.label_block(None, body)?;
+                }
+            }
+            Ok(())
         }
 
         fn label_statement(

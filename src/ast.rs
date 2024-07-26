@@ -14,8 +14,8 @@ pub struct Program {
 
 #[derive(Debug)]
 pub struct FunDecl {
-    pub name: EcoString,
-    pub params: Vec<EcoString>,
+    pub name: Spanned<EcoString>,
+    pub params: Vec<Spanned<EcoString>>,
     pub body: Option<Block>,
 }
 
@@ -120,8 +120,8 @@ impl HasSpan for Expression {
 }
 #[derive(Debug)]
 pub struct VarDecl {
-    ident: Spanned<EcoString>,
-    exp: Option<Expression>,
+    pub ident: Spanned<EcoString>,
+    pub exp: Option<Expression>,
 }
 
 #[derive(Debug)]
@@ -504,7 +504,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_param_list(&mut self) -> Result<Vec<EcoString>, Error> {
+    fn parse_param_list(&mut self) -> Result<Vec<Spanned<EcoString>>, Error> {
         if self.expect(Token::Void).is_ok() {
             return Ok(Vec::new());
         }
@@ -513,7 +513,7 @@ impl<'a> Parser<'a> {
         loop {
             self.expect(Token::Int)?;
             let ident = self.expect_ident()?;
-            params.push(ident.data);
+            params.push(ident);
             if self.expect(Token::Comma).is_err() {
                 break;
             }
@@ -533,11 +533,7 @@ impl<'a> Parser<'a> {
         } else {
             Some(self.expect_block()?)
         };
-        Ok(FunDecl {
-            name: name.data,
-            params,
-            body,
-        })
+        Ok(FunDecl { name, params, body })
     }
 
     fn parse_declaration(&mut self) -> Result<Declaration, Error> {
