@@ -95,9 +95,8 @@ pub enum Expression {
         else_branch: Box<Expression>,
     },
     FunctionCall {
-        name: EcoString,
+        name: Spanned<EcoString>,
         args: Vec<Expression>,
-        span: std::ops::Range<usize>,
     },
 }
 
@@ -114,7 +113,7 @@ impl HasSpan for Expression {
                 else_branch,
                 ..
             } => condition.span().start..else_branch.span().end,
-            Self::FunctionCall { span, .. } => span.clone(),
+            Self::FunctionCall { name, .. } => name.span.clone(),
         }
     }
 }
@@ -573,8 +572,8 @@ impl<'a> Parser<'a> {
                     Ok(exp)
                 }
                 Token::Ident(ident) => {
-                    let span = token.span.clone();
                     let ident = ident.clone();
+                    let span = token.span.clone();
 
                     self.advance();
 
@@ -585,22 +584,19 @@ impl<'a> Parser<'a> {
                     {
                         self.advance();
                         let mut args = Vec::new();
-                        let end = if let Ok(Spanned { span, .. }) = self.expect(Token::CloseParen) {
-                            span.end
-                        } else {
+                        if self.expect(Token::CloseParen).is_err() {
                             loop {
                                 args.push(self.parse_expression(0)?);
                                 if self.expect(Token::Comma).is_err() {
                                     break;
                                 }
                             }
-                            self.expect(Token::CloseParen)?.span.end
-                        };
+                            self.expect(Token::CloseParen)?;
+                        }
 
                         Ok(Expression::FunctionCall {
-                            name: ident,
+                            name: Spanned { data: ident, span },
                             args,
-                            span: span.start..end,
                         })
                     } else {
                         Ok(Expression::Var(Spanned {
