@@ -239,6 +239,10 @@ pub enum Error {
     MalformedExpression(Spanned<Token>),
     #[error("Malformed body: {0:?}")]
     MalformedBody(Spanned<Token>),
+    #[error("Conflicting specifier: {0:?}")]
+    ConflictingSpecifier(Spanned<Token>),
+    #[error("No type specifier")]
+    NoTypeSpecifier(std::ops::Range<usize>),
 }
 
 impl MayHasSpan for Error {
@@ -249,6 +253,8 @@ impl MayHasSpan for Error {
             Error::ParseIntError(_) => None,
             Error::MalformedExpression(spanned) => Some(spanned.span.clone()),
             Error::MalformedBody(spanned) => Some(spanned.span.clone()),
+            Error::ConflictingSpecifier(spanned) => Some(spanned.span.clone()),
+            Error::NoTypeSpecifier(span) => Some(span.clone()),
         }
     }
 }
@@ -339,20 +345,6 @@ impl<'a> Parser<'a> {
             let exp = self.parse_expression(0)?;
             self.expect(Token::SemiColon)?;
             Ok(Some(ForInit::Expression(exp)))
-        }
-    }
-
-    fn expect_specifier(&mut self) -> Result<Spanned<Token>, Error> {
-        if let Some(spanned) = self.tokens.get(self.index) {
-            match &spanned.data {
-                Token::Int | Token::Static | Token::Extern => {
-                    self.index += 1;
-                    Ok(spanned.clone())
-                }
-                _ => Err(Error::Unexpected(spanned.clone(), ExpectedToken::Specifier)),
-            }
-        } else {
-            Err(Error::UnexpectedEof)
         }
     }
 
@@ -517,50 +509,63 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_specifiers(&mut self) -> Result<Option<StorageClass>, Error> {
-        let mut ty = None;
+        let mut ty: Option<()> = None;
         let mut storage_class = None;
+        let start = if let Some(spanned) = self.peek() {
+            spanned.span.start
+        } else {
+            return Err(Error::UnexpectedEof);
+        };
+
+        let mut end = start;
 
         loop {
-            if let Ok(specifier) = self.expect_specifier() {
-                match &specifier.data {
-                    Token::Int => {
-                        // TODO better error handling
-                        if ty.is_some() {
-                            return Err(Error::Unexpected(
-                                specifier.clone(),
-                                ExpectedToken::Specifier,
-                            ));
-                        }
-                        ty = Some(specifier);
+            match self.peek() {
+                Some(
+                    s @ Spanned {
+                        data: Token::Int, ..
+                    },
+                ) => {
+                    // TODO better error handling
+                    if ty.is_some() {
+                        return Err(Error::ConflictingSpecifier(s.clone()));
                     }
-                    Token::Static => {
-                        if storage_class.is_some() {
-                            return Err(Error::Unexpected(
-                                specifier.clone(),
-                                ExpectedToken::Specifier,
-                            ));
-                        }
-                        storage_class = Some(StorageClass::Static);
-                    }
-                    Token::Extern => {
-                        if storage_class.is_some() {
-                            return Err(Error::Unexpected(
-                                specifier.clone(),
-                                ExpectedToken::Specifier,
-                            ));
-                        }
-                        storage_class = Some(StorageClass::Extern);
-                    }
-                    _ => unreachable!(),
+                    end = s.span.end;
+                    ty = Some(());
+                    self.advance();
                 }
-            } else {
-                break;
+                Some(
+                    s @ Spanned {
+                        data: Token::Static,
+                        ..
+                    },
+                ) => {
+                    if storage_class.is_some() {
+                        return Err(Error::ConflictingSpecifier(s.clone()));
+                    }
+                    end = s.span.end;
+                    storage_class = Some(StorageClass::Static);
+                    self.advance();
+                }
+                Some(
+                    s @ Spanned {
+                        data: Token::Extern,
+                        ..
+                    },
+                ) => {
+                    if storage_class.is_some() {
+                        return Err(Error::ConflictingSpecifier(s.clone()));
+                    }
+                    end = s.span.end;
+                    storage_class = Some(StorageClass::Extern);
+                    self.advance();
+                }
+                _ => break,
             }
         }
 
-        let Some(_ty) = ty else {
-            // TODO better error handling
-            return Err(Error::UnexpectedEof);
+        let Some(_) = ty else {
+            return Err(Error::NoTypeSpecifier(start..end));
         };
 
         Ok(storage_class)
