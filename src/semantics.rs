@@ -419,15 +419,17 @@ pub mod loop_label {
         }
 
         pub fn label_program(&mut self, program: &mut ast::Program) -> Result<(), Error> {
-            todo!()
-            /*
-            for fun_decl in &mut program.decls {
-                if let Some(body) = &mut fun_decl.body {
-                    self.label_block(None, body)?;
+            for decl in &mut program.decls {
+                match decl {
+                    ast::Declaration::VarDecl(_) => {}
+                    ast::Declaration::FunDecl(fun_decl) => {
+                        if let Some(body) = &mut fun_decl.body {
+                            self.label_block(None, body)?;
+                        }
+                    }
                 }
             }
             Ok(())
-            */
         }
 
         fn label_statement(
@@ -529,13 +531,28 @@ pub mod type_check {
 
     #[derive(Debug, Default)]
     pub struct TypeChecker {
-        sym_table: HashMap<EcoString, Ty>,
+        sym_table: HashMap<EcoString, Attr>,
     }
 
     #[derive(Debug)]
-    enum Ty {
-        Int,
-        Fun { arity: usize, defined: bool },
+    enum Attr {
+        Fun {
+            arity: usize,
+            defined: bool,
+            global: bool,
+        },
+        Static {
+            init: InitialValue,
+            global: bool,
+        },
+        Local,
+    }
+
+    #[derive(Debug)]
+    enum InitialValue {
+        Tentative,
+        Initial(i32),
+        NoInitializer,
     }
 
     #[derive(Debug, thiserror::Error)]
@@ -544,6 +561,8 @@ pub mod type_check {
         IncompatibleTypes(Spanned<EcoString>),
         #[error("Function redefined: {0}")]
         Redefined(Spanned<EcoString>),
+        #[error("Static function declaration follows non-static : {0}")]
+        StaticFunAfterNonStatic(Spanned<EcoString>),
     }
 
     impl HasSpan for Error {
@@ -551,6 +570,7 @@ pub mod type_check {
             match self {
                 Error::IncompatibleTypes(ident) => ident.span.clone(),
                 Error::Redefined(ident) => ident.span.clone(),
+                Error::StaticFunAfterNonStatic(ident) => ident.span.clone(),
             }
         }
     }
@@ -574,27 +594,45 @@ pub mod type_check {
                 storage_class,
             } = fun_decl;
 
-            if let Some(Ty::Fun { arity, defined }) = self.sym_table.get_mut(&name.data) {
-                if *arity != params.len() {
+            let mut new_global = storage_class != &Some(crate::ast::StorageClass::Static);
+            let mut already_defined = false;
+
+            if let Some(attr) = self.sym_table.get(&name.data) {
+                if let Attr::Fun {
+                    arity,
+                    defined,
+                    global,
+                } = attr
+                {
+                    if *arity != params.len() {
+                        return Err(Error::IncompatibleTypes(name.clone()));
+                    }
+                    if *defined && body.is_some() {
+                        return Err(Error::Redefined(name.clone()));
+                    }
+                    already_defined = *defined;
+                    if *global && storage_class == &Some(crate::ast::StorageClass::Static) {
+                        return Err(Error::StaticFunAfterNonStatic(name.clone()));
+                    }
+
+                    new_global = *global;
+                } else {
                     return Err(Error::IncompatibleTypes(name.clone()));
                 }
-                if *defined && body.is_some() {
-                    return Err(Error::Redefined(name.clone()));
-                }
-                *defined |= body.is_some();
-            } else {
-                self.sym_table.insert(
-                    name.data.clone(),
-                    Ty::Fun {
-                        arity: params.len(),
-                        defined: body.is_some(),
-                    },
-                );
             }
+
+            self.sym_table.insert(
+                name.data.clone(),
+                Attr::Fun {
+                    arity: params.len(),
+                    defined: already_defined || body.is_some(),
+                    global: new_global,
+                },
+            );
 
             if let Some(body) = body {
                 for param in params {
-                    self.sym_table.insert(param.data.clone(), Ty::Int);
+                    self.sym_table.insert(param.data.clone(), Attr::Local);
                 }
                 self.check_block(body)?;
             }
@@ -631,7 +669,7 @@ pub mod type_check {
                 storage_class,
             } = decl;
 
-            self.sym_table.insert(ident.data.clone(), Ty::Int);
+            self.sym_table.insert(ident.data.clone(), Attr::Int);
 
             if let Some(exp) = exp {
                 self.check_expression(exp)?;
@@ -643,7 +681,7 @@ pub mod type_check {
         fn check_expression(&mut self, exp: &crate::ast::Expression) -> Result<(), Error> {
             match exp {
                 crate::ast::Expression::Var(name) => {
-                    if let Some(Ty::Int) = self.sym_table.get(&name.data) {
+                    if let Some(Attr::Int) = self.sym_table.get(&name.data) {
                         Ok(())
                     } else {
                         Err(Error::IncompatibleTypes(name.clone()))
@@ -672,7 +710,7 @@ pub mod type_check {
                     Ok(())
                 }
                 crate::ast::Expression::FunctionCall { name, args } => {
-                    if let Some(Ty::Fun { arity, .. }) = self.sym_table.get(&name.data) {
+                    if let Some(Attr::Fun { arity, .. }) = self.sym_table.get(&name.data) {
                         if *arity != args.len() {
                             return Err(Error::IncompatibleTypes(name.clone()));
                         }
