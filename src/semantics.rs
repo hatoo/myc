@@ -714,12 +714,10 @@ pub mod type_check {
                             return Err(Error::BadInitializer(ident.clone()));
                         }
                         init = *old_init;
-                    } else {
-                        if !matches!(init, InitialValue::Initial(_))
-                            && matches!(old_init, InitialValue::Tentative)
-                        {
-                            init = InitialValue::Tentative;
-                        }
+                    } else if !matches!(init, InitialValue::Initial(_))
+                        && matches!(old_init, InitialValue::Tentative)
+                    {
+                        init = InitialValue::Tentative;
                     }
                 }
                 Some(Attr::Local) => {
