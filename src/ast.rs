@@ -125,7 +125,7 @@ impl HasSpan for Expression {
 #[derive(Debug)]
 pub struct VarDecl {
     pub ident: Spanned<EcoString>,
-    pub exp: Option<Expression>,
+    pub init: Option<Expression>,
     pub storage_class: Option<StorageClass>,
 }
 
@@ -574,14 +574,14 @@ impl<'a> Parser<'a> {
             self.expect(Token::SemiColon)?;
             Ok(VarDecl {
                 ident,
-                exp: Some(exp),
+                init: Some(exp),
                 storage_class,
             })
         } else {
             self.expect(Token::SemiColon)?;
             Ok(VarDecl {
                 ident,
-                exp: None,
+                init: None,
                 storage_class,
             })
         }

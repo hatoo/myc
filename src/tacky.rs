@@ -140,7 +140,7 @@ impl InstructionGenerator {
         if decl.storage_class.is_some() {
             return;
         }
-        if let Some(exp) = &decl.exp {
+        if let Some(exp) = &decl.init {
             let val = self.add_expression(exp);
             self.instructions.push(Instruction::Copy {
                 src: val,

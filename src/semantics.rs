@@ -229,7 +229,7 @@ pub mod var_resolve {
                 name,
                 params,
                 body,
-                storage_class,
+                storage_class: _,
             } = decl;
 
             if let Some(VarInfo {
@@ -283,7 +283,7 @@ pub mod var_resolve {
         ) -> Result<(), Error> {
             let ast::VarDecl {
                 ident,
-                exp: _,
+                init: _,
                 storage_class: _,
             } = decl;
 
@@ -300,7 +300,7 @@ pub mod var_resolve {
         pub fn resolve_var_decl_local(&mut self, decl: &mut ast::VarDecl) -> Result<(), Error> {
             let ast::VarDecl {
                 ident,
-                exp,
+                init,
                 storage_class,
             } = decl;
 
@@ -329,7 +329,7 @@ pub mod var_resolve {
                     },
                 );
                 ident.data = unique_name;
-                if let Some(exp) = exp {
+                if let Some(exp) = init {
                     self.resolve_expression(exp)?;
                 }
                 Ok(())
@@ -677,11 +677,11 @@ pub mod type_check {
         fn check_var_decl_file(&mut self, decl: &crate::ast::VarDecl) -> Result<(), Error> {
             let crate::ast::VarDecl {
                 ident,
-                exp,
+                init,
                 storage_class,
             } = decl;
 
-            let mut init = match exp {
+            let mut init = match init {
                 Some(Expression::Constant(val)) => InitialValue::Initial(val.data),
                 None => {
                     if storage_class == &Some(crate::ast::StorageClass::Extern) {
@@ -736,13 +736,13 @@ pub mod type_check {
         fn check_var_decl_local(&mut self, decl: &crate::ast::VarDecl) -> Result<(), Error> {
             let crate::ast::VarDecl {
                 ident,
-                exp,
+                init,
                 storage_class,
             } = decl;
 
             match storage_class {
                 Some(crate::ast::StorageClass::Extern) => {
-                    if exp.is_some() {
+                    if init.is_some() {
                         return Err(Error::BadInitializer(ident.clone()));
                     }
                     match self.sym_table.get(&ident.data) {
@@ -762,7 +762,7 @@ pub mod type_check {
                     }
                 }
                 Some(crate::ast::StorageClass::Static) => {
-                    let init = match exp {
+                    let init = match init {
                         Some(Expression::Constant(val)) => InitialValue::Initial(val.data),
                         None => InitialValue::Initial(0),
                         _ => return Err(Error::BadInitializer(ident.clone())),
@@ -777,7 +777,7 @@ pub mod type_check {
                 }
                 _ => {
                     self.sym_table.insert(ident.data.clone(), Attr::Local);
-                    if let Some(exp) = exp {
+                    if let Some(exp) = init {
                         self.check_expression(exp)?;
                     }
                 }
