@@ -243,6 +243,8 @@ pub enum Error {
     ConflictingSpecifier(Spanned<Token>),
     #[error("No type specifier")]
     NoTypeSpecifier(std::ops::Range<usize>),
+    #[error("Unexpected specifier")]
+    UnexpectedSpecifier(Spanned<Token>),
 }
 
 impl MayHasSpan for Error {
@@ -255,6 +257,7 @@ impl MayHasSpan for Error {
             Error::MalformedBody(spanned) => Some(spanned.span.clone()),
             Error::ConflictingSpecifier(spanned) => Some(spanned.span.clone()),
             Error::NoTypeSpecifier(span) => Some(span.clone()),
+            Error::UnexpectedSpecifier(spanned) => Some(spanned.span.clone()),
         }
     }
 }
@@ -328,17 +331,8 @@ impl<'a> Parser<'a> {
             return Ok(None);
         }
         let index = self.index;
-        if let Ok(decl) = self.parse_var_decl() {
-            if decl.storage_class.is_some() {
-                // todo
-                return Err(Error::Unexpected(
-                    Spanned {
-                        data: Token::Static,
-                        span: decl.ident.span.clone(),
-                    },
-                    ExpectedToken::Specifier,
-                ));
-            }
+        if let Ok(decl) = self.parse_var_decl(true) {
+            debug_assert!(decl.storage_class.is_none());
             Ok(Some(ForInit::VarDecl(decl)))
         } else {
             self.index = index;
@@ -508,7 +502,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_specifiers(&mut self) -> Result<Option<StorageClass>, Error> {
+    fn parse_specifiers(&mut self, is_for_init: bool) -> Result<Option<StorageClass>, Error> {
         let mut ty: Option<()> = None;
         let mut storage_class = None;
         let start = if let Some(spanned) = self.peek() {
@@ -543,6 +537,9 @@ impl<'a> Parser<'a> {
                     if storage_class.is_some() {
                         return Err(Error::ConflictingSpecifier(s.clone()));
                     }
+                    if is_for_init {
+                        return Err(Error::UnexpectedSpecifier(s.clone()));
+                    }
                     end = s.span.end;
                     storage_class = Some(StorageClass::Static);
                     self.advance();
@@ -555,6 +552,9 @@ impl<'a> Parser<'a> {
                 ) => {
                     if storage_class.is_some() {
                         return Err(Error::ConflictingSpecifier(s.clone()));
+                    }
+                    if is_for_init {
+                        return Err(Error::UnexpectedSpecifier(s.clone()));
                     }
                     end = s.span.end;
                     storage_class = Some(StorageClass::Extern);
@@ -571,8 +571,8 @@ impl<'a> Parser<'a> {
         Ok(storage_class)
     }
 
-    fn parse_var_decl(&mut self) -> Result<VarDecl, Error> {
-        let storage_class = self.parse_specifiers()?;
+    fn parse_var_decl(&mut self, is_for_init: bool) -> Result<VarDecl, Error> {
+        let storage_class = self.parse_specifiers(is_for_init)?;
         let ident = self.expect_ident()?;
         if self.expect(Token::Equal).is_ok() {
             let exp = self.parse_expression(0)?;
@@ -611,7 +611,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_fun_decl(&mut self) -> Result<FunDecl, Error> {
-        let storage_class = self.parse_specifiers()?;
+        let storage_class = self.parse_specifiers(false)?;
         let name = self.expect_ident()?;
         self.expect(Token::OpenParen)?;
         let params = self.parse_param_list()?;
@@ -632,7 +632,7 @@ impl<'a> Parser<'a> {
     fn parse_declaration(&mut self) -> Result<Declaration, Error> {
         let index = self.index;
 
-        if let Ok(decl) = self.parse_var_decl() {
+        if let Ok(decl) = self.parse_var_decl(false) {
             Ok(Declaration::VarDecl(decl))
         } else {
             self.index = index;
