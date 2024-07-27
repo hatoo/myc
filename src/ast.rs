@@ -323,6 +323,16 @@ impl<'a> Parser<'a> {
         }
         let index = self.index;
         if let Ok(decl) = self.parse_var_decl() {
+            if decl.storage_class.is_some() {
+                // todo
+                return Err(Error::Unexpected(
+                    Spanned {
+                        data: Token::Static,
+                        span: decl.ident.span.clone(),
+                    },
+                    ExpectedToken::Specifier,
+                ));
+            }
             Ok(Some(ForInit::VarDecl(decl)))
         } else {
             self.index = index;

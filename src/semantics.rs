@@ -304,8 +304,10 @@ pub mod var_resolve {
                 storage_class,
             } = decl;
 
-            if self.current_scope().contains_key(&ident.data) {
-                return Err(Error::VariableAlreadyDeclared(ident.clone()));
+            if let Some(var) = self.current_scope().get(&ident.data) {
+                if !(var.has_linkage && storage_class == &Some(ast::StorageClass::Extern)) {
+                    return Err(Error::VariableAlreadyDeclared(ident.clone()));
+                }
             }
 
             if storage_class == &Some(ast::StorageClass::Extern) {
@@ -743,16 +745,21 @@ pub mod type_check {
                     if exp.is_some() {
                         return Err(Error::BadInitializer(ident.clone()));
                     }
-                    if let Some(Attr::Fun { .. }) = self.sym_table.get(&ident.data) {
-                        return Err(Error::IncompatibleTypes(ident.clone()));
+                    match self.sym_table.get(&ident.data) {
+                        Some(Attr::Fun { .. }) => {
+                            return Err(Error::IncompatibleTypes(ident.clone()));
+                        }
+                        Some(_) => {}
+                        None => {
+                            self.sym_table.insert(
+                                ident.data.clone(),
+                                Attr::Static {
+                                    init: InitialValue::NoInitializer,
+                                    global: true,
+                                },
+                            );
+                        }
                     }
-                    self.sym_table.insert(
-                        ident.data.clone(),
-                        Attr::Static {
-                            init: InitialValue::NoInitializer,
-                            global: true,
-                        },
-                    );
                 }
                 Some(crate::ast::StorageClass::Static) => {
                     let init = match exp {
