@@ -42,6 +42,8 @@ pub enum Token {
     Break,
     Continue,
     Comma,
+    Static,
+    Extern,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -110,6 +112,8 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
                     "for" => Token::For,
                     "break" => Token::Break,
                     "continue" => Token::Continue,
+                    "static" => Token::Static,
+                    "extern" => Token::Extern,
                     _ => Token::Ident(EcoString::from(ident)),
                 };
                 tokens.push(Spanned {
