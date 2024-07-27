@@ -68,8 +68,9 @@ pub mod var_resolve {
 
         pub fn resolve_program(&mut self, program: &mut ast::Program) -> Result<(), Error> {
             self.scopes.push(HashMap::new());
-            for fun_decl in &mut program.function_definitions {
-                self.resolve_fun_decl(fun_decl)?;
+            for fun_decl in &mut program.decls {
+                // self.resolve_fun_decl(fun_decl)?;
+                todo!()
             }
             self.scopes.pop().unwrap();
             Ok(())
@@ -162,7 +163,12 @@ pub mod var_resolve {
         }
 
         pub fn resolve_fun_decl(&mut self, decl: &mut ast::FunDecl) -> Result<(), Error> {
-            let ast::FunDecl { name, params, body } = decl;
+            let ast::FunDecl {
+                name,
+                params,
+                body,
+                storage_class,
+            } = decl;
 
             if let Some(VarInfo {
                 has_linkage: false, ..
@@ -210,7 +216,11 @@ pub mod var_resolve {
         }
 
         pub fn resolve_var_decl(&mut self, decl: &mut ast::VarDecl) -> Result<(), Error> {
-            let ast::VarDecl { ident, exp } = decl;
+            let ast::VarDecl {
+                ident,
+                exp,
+                storage_class,
+            } = decl;
 
             if self.current_scope().contains_key(&ident.data) {
                 return Err(Error::VariableAlreadyDeclared(ident.clone()));
@@ -316,12 +326,15 @@ pub mod loop_label {
         }
 
         pub fn label_program(&mut self, program: &mut ast::Program) -> Result<(), Error> {
-            for fun_decl in &mut program.function_definitions {
+            todo!()
+            /*
+            for fun_decl in &mut program.decls {
                 if let Some(body) = &mut fun_decl.body {
                     self.label_block(None, body)?;
                 }
             }
             Ok(())
+            */
         }
 
         fn label_statement(
@@ -451,14 +464,22 @@ pub mod type_check {
 
     impl TypeChecker {
         pub fn check_program(&mut self, program: &crate::ast::Program) -> Result<(), Error> {
-            for fun_decl in &program.function_definitions {
+            todo!()
+            /*
+            for fun_decl in &program.decls {
                 self.check_fun_decl(fun_decl)?;
             }
             Ok(())
+            */
         }
 
         fn check_fun_decl(&mut self, fun_decl: &crate::ast::FunDecl) -> Result<(), Error> {
-            let crate::ast::FunDecl { name, params, body } = fun_decl;
+            let crate::ast::FunDecl {
+                name,
+                params,
+                body,
+                storage_class,
+            } = fun_decl;
 
             if let Some(Ty::Fun { arity, defined }) = self.sym_table.get_mut(&name.data) {
                 if *arity != params.len() {
@@ -511,7 +532,11 @@ pub mod type_check {
         }
 
         fn check_var_decl(&mut self, decl: &crate::ast::VarDecl) -> Result<(), Error> {
-            let crate::ast::VarDecl { ident, exp } = decl;
+            let crate::ast::VarDecl {
+                ident,
+                exp,
+                storage_class,
+            } = decl;
 
             self.sym_table.insert(ident.data.clone(), Ty::Int);
 

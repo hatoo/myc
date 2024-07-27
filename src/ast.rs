@@ -7,7 +7,13 @@ use crate::{
 
 #[derive(Debug)]
 pub struct Program {
-    pub function_definitions: Vec<FunDecl>,
+    pub decls: Vec<Declaration>,
+}
+
+#[derive(Debug)]
+pub enum StorageClass {
+    Static,
+    Extern,
 }
 
 #[derive(Debug)]
@@ -15,6 +21,7 @@ pub struct FunDecl {
     pub name: Spanned<EcoString>,
     pub params: Vec<Spanned<EcoString>>,
     pub body: Option<Block>,
+    pub storage_class: Option<StorageClass>,
 }
 
 #[derive(Debug)]
@@ -119,6 +126,7 @@ impl HasSpan for Expression {
 pub struct VarDecl {
     pub ident: Spanned<EcoString>,
     pub exp: Option<Expression>,
+    pub storage_class: Option<StorageClass>,
 }
 
 #[derive(Debug)]
@@ -216,6 +224,7 @@ pub enum ExpectedToken {
     Ident,
     Constant,
     Eof,
+    Specifier,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -323,6 +332,20 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn expect_specifier(&mut self) -> Result<Spanned<Token>, Error> {
+        if let Some(spanned) = self.tokens.get(self.index) {
+            match &spanned.data {
+                Token::Int | Token::Static | Token::Extern => {
+                    self.index += 1;
+                    Ok(spanned.clone())
+                }
+                _ => Err(Error::Unexpected(spanned.clone(), ExpectedToken::Specifier)),
+            }
+        } else {
+            Err(Error::UnexpectedEof)
+        }
+    }
+
     fn peek(&self) -> Option<&Spanned<Token>> {
         self.tokens.get(self.index)
     }
@@ -333,16 +356,14 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_program(&mut self) -> Result<Program, Error> {
-        let mut fun_decls = Vec::new();
+        let mut decls = Vec::new();
         loop {
             if self.expect_eof().is_ok() {
                 break;
             }
-            fun_decls.push(self.parse_fun_decl()?);
+            decls.push(self.parse_declaration()?);
         }
-        Ok(Program {
-            function_definitions: fun_decls,
-        })
+        Ok(Program { decls })
     }
 
     fn parse_statement(&mut self) -> Result<Statement, Error> {
@@ -485,8 +506,58 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn parse_specifiers(&mut self) -> Result<Option<StorageClass>, Error> {
+        let mut ty = None;
+        let mut storage_class = None;
+
+        loop {
+            if let Ok(specifier) = self.expect_specifier() {
+                match &specifier.data {
+                    Token::Int => {
+                        // TODO better error handling
+                        if ty.is_some() {
+                            return Err(Error::Unexpected(
+                                specifier.clone(),
+                                ExpectedToken::Specifier,
+                            ));
+                        }
+                        ty = Some(specifier);
+                    }
+                    Token::Static => {
+                        if storage_class.is_some() {
+                            return Err(Error::Unexpected(
+                                specifier.clone(),
+                                ExpectedToken::Specifier,
+                            ));
+                        }
+                        storage_class = Some(StorageClass::Static);
+                    }
+                    Token::Extern => {
+                        if storage_class.is_some() {
+                            return Err(Error::Unexpected(
+                                specifier.clone(),
+                                ExpectedToken::Specifier,
+                            ));
+                        }
+                        storage_class = Some(StorageClass::Extern);
+                    }
+                    _ => unreachable!(),
+                }
+            } else {
+                break;
+            }
+        }
+
+        let Some(_ty) = ty else {
+            // TODO better error handling
+            return Err(Error::UnexpectedEof);
+        };
+
+        Ok(storage_class)
+    }
+
     fn parse_var_decl(&mut self) -> Result<VarDecl, Error> {
-        self.expect(Token::Int)?;
+        let storage_class = self.parse_specifiers()?;
         let ident = self.expect_ident()?;
         if self.expect(Token::Equal).is_ok() {
             let exp = self.parse_expression(0)?;
@@ -494,10 +565,15 @@ impl<'a> Parser<'a> {
             Ok(VarDecl {
                 ident,
                 exp: Some(exp),
+                storage_class,
             })
         } else {
             self.expect(Token::SemiColon)?;
-            Ok(VarDecl { ident, exp: None })
+            Ok(VarDecl {
+                ident,
+                exp: None,
+                storage_class,
+            })
         }
     }
 
@@ -520,7 +596,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_fun_decl(&mut self) -> Result<FunDecl, Error> {
-        self.expect(Token::Int)?;
+        let storage_class = self.parse_specifiers()?;
         let name = self.expect_ident()?;
         self.expect(Token::OpenParen)?;
         let params = self.parse_param_list()?;
@@ -530,7 +606,12 @@ impl<'a> Parser<'a> {
         } else {
             Some(self.expect_block()?)
         };
-        Ok(FunDecl { name, params, body })
+        Ok(FunDecl {
+            name,
+            params,
+            body,
+            storage_class,
+        })
     }
 
     fn parse_declaration(&mut self) -> Result<Declaration, Error> {
