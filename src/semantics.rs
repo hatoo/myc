@@ -527,7 +527,10 @@ pub mod type_check {
 
     use ecow::EcoString;
 
-    use crate::span::{HasSpan, Spanned};
+    use crate::{
+        ast::Expression,
+        span::{HasSpan, Spanned},
+    };
 
     #[derive(Debug, Default)]
     pub struct TypeChecker {
@@ -548,7 +551,7 @@ pub mod type_check {
         Local,
     }
 
-    #[derive(Debug)]
+    #[derive(Debug, Clone, Copy)]
     enum InitialValue {
         Tentative,
         Initial(i32),
@@ -563,6 +566,10 @@ pub mod type_check {
         Redefined(Spanned<EcoString>),
         #[error("Static function declaration follows non-static : {0}")]
         StaticFunAfterNonStatic(Spanned<EcoString>),
+        #[error("Bad Initializer")]
+        BadInitializer(Spanned<EcoString>),
+        #[error("Incompatible linkage: {0}")]
+        IncompatibleLinkage(Spanned<EcoString>),
     }
 
     impl HasSpan for Error {
@@ -571,6 +578,8 @@ pub mod type_check {
                 Error::IncompatibleTypes(ident) => ident.span.clone(),
                 Error::Redefined(ident) => ident.span.clone(),
                 Error::StaticFunAfterNonStatic(ident) => ident.span.clone(),
+                Error::BadInitializer(ident) => ident.span.clone(),
+                Error::IncompatibleLinkage(ident) => ident.span.clone(),
             }
         }
     }
@@ -660,6 +669,65 @@ pub mod type_check {
                     self.check_fun_decl(decl)
                 }
             }
+        }
+
+        fn check_var_decl_file(&mut self, decl: &crate::ast::VarDecl) -> Result<(), Error> {
+            let crate::ast::VarDecl {
+                ident,
+                exp,
+                storage_class,
+            } = decl;
+
+            let mut init = match exp {
+                Some(Expression::Constant(val)) => InitialValue::Initial(val.data),
+                None => {
+                    if storage_class == &Some(crate::ast::StorageClass::Extern) {
+                        InitialValue::NoInitializer
+                    } else {
+                        InitialValue::Tentative
+                    }
+                }
+                _ => return Err(Error::BadInitializer(ident.clone())),
+            };
+
+            let mut global = storage_class != &Some(crate::ast::StorageClass::Static);
+
+            match self.sym_table.get(&ident.data) {
+                Some(Attr::Fun { .. }) => {
+                    return Err(Error::IncompatibleTypes(ident.clone()));
+                }
+                Some(Attr::Static {
+                    init: old_init,
+                    global: old_global,
+                }) => {
+                    if storage_class == &Some(crate::ast::StorageClass::Extern) {
+                        global = *old_global;
+                    } else if *old_global != global {
+                        return Err(Error::IncompatibleLinkage(ident.clone()));
+                    }
+
+                    if matches!(old_init, InitialValue::Initial(_)) {
+                        if matches!(init, InitialValue::Initial(_)) {
+                            return Err(Error::BadInitializer(ident.clone()));
+                        }
+                        init = *old_init;
+                    } else {
+                        if !matches!(init, InitialValue::Initial(_))
+                            && matches!(old_init, InitialValue::Tentative)
+                        {
+                            init = InitialValue::Tentative;
+                        }
+                    }
+                }
+                Some(Attr::Local) => {
+                    unreachable!()
+                }
+                None => {}
+            }
+
+            self.sym_table
+                .insert(ident.data.clone(), Attr::Static { init, global });
+            Ok(())
         }
 
         fn check_var_decl(&mut self, decl: &crate::ast::VarDecl) -> Result<(), Error> {
