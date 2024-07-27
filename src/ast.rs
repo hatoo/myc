@@ -10,7 +10,7 @@ pub struct Program {
     pub decls: Vec<Declaration>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum StorageClass {
     Static,
     Extern,

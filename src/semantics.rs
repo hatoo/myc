@@ -68,9 +68,11 @@ pub mod var_resolve {
 
         pub fn resolve_program(&mut self, program: &mut ast::Program) -> Result<(), Error> {
             self.scopes.push(HashMap::new());
-            for fun_decl in &mut program.decls {
-                // self.resolve_fun_decl(fun_decl)?;
-                todo!()
+            for decl in &mut program.decls {
+                match decl {
+                    ast::Declaration::VarDecl(decl) => self.resolve_var_decl_file_scope(decl)?,
+                    ast::Declaration::FunDecl(decl) => self.resolve_fun_decl(decl, true)?,
+                }
             }
             self.scopes.pop().unwrap();
             Ok(())
@@ -135,7 +137,7 @@ pub mod var_resolve {
                     if let Some(for_init) = init {
                         match for_init {
                             ast::ForInit::VarDecl(decl) => {
-                                self.resolve_var_decl(decl)?;
+                                self.resolve_var_decl_local(decl)?;
                             }
                             ast::ForInit::Expression(exp) => {
                                 self.resolve_expression(exp)?;
@@ -157,12 +159,72 @@ pub mod var_resolve {
 
         pub fn resolve_decl(&mut self, decl: &mut ast::Declaration) -> Result<(), Error> {
             match decl {
-                ast::Declaration::VarDecl(decl) => self.resolve_var_decl(decl),
-                ast::Declaration::FunDecl(decl) => self.resolve_fun_decl(decl),
+                ast::Declaration::VarDecl(decl) => self.resolve_var_decl_local(decl),
+                ast::Declaration::FunDecl(decl) => self.resolve_fun_decl(decl, false),
             }
         }
+        pub fn resolve_fun_decl(
+            &mut self,
+            decl: &mut ast::FunDecl,
+            file_scope: bool,
+        ) -> Result<(), Error> {
+            let ast::FunDecl {
+                name,
+                params,
+                body,
+                storage_class,
+            } = decl;
 
-        pub fn resolve_fun_decl(&mut self, decl: &mut ast::FunDecl) -> Result<(), Error> {
+            if !file_scope && storage_class == &Some(ast::StorageClass::Static) {
+                return Err(Error::VariableAlreadyDeclared(name.clone()));
+            }
+
+            if let Some(VarInfo {
+                has_linkage: false, ..
+            }) = self.current_scope().get(&name.data)
+            {
+                return Err(Error::VariableAlreadyDeclared(name.clone()));
+            }
+
+            self.current_scope().insert(
+                name.data.clone(),
+                VarInfo {
+                    new_name: name.data.clone(),
+                    has_linkage: true,
+                },
+            );
+
+            self.scopes.push(HashMap::new());
+
+            for param in params {
+                let unique_name = self.new_var(&param.data);
+                if self
+                    .current_scope()
+                    .insert(
+                        param.data.clone(),
+                        VarInfo {
+                            new_name: unique_name.clone(),
+                            has_linkage: false,
+                        },
+                    )
+                    .is_some()
+                {
+                    return Err(Error::VariableAlreadyDeclared(param.clone()));
+                }
+                param.data = unique_name;
+            }
+
+            if let Some(body) = body {
+                for block_item in &mut body.0 {
+                    self.resolve_block_item(block_item)?;
+                }
+            }
+
+            self.scopes.pop().unwrap();
+            Ok(())
+        }
+
+        pub fn resolve_fun_decl_local(&mut self, decl: &mut ast::FunDecl) -> Result<(), Error> {
             let ast::FunDecl {
                 name,
                 params,
@@ -215,7 +277,27 @@ pub mod var_resolve {
             Ok(())
         }
 
-        pub fn resolve_var_decl(&mut self, decl: &mut ast::VarDecl) -> Result<(), Error> {
+        pub fn resolve_var_decl_file_scope(
+            &mut self,
+            decl: &mut ast::VarDecl,
+        ) -> Result<(), Error> {
+            let ast::VarDecl {
+                ident,
+                exp: _,
+                storage_class: _,
+            } = decl;
+
+            self.current_scope().insert(
+                ident.data.clone(),
+                VarInfo {
+                    new_name: ident.data.clone(),
+                    has_linkage: true,
+                },
+            );
+            Ok(())
+        }
+
+        pub fn resolve_var_decl_local(&mut self, decl: &mut ast::VarDecl) -> Result<(), Error> {
             let ast::VarDecl {
                 ident,
                 exp,
@@ -226,19 +308,30 @@ pub mod var_resolve {
                 return Err(Error::VariableAlreadyDeclared(ident.clone()));
             }
 
-            let unique_name = self.new_var(&ident.data);
-            self.current_scope().insert(
-                ident.data.clone(),
-                VarInfo {
-                    new_name: unique_name.clone(),
-                    has_linkage: false,
-                },
-            );
-            ident.data = unique_name;
-            if let Some(exp) = exp {
-                self.resolve_expression(exp)?;
+            if storage_class == &Some(ast::StorageClass::Extern) {
+                self.current_scope().insert(
+                    ident.data.clone(),
+                    VarInfo {
+                        new_name: ident.data.clone(),
+                        has_linkage: true,
+                    },
+                );
+                Ok(())
+            } else {
+                let unique_name = self.new_var(&ident.data);
+                self.current_scope().insert(
+                    ident.data.clone(),
+                    VarInfo {
+                        new_name: unique_name.clone(),
+                        has_linkage: false,
+                    },
+                );
+                ident.data = unique_name;
+                if let Some(exp) = exp {
+                    self.resolve_expression(exp)?;
+                }
+                Ok(())
             }
-            Ok(())
         }
 
         pub fn resolve_expression(&mut self, exp: &mut ast::Expression) -> Result<(), Error> {
