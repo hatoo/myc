@@ -558,22 +558,54 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
 
 impl Display for Program {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for function in &self.top_levels {
-            // writeln!(f, "{}", function)?;
+        for top in &self.top_levels {
+            writeln!(f, "{}", top)?;
         }
         writeln!(f, ".section .note.GNU-stack,\"\",@progbits")?;
         Ok(())
     }
 }
 
+impl Display for TopLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TopLevel::StaticVariable(var) => write!(f, "{}", var)?,
+            TopLevel::Function(func) => write!(f, "{}", func)?,
+        }
+        Ok(())
+    }
+}
+
 impl Display for Function {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, ".globl {}", self.name)?;
+        if self.global {
+            writeln!(f, ".globl {}", self.name)?;
+        }
+        writeln!(f, ".text")?;
         writeln!(f, "{}:", self.name)?;
         writeln!(f, "pushq %rbp")?;
         writeln!(f, "movq %rsp, %rbp")?;
         for inst in &self.body {
             write!(f, "{inst}")?;
+        }
+        Ok(())
+    }
+}
+
+impl Display for StaticVariable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.global {
+            writeln!(f, ".globl {}", self.name)?;
+        }
+        if self.init == 0 {
+            writeln!(f, ".bss")?;
+            writeln!(f, ".align 4")?;
+            writeln!(f, "{}:", self.name)?;
+            writeln!(f, ".zero 4")?;
+        } else {
+            writeln!(f, ".data")?;
+            writeln!(f, "{}:", self.name)?;
+            writeln!(f, ".long {}", self.init)?;
         }
         Ok(())
     }
@@ -671,7 +703,7 @@ impl Display for Operand {
             Operand::Reg(reg) => write!(f, "{}", RegisterSize::Dword(reg))?,
             Operand::Pseudo(_) => panic!("Pseudo operand should have been removed"),
             Operand::Stack(offset) => write!(f, "{}(%rbp)", offset)?,
-            _ => todo!(),
+            Operand::Data(name) => write!(f, "{}(%rip)", name)?,
         }
 
         Ok(())

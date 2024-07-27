@@ -137,6 +137,9 @@ impl InstructionGenerator {
     }
 
     fn add_var_declaration(&mut self, decl: &ast::VarDecl) {
+        if decl.storage_class.is_some() {
+            return;
+        }
         if let Some(exp) = &decl.exp {
             let val = self.add_expression(exp);
             self.instructions.push(Instruction::Copy {
@@ -476,7 +479,9 @@ pub fn gen_program(
                     .decls
                     .iter()
                     .filter_map(|f| match f {
-                        ast::Declaration::FunDecl(f) => gen_function(&mut generator, f),
+                        ast::Declaration::FunDecl(f) => {
+                            gen_function(&mut generator, f, symbol_table)
+                        }
                         _ => None,
                     })
                     .map(TopLevelItem::Function),
@@ -485,7 +490,11 @@ pub fn gen_program(
     }
 }
 
-fn gen_function(generator: &mut InstructionGenerator, function: &ast::FunDecl) -> Option<Function> {
+fn gen_function(
+    generator: &mut InstructionGenerator,
+    function: &ast::FunDecl,
+    symbol_table: &HashMap<EcoString, semantics::type_check::Attr>,
+) -> Option<Function> {
     if let Some(block) = &function.body {
         for block_item in &block.0 {
             generator.add_block_item(block_item);
@@ -497,7 +506,13 @@ fn gen_function(generator: &mut InstructionGenerator, function: &ast::FunDecl) -
             },
         )));
         Some(Function {
-            global: function.storage_class != Some(ast::StorageClass::Static),
+            global: if let semantics::type_check::Attr::Fun { global, .. } =
+                symbol_table[&function.name.data]
+            {
+                global
+            } else {
+                unreachable!()
+            },
             name: function.name.data.clone(),
             params: function.params.iter().map(|s| s.data.clone()).collect(),
             body: std::mem::take(&mut generator.instructions),
