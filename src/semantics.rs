@@ -586,13 +586,14 @@ pub mod type_check {
 
     impl TypeChecker {
         pub fn check_program(&mut self, program: &crate::ast::Program) -> Result<(), Error> {
-            todo!()
-            /*
-            for fun_decl in &program.decls {
-                self.check_fun_decl(fun_decl)?;
+            for decl in &program.decls {
+                match decl {
+                    crate::ast::Declaration::VarDecl(decl) => self.check_var_decl_file(decl)?,
+                    crate::ast::Declaration::FunDecl(decl) => self.check_fun_decl(decl)?,
+                }
             }
+
             Ok(())
-            */
         }
 
         fn check_fun_decl(&mut self, fun_decl: &crate::ast::FunDecl) -> Result<(), Error> {
@@ -661,7 +662,7 @@ pub mod type_check {
 
         fn check_decl(&mut self, decl: &crate::ast::Declaration) -> Result<(), Error> {
             match decl {
-                crate::ast::Declaration::VarDecl(decl) => self.check_var_decl(decl),
+                crate::ast::Declaration::VarDecl(decl) => self.check_var_decl_local(decl),
                 crate::ast::Declaration::FunDecl(decl) => {
                     if decl.body.is_some() {
                         return Err(Error::IncompatibleTypes(decl.name.clone()));
@@ -730,17 +731,49 @@ pub mod type_check {
             Ok(())
         }
 
-        fn check_var_decl(&mut self, decl: &crate::ast::VarDecl) -> Result<(), Error> {
+        fn check_var_decl_local(&mut self, decl: &crate::ast::VarDecl) -> Result<(), Error> {
             let crate::ast::VarDecl {
                 ident,
                 exp,
                 storage_class,
             } = decl;
 
-            self.sym_table.insert(ident.data.clone(), Attr::Int);
-
-            if let Some(exp) = exp {
-                self.check_expression(exp)?;
+            match storage_class {
+                Some(crate::ast::StorageClass::Extern) => {
+                    if exp.is_some() {
+                        return Err(Error::BadInitializer(ident.clone()));
+                    }
+                    if let Some(Attr::Fun { .. }) = self.sym_table.get(&ident.data) {
+                        return Err(Error::IncompatibleTypes(ident.clone()));
+                    }
+                    self.sym_table.insert(
+                        ident.data.clone(),
+                        Attr::Static {
+                            init: InitialValue::NoInitializer,
+                            global: true,
+                        },
+                    );
+                }
+                Some(crate::ast::StorageClass::Static) => {
+                    let init = match exp {
+                        Some(Expression::Constant(val)) => InitialValue::Initial(val.data),
+                        None => InitialValue::Initial(0),
+                        _ => return Err(Error::BadInitializer(ident.clone())),
+                    };
+                    self.sym_table.insert(
+                        ident.data.clone(),
+                        Attr::Static {
+                            init,
+                            global: false,
+                        },
+                    );
+                }
+                _ => {
+                    self.sym_table.insert(ident.data.clone(), Attr::Local);
+                    if let Some(exp) = exp {
+                        self.check_expression(exp)?;
+                    }
+                }
             }
 
             Ok(())
@@ -749,10 +782,10 @@ pub mod type_check {
         fn check_expression(&mut self, exp: &crate::ast::Expression) -> Result<(), Error> {
             match exp {
                 crate::ast::Expression::Var(name) => {
-                    if let Some(Attr::Int) = self.sym_table.get(&name.data) {
-                        Ok(())
-                    } else {
+                    if let Some(Attr::Fun { .. }) = self.sym_table.get(&name.data) {
                         Err(Error::IncompatibleTypes(name.clone()))
+                    } else {
+                        Ok(())
                     }
                 }
                 crate::ast::Expression::Constant(_) => Ok(()),
@@ -842,7 +875,9 @@ pub mod type_check {
                 } => {
                     if let Some(init) = init {
                         match init {
-                            crate::ast::ForInit::VarDecl(decl) => self.check_var_decl(decl)?,
+                            crate::ast::ForInit::VarDecl(decl) => {
+                                self.check_var_decl_local(decl)?
+                            }
                             crate::ast::ForInit::Expression(exp) => self.check_expression(exp)?,
                         }
                     }
