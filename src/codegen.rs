@@ -2,15 +2,29 @@ use std::{collections::HashMap, fmt::Display};
 
 use ecow::EcoString;
 
-use crate::tacky;
+use crate::{semantics, tacky};
 
 #[derive(Debug)]
 pub struct Program {
-    pub function_definitions: Vec<Function>,
+    pub top_levels: Vec<TopLevel>,
+}
+
+#[derive(Debug)]
+pub enum TopLevel {
+    StaticVariable(StaticVariable),
+    Function(Function),
+}
+
+#[derive(Debug)]
+pub struct StaticVariable {
+    pub global: bool,
+    pub name: EcoString,
+    pub init: i32,
 }
 
 #[derive(Debug)]
 pub struct Function {
+    pub global: bool,
     pub name: EcoString,
     pub body: Vec<Instruction>,
 }
@@ -63,6 +77,7 @@ pub enum Operand {
     Reg(Register),
     Pseudo(EcoString),
     Stack(i32),
+    Data(EcoString),
 }
 
 #[derive(Debug, Clone)]
@@ -94,17 +109,36 @@ pub enum CondCode {
     Le,
 }
 
-pub fn gen_program(program: &tacky::Program) -> Program {
+pub fn gen_program(
+    program: &tacky::Program,
+    symbol_table: &HashMap<EcoString, semantics::type_check::Attr>,
+) -> Program {
     Program {
-        function_definitions: program
-            .function_definitions
+        top_levels: program
+            .top_levels
             .iter()
-            .map(gen_function)
+            .map(|item| match item {
+                tacky::TopLevelItem::StaticVariable(tacky::StaticVariable {
+                    global,
+                    name,
+                    init,
+                }) => TopLevel::StaticVariable(StaticVariable {
+                    global: *global,
+                    name: name.clone(),
+                    init: *init,
+                }),
+                tacky::TopLevelItem::Function(function) => {
+                    TopLevel::Function(gen_function(function, symbol_table))
+                }
+            })
             .collect(),
     }
 }
 
-fn gen_function(function: &tacky::Function) -> Function {
+fn gen_function(
+    function: &tacky::Function,
+    symbol_table: &HashMap<EcoString, semantics::type_check::Attr>,
+) -> Function {
     let mut body = Vec::new();
 
     for (i, param) in function.params.iter().enumerate() {
@@ -361,12 +395,13 @@ fn gen_function(function: &tacky::Function) -> Function {
         }
     }
 
-    let stack_size = pseudo_to_stack(&mut body);
+    let stack_size = pseudo_to_stack(&mut body, symbol_table);
     let stack_size = (stack_size + 15) / 16 * 16;
     body.insert(0, Instruction::AllocateStack(stack_size));
     body = avoid_mov_mem_mem(body);
 
     Function {
+        global: function.global,
         name: function.name.clone(),
         body,
     }
@@ -381,14 +416,21 @@ impl From<&tacky::Val> for Operand {
     }
 }
 
-fn pseudo_to_stack(insts: &mut [Instruction]) -> usize {
+fn pseudo_to_stack(
+    insts: &mut [Instruction],
+    symbol_table: &HashMap<EcoString, semantics::type_check::Attr>,
+) -> usize {
     let mut known_vars = HashMap::new();
 
     let mut remove_pseudo = |operand: &mut Operand| {
         if let Operand::Pseudo(var) = operand {
-            let rsp = (known_vars.len() as i32 + 1) * -4;
-            let offset = known_vars.entry(var.clone()).or_insert(rsp);
-            *operand = Operand::Stack(*offset);
+            if let Some(semantics::type_check::Attr::Static { .. }) = symbol_table.get(var) {
+                *operand = Operand::Data(var.clone());
+            } else {
+                let rsp = (known_vars.len() as i32 + 1) * -4;
+                let offset = known_vars.entry(var.clone()).or_insert(rsp);
+                *operand = Operand::Stack(*offset);
+            }
         }
     };
 
@@ -438,8 +480,8 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
     for inst in insts {
         match inst {
             Instruction::Mov {
-                src: src @ Operand::Stack(_),
-                dst: dst @ Operand::Stack(_),
+                src: src @ (Operand::Stack(_) | Operand::Data(_)),
+                dst: dst @ (Operand::Stack(_) | Operand::Data(_)),
             } => {
                 new_insts.push(Instruction::Mov {
                     src,
@@ -450,7 +492,7 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
                     dst,
                 });
             }
-            Instruction::Idiv(op) if matches!(op, Operand::Imm(_)) => {
+            Instruction::Idiv(op @ Operand::Imm(_)) => {
                 new_insts.push(Instruction::Mov {
                     src: op,
                     dst: Operand::Reg(Register::R10),
@@ -459,8 +501,8 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
             }
             Instruction::Binary {
                 op: op @ (BinaryOp::Add | BinaryOp::Sub),
-                lhs: lhs @ Operand::Stack(_),
-                rhs: rhs @ Operand::Stack(_),
+                lhs: lhs @ (Operand::Stack(_) | Operand::Data(_)),
+                rhs: rhs @ (Operand::Stack(_) | Operand::Data(_)),
             } => {
                 new_insts.push(Instruction::Mov {
                     src: lhs,
@@ -475,7 +517,7 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
             Instruction::Binary {
                 op: BinaryOp::Mult,
                 lhs,
-                rhs: rhs @ Operand::Stack(_),
+                rhs: rhs @ (Operand::Stack(_) | Operand::Data(_)),
             } => {
                 new_insts.push(Instruction::Mov {
                     src: rhs.clone(),
@@ -491,7 +533,10 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
                     dst: rhs,
                 });
             }
-            Instruction::Cmp(lhs @ Operand::Stack(_), rhs @ Operand::Stack(_)) => {
+            Instruction::Cmp(
+                lhs @ (Operand::Stack(_) | Operand::Data(_)),
+                rhs @ (Operand::Stack(_) | Operand::Data(_)),
+            ) => {
                 new_insts.push(Instruction::Mov {
                     src: lhs,
                     dst: Operand::Reg(Register::R10),
@@ -513,8 +558,8 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
 
 impl Display for Program {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for function in &self.function_definitions {
-            writeln!(f, "{}", function)?;
+        for function in &self.top_levels {
+            // writeln!(f, "{}", function)?;
         }
         writeln!(f, ".section .note.GNU-stack,\"\",@progbits")?;
         Ok(())
@@ -626,6 +671,7 @@ impl Display for Operand {
             Operand::Reg(reg) => write!(f, "{}", RegisterSize::Dword(reg))?,
             Operand::Pseudo(_) => panic!("Pseudo operand should have been removed"),
             Operand::Stack(offset) => write!(f, "{}(%rbp)", offset)?,
+            _ => todo!(),
         }
 
         Ok(())

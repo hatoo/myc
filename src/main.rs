@@ -60,7 +60,8 @@ fn main() {
         .map_err(|err| SpannedError::new(err, src.clone()))
         .unwrap();
 
-    TypeChecker::default()
+    let mut type_checker = TypeChecker::default();
+    type_checker
         .check_program(&program)
         .map_err(|err| SpannedError::new(err, src.clone()))
         .unwrap();
@@ -70,14 +71,14 @@ fn main() {
         return;
     }
 
-    let tacky = myc::tacky::gen_program(&program);
+    let tacky = myc::tacky::gen_program(&program, &type_checker.sym_table);
 
     if opts.tacky {
         dbg!(tacky);
         return;
     }
 
-    let code = myc::codegen::gen_program(&tacky);
+    let code = myc::codegen::gen_program(&tacky, &type_checker.sym_table);
 
     if opts.codegen {
         dbg!(code);

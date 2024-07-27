@@ -536,11 +536,11 @@ pub mod type_check {
 
     #[derive(Debug, Default)]
     pub struct TypeChecker {
-        sym_table: HashMap<EcoString, Attr>,
+        pub sym_table: HashMap<EcoString, Attr>,
     }
 
     #[derive(Debug)]
-    enum Attr {
+    pub enum Attr {
         Fun {
             arity: usize,
             defined: bool,
@@ -554,7 +554,7 @@ pub mod type_check {
     }
 
     #[derive(Debug, Clone, Copy)]
-    enum InitialValue {
+    pub enum InitialValue {
         Tentative,
         Initial(i32),
         NoInitializer,

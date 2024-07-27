@@ -1,20 +1,37 @@
+use std::collections::HashMap;
+
 use ecow::EcoString;
 
 use crate::{
     ast::{self, Block},
+    semantics,
     span::Spanned,
 };
 
 #[derive(Debug)]
 pub struct Program {
-    pub function_definitions: Vec<Function>,
+    pub top_levels: Vec<TopLevelItem>,
+}
+
+#[derive(Debug)]
+pub enum TopLevelItem {
+    Function(Function),
+    StaticVariable(StaticVariable),
 }
 
 #[derive(Debug)]
 pub struct Function {
+    pub global: bool,
     pub name: EcoString,
     pub params: Vec<EcoString>,
     pub body: Vec<Instruction>,
+}
+
+#[derive(Debug)]
+pub struct StaticVariable {
+    pub global: bool,
+    pub name: EcoString,
+    pub init: i32,
 }
 
 #[derive(Debug)]
@@ -430,18 +447,42 @@ impl InstructionGenerator {
     }
 }
 
-pub fn gen_program(program: &ast::Program) -> Program {
-    todo!()
-    /*
+pub fn gen_program(
+    program: &ast::Program,
+    symbol_table: &HashMap<EcoString, semantics::type_check::Attr>,
+) -> Program {
     let mut generator = InstructionGenerator::new();
     Program {
-        function_definitions: program
-            .decls
+        top_levels: symbol_table
             .iter()
-            .filter_map(|f| gen_function(&mut generator, f))
+            .filter_map(|(key, value)| {
+                if let semantics::type_check::Attr::Static { init, global } = value {
+                    let init = match init {
+                        semantics::type_check::InitialValue::Initial(i) => *i,
+                        semantics::type_check::InitialValue::Tentative => 0,
+                        semantics::type_check::InitialValue::NoInitializer => return None,
+                    };
+                    Some(TopLevelItem::StaticVariable(StaticVariable {
+                        global: *global,
+                        name: key.clone(),
+                        init,
+                    }))
+                } else {
+                    None
+                }
+            })
+            .chain(
+                program
+                    .decls
+                    .iter()
+                    .filter_map(|f| match f {
+                        ast::Declaration::FunDecl(f) => gen_function(&mut generator, f),
+                        _ => None,
+                    })
+                    .map(TopLevelItem::Function),
+            )
             .collect(),
     }
-    */
 }
 
 fn gen_function(generator: &mut InstructionGenerator, function: &ast::FunDecl) -> Option<Function> {
@@ -456,6 +497,7 @@ fn gen_function(generator: &mut InstructionGenerator, function: &ast::FunDecl) -
             },
         )));
         Some(Function {
+            global: function.storage_class != Some(ast::StorageClass::Static),
             name: function.name.data.clone(),
             params: function.params.iter().map(|s| s.data.clone()).collect(),
             body: std::mem::take(&mut generator.instructions),
