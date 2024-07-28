@@ -159,6 +159,7 @@ impl TypeChecker {
 
         let mut init = match init {
             Some(Expression::Constant(val)) => InitialValue::Initial(val.data),
+            Some(_) => return Err(Error::BadInitializer(ident.clone())),
             None => {
                 if storage_class == &Some(crate::ast::StorageClass::Extern) {
                     InitialValue::NoInitializer
@@ -166,7 +167,6 @@ impl TypeChecker {
                     InitialValue::Tentative
                 }
             }
-            _ => return Err(Error::BadInitializer(ident.clone())),
         };
 
         let mut global = storage_class != &Some(crate::ast::StorageClass::Static);
