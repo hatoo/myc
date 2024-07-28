@@ -402,7 +402,7 @@ impl InstructionGenerator {
                     });
                     Val::Var(var.clone())
                 } else {
-                    panic!("invalid lvalue");
+                    unreachable!("invalid lvalue");
                 }
             }
             ast::Expression::Conditional {
