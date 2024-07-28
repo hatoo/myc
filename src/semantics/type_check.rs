@@ -45,6 +45,8 @@ pub enum Error {
     BadInitializer(Spanned<EcoString>),
     #[error("Incompatible linkage: {0}")]
     IncompatibleLinkage(Spanned<EcoString>),
+    #[error("Function declaration in block scope has a body")]
+    BlockScopeFunWithBody(Spanned<EcoString>),
 }
 
 impl HasSpan for Error {
@@ -55,6 +57,7 @@ impl HasSpan for Error {
             Error::StaticFunAfterNonStatic(ident) => ident.span.clone(),
             Error::BadInitializer(ident) => ident.span.clone(),
             Error::IncompatibleLinkage(ident) => ident.span.clone(),
+            Error::BlockScopeFunWithBody(ident) => ident.span.clone(),
         }
     }
 }
@@ -119,28 +122,28 @@ impl TypeChecker {
             for param in params {
                 self.sym_table.insert(param.data.clone(), Attr::Local);
             }
-            self.check_block(body)?;
+            self.check_block_local(body)?;
         }
 
         Ok(())
     }
 
-    fn check_block(&mut self, block: &crate::ast::Block) -> Result<(), Error> {
+    fn check_block_local(&mut self, block: &crate::ast::Block) -> Result<(), Error> {
         for block_item in &block.0 {
             match block_item {
-                crate::ast::BlockItem::Declaration(decl) => self.check_decl(decl)?,
+                crate::ast::BlockItem::Declaration(decl) => self.check_decl_local(decl)?,
                 crate::ast::BlockItem::Statement(stmt) => self.check_statement(stmt)?,
             }
         }
         Ok(())
     }
 
-    fn check_decl(&mut self, decl: &crate::ast::Declaration) -> Result<(), Error> {
+    fn check_decl_local(&mut self, decl: &crate::ast::Declaration) -> Result<(), Error> {
         match decl {
             crate::ast::Declaration::VarDecl(decl) => self.check_var_decl_local(decl),
             crate::ast::Declaration::FunDecl(decl) => {
                 if decl.body.is_some() {
-                    return Err(Error::IncompatibleTypes(decl.name.clone()));
+                    return Err(Error::BlockScopeFunWithBody(decl.name.clone()));
                 }
                 self.check_fun_decl(decl)
             }
@@ -321,7 +324,7 @@ impl TypeChecker {
                 Ok(())
             }
             crate::ast::Statement::Compound(block) => {
-                self.check_block(block)?;
+                self.check_block_local(block)?;
                 Ok(())
             }
             crate::ast::Statement::Break { .. } => Ok(()),
