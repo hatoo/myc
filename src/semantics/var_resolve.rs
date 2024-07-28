@@ -28,6 +28,8 @@ pub enum Error {
     InvalidLValue(Expression),
     #[error("Undeclared function: {0:?}")]
     UndeclaredFunction(Expression),
+    #[error("Static function declaration in block scope: {0}")]
+    StaticFunInBlock(Spanned<EcoString>),
 }
 
 impl HasSpan for Error {
@@ -37,12 +39,13 @@ impl HasSpan for Error {
             Error::VariableAlreadyDeclared(ident) => ident.span.clone(),
             Error::InvalidLValue(exp) => exp.span(),
             Error::UndeclaredFunction(exp) => exp.span(),
+            Error::StaticFunInBlock(ident) => ident.span.clone(),
         }
     }
 }
 
 impl VarResolver {
-    pub fn new_var(&mut self, prefix: &EcoString) -> EcoString {
+    fn new_var(&mut self, prefix: &EcoString) -> EcoString {
         let var = EcoString::from(format!("{}.{}", prefix, self.var_counter));
         self.var_counter += 1;
         var
@@ -73,14 +76,14 @@ impl VarResolver {
         Ok(())
     }
 
-    pub fn resolve_block_item(&mut self, block_item: &mut ast::BlockItem) -> Result<(), Error> {
+    fn resolve_block_item(&mut self, block_item: &mut ast::BlockItem) -> Result<(), Error> {
         match block_item {
             ast::BlockItem::Declaration(decl) => self.resolve_decl(decl),
             ast::BlockItem::Statement(stmt) => self.resolve_statement(stmt),
         }
     }
 
-    pub fn resolve_statement(&mut self, stmt: &mut ast::Statement) -> Result<(), Error> {
+    fn resolve_statement(&mut self, stmt: &mut ast::Statement) -> Result<(), Error> {
         match stmt {
             ast::Statement::Return(decl) => self.resolve_expression(decl),
             ast::Statement::Expression(exp) => self.resolve_expression(exp),
@@ -152,17 +155,13 @@ impl VarResolver {
         }
     }
 
-    pub fn resolve_decl(&mut self, decl: &mut ast::Declaration) -> Result<(), Error> {
+    fn resolve_decl(&mut self, decl: &mut ast::Declaration) -> Result<(), Error> {
         match decl {
             ast::Declaration::VarDecl(decl) => self.resolve_var_decl_local(decl),
             ast::Declaration::FunDecl(decl) => self.resolve_fun_decl(decl, false),
         }
     }
-    pub fn resolve_fun_decl(
-        &mut self,
-        decl: &mut ast::FunDecl,
-        file_scope: bool,
-    ) -> Result<(), Error> {
+    fn resolve_fun_decl(&mut self, decl: &mut ast::FunDecl, file_scope: bool) -> Result<(), Error> {
         let ast::FunDecl {
             name,
             params,
@@ -171,7 +170,7 @@ impl VarResolver {
         } = decl;
 
         if !file_scope && storage_class == &Some(ast::StorageClass::Static) {
-            return Err(Error::VariableAlreadyDeclared(name.clone()));
+            return Err(Error::StaticFunInBlock(name.clone()));
         }
 
         if let Some(VarInfo {
@@ -219,60 +218,7 @@ impl VarResolver {
         Ok(())
     }
 
-    pub fn resolve_fun_decl_local(&mut self, decl: &mut ast::FunDecl) -> Result<(), Error> {
-        let ast::FunDecl {
-            name,
-            params,
-            body,
-            storage_class: _,
-        } = decl;
-
-        if let Some(VarInfo {
-            has_linkage: false, ..
-        }) = self.current_scope().get(&name.data)
-        {
-            return Err(Error::VariableAlreadyDeclared(name.clone()));
-        }
-
-        self.current_scope().insert(
-            name.data.clone(),
-            VarInfo {
-                new_name: name.data.clone(),
-                has_linkage: true,
-            },
-        );
-
-        self.scopes.push(HashMap::new());
-
-        for param in params {
-            let unique_name = self.new_var(&param.data);
-            if self
-                .current_scope()
-                .insert(
-                    param.data.clone(),
-                    VarInfo {
-                        new_name: unique_name.clone(),
-                        has_linkage: false,
-                    },
-                )
-                .is_some()
-            {
-                return Err(Error::VariableAlreadyDeclared(param.clone()));
-            }
-            param.data = unique_name;
-        }
-
-        if let Some(body) = body {
-            for block_item in &mut body.0 {
-                self.resolve_block_item(block_item)?;
-            }
-        }
-
-        self.scopes.pop().unwrap();
-        Ok(())
-    }
-
-    pub fn resolve_var_decl_file_scope(&mut self, decl: &mut ast::VarDecl) -> Result<(), Error> {
+    fn resolve_var_decl_file_scope(&mut self, decl: &mut ast::VarDecl) -> Result<(), Error> {
         let ast::VarDecl {
             ident,
             init: _,
@@ -289,7 +235,7 @@ impl VarResolver {
         Ok(())
     }
 
-    pub fn resolve_var_decl_local(&mut self, decl: &mut ast::VarDecl) -> Result<(), Error> {
+    fn resolve_var_decl_local(&mut self, decl: &mut ast::VarDecl) -> Result<(), Error> {
         let ast::VarDecl {
             ident,
             init,
@@ -328,7 +274,7 @@ impl VarResolver {
         }
     }
 
-    pub fn resolve_expression(&mut self, exp: &mut ast::Expression) -> Result<(), Error> {
+    fn resolve_expression(&mut self, exp: &mut ast::Expression) -> Result<(), Error> {
         match exp {
             ast::Expression::Constant(_) => Ok(()),
             ast::Expression::Unary { exp, .. } => self.resolve_expression(exp),
