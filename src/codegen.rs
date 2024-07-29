@@ -1,12 +1,39 @@
-use std::{collections::HashMap, fmt::Display};
+use std::{arch::x86_64::__m128, collections::HashMap, fmt::Display};
 
 use ecow::EcoString;
 
-use crate::{semantics, tacky};
+use crate::{
+    ast::{self, VarType},
+    semantics, tacky,
+};
 
 #[derive(Debug)]
 pub struct Program {
     pub top_levels: Vec<TopLevel>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AssemblyType {
+    LongWord,
+    QuadWord,
+}
+
+impl<'a> From<&'a ast::VarType> for AssemblyType {
+    fn from(ty: &'a ast::VarType) -> Self {
+        match ty {
+            ast::VarType::Int => AssemblyType::LongWord,
+            ast::VarType::Long => AssemblyType::QuadWord,
+        }
+    }
+}
+
+impl From<ast::VarType> for AssemblyType {
+    fn from(ty: ast::VarType) -> Self {
+        match ty {
+            ast::VarType::Int => AssemblyType::LongWord,
+            ast::VarType::Long => AssemblyType::QuadWord,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -19,7 +46,8 @@ pub enum TopLevel {
 pub struct StaticVariable {
     pub global: bool,
     pub name: EcoString,
-    pub init: i32,
+    pub init: semantics::type_check::StaticInit,
+    pub alignment: usize,
 }
 
 #[derive(Debug)]
@@ -32,28 +60,33 @@ pub struct Function {
 #[derive(Debug)]
 pub enum Instruction {
     Mov {
+        ty: AssemblyType,
+        src: Operand,
+        dst: Operand,
+    },
+    Movsx {
         src: Operand,
         dst: Operand,
     },
     Unary {
         op: UnaryOp,
+        ty: AssemblyType,
         src: Operand,
     },
     Binary {
         op: BinaryOp,
+        ty: AssemblyType,
         lhs: Operand,
         rhs: Operand,
     },
-    Cmp(Operand, Operand),
-    Idiv(Operand),
-    Cdq,
+    Cmp(AssemblyType, Operand, Operand),
+    Idiv(AssemblyType, Operand),
+    Cdq(AssemblyType),
     Jmp(EcoString),
     JmpCc(CondCode, EcoString),
     SetCc(CondCode, Operand),
     Label(EcoString),
-    AllocateStack(usize),
     Ret,
-    DeallocateStack(usize),
     Push(Operand),
     Call(EcoString),
 }
@@ -73,11 +106,29 @@ pub enum BinaryOp {
 
 #[derive(Debug, Clone)]
 pub enum Operand {
-    Imm(i32),
+    Imm(i64),
     Reg(Register),
     Pseudo(EcoString),
     Stack(i32),
     Data(EcoString),
+}
+
+impl From<tacky::Val> for Operand {
+    fn from(val: tacky::Val) -> Self {
+        match val {
+            tacky::Val::Constant(imm) => Operand::Imm(imm.get_long()),
+            tacky::Val::Var(var) => Operand::Pseudo(var),
+        }
+    }
+}
+
+impl<'a> From<&'a tacky::Val> for Operand {
+    fn from(val: &'a tacky::Val) -> Self {
+        match val {
+            tacky::Val::Constant(imm) => Operand::Imm(imm.get_long()),
+            tacky::Val::Var(var) => Operand::Pseudo(var.clone()),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -91,6 +142,7 @@ pub enum Register {
     R9,
     R10,
     R11,
+    SP,
 }
 
 pub enum RegisterSize<'a> {
@@ -113,14 +165,13 @@ pub fn gen_program(
     program: &tacky::Program,
     symbol_table: &HashMap<EcoString, semantics::type_check::Attr>,
 ) -> Program {
-    todo!()
-    /*
     Program {
         top_levels: program
             .top_levels
             .iter()
             .map(|item| match item {
                 tacky::TopLevelItem::StaticVariable(tacky::StaticVariable {
+                    ty,
                     global,
                     name,
                     init,
@@ -128,6 +179,10 @@ pub fn gen_program(
                     global: *global,
                     name: name.clone(),
                     init: *init,
+                    alignment: match ty {
+                        VarType::Int => 4,
+                        VarType::Long => 8,
+                    },
                 }),
                 tacky::TopLevelItem::Function(function) => {
                     TopLevel::Function(gen_function(function, symbol_table))
@@ -135,7 +190,6 @@ pub fn gen_program(
             })
             .collect(),
     }
-    */
 }
 
 fn gen_function(
@@ -144,46 +198,57 @@ fn gen_function(
 ) -> Function {
     let mut body = Vec::new();
 
-    for (i, param) in function.params.iter().enumerate() {
+    let semantics::type_check::Attr::Fun { ty, .. } = &symbol_table[&function.name] else {
+        unreachable!()
+    };
+
+    for (i, (param, ty)) in function.params.iter().zip(ty.params.iter()).enumerate() {
         match i {
             0 => {
                 body.push(Instruction::Mov {
+                    ty: ty.into(),
                     src: Operand::Reg(Register::Di),
                     dst: Operand::Pseudo(param.clone()),
                 });
             }
             1 => {
                 body.push(Instruction::Mov {
+                    ty: ty.into(),
                     src: Operand::Reg(Register::Si),
                     dst: Operand::Pseudo(param.clone()),
                 });
             }
             2 => {
                 body.push(Instruction::Mov {
+                    ty: ty.into(),
                     src: Operand::Reg(Register::Dx),
                     dst: Operand::Pseudo(param.clone()),
                 });
             }
             3 => {
                 body.push(Instruction::Mov {
+                    ty: ty.into(),
                     src: Operand::Reg(Register::Cx),
                     dst: Operand::Pseudo(param.clone()),
                 });
             }
             4 => {
                 body.push(Instruction::Mov {
+                    ty: ty.into(),
                     src: Operand::Reg(Register::R8),
                     dst: Operand::Pseudo(param.clone()),
                 });
             }
             5 => {
                 body.push(Instruction::Mov {
+                    ty: ty.into(),
                     src: Operand::Reg(Register::R9),
                     dst: Operand::Pseudo(param.clone()),
                 });
             }
             _ => {
                 body.push(Instruction::Mov {
+                    ty: ty.into(),
                     src: Operand::Stack((16 + (i - 6) * 8) as i32),
                     dst: Operand::Pseudo(param.clone()),
                 });
@@ -195,12 +260,15 @@ fn gen_function(
         match inst {
             tacky::Instruction::Return(val) => {
                 body.push(Instruction::Mov {
+                    ty: ty.ret.into(),
                     src: val.into(),
                     dst: Operand::Reg(Register::Ax),
                 });
                 body.push(Instruction::Ret);
             }
             tacky::Instruction::Unary { op, src, dst } => {
+                let dst_ty = dst.ty(symbol_table);
+
                 enum Unary {
                     Simple(UnaryOp),
                     Not,
@@ -215,17 +283,24 @@ fn gen_function(
                 match op {
                     Unary::Simple(op) => {
                         body.push(Instruction::Mov {
+                            ty: src.ty(symbol_table).into(),
                             src: src.into(),
                             dst: dst.into(),
                         });
                         body.push(Instruction::Unary {
+                            ty: src.ty(symbol_table).into(),
                             op,
                             src: dst.into(),
                         });
                     }
                     Unary::Not => {
-                        body.push(Instruction::Cmp(Operand::Imm(0), src.into()));
+                        body.push(Instruction::Cmp(
+                            src.ty(symbol_table).into(),
+                            Operand::Imm(0),
+                            src.into(),
+                        ));
                         body.push(Instruction::Mov {
+                            ty: dst_ty.into(),
                             src: Operand::Imm(0),
                             dst: dst.into(),
                         });
@@ -258,10 +333,12 @@ fn gen_function(
                 match op {
                     Binary::Simple(op) => {
                         body.push(Instruction::Mov {
+                            ty: lhs.ty(symbol_table).into(),
                             src: lhs.into(),
                             dst: dst.into(),
                         });
                         body.push(Instruction::Binary {
+                            ty: lhs.ty(symbol_table).into(),
                             op,
                             lhs: rhs.into(),
                             rhs: dst.into(),
@@ -269,31 +346,40 @@ fn gen_function(
                     }
                     Binary::Divide => {
                         body.push(Instruction::Mov {
+                            ty: lhs.ty(symbol_table).into(),
                             src: lhs.into(),
                             dst: Operand::Reg(Register::Ax),
                         });
-                        body.push(Instruction::Cdq);
-                        body.push(Instruction::Idiv(rhs.into()));
+                        body.push(Instruction::Cdq(lhs.ty(symbol_table).into()));
+                        body.push(Instruction::Idiv(lhs.ty(symbol_table).into(), rhs.into()));
                         body.push(Instruction::Mov {
+                            ty: lhs.ty(symbol_table).into(),
                             src: Operand::Reg(Register::Ax),
                             dst: dst.into(),
                         });
                     }
                     Binary::Remainder => {
                         body.push(Instruction::Mov {
+                            ty: lhs.ty(symbol_table).into(),
                             src: lhs.into(),
                             dst: Operand::Reg(Register::Ax),
                         });
-                        body.push(Instruction::Cdq);
-                        body.push(Instruction::Idiv(rhs.into()));
+                        body.push(Instruction::Cdq(lhs.ty(symbol_table).into()));
+                        body.push(Instruction::Idiv(lhs.ty(symbol_table).into(), rhs.into()));
                         body.push(Instruction::Mov {
+                            ty: lhs.ty(symbol_table).into(),
                             src: Operand::Reg(Register::Dx),
                             dst: dst.into(),
                         });
                     }
                     Binary::Compare(cond) => {
-                        body.push(Instruction::Cmp(rhs.into(), lhs.into()));
+                        body.push(Instruction::Cmp(
+                            lhs.ty(symbol_table).into(),
+                            rhs.into(),
+                            lhs.into(),
+                        ));
                         body.push(Instruction::Mov {
+                            ty: dst.ty(symbol_table).into(),
                             src: Operand::Imm(0),
                             dst: dst.into(),
                         });
@@ -303,6 +389,7 @@ fn gen_function(
             }
             tacky::Instruction::Copy { src, dst } => {
                 body.push(Instruction::Mov {
+                    ty: src.ty(symbol_table).into(),
                     src: src.into(),
                     dst: dst.into(),
                 });
@@ -311,11 +398,19 @@ fn gen_function(
                 body.push(Instruction::Jmp(label.clone()));
             }
             tacky::Instruction::JumpIfZero { src, dst } => {
-                body.push(Instruction::Cmp(Operand::Imm(0), src.into()));
+                body.push(Instruction::Cmp(
+                    src.ty(symbol_table).into(),
+                    Operand::Imm(0),
+                    src.into(),
+                ));
                 body.push(Instruction::JmpCc(CondCode::E, dst.clone()));
             }
             tacky::Instruction::JumpIfNotZero { src, dst } => {
-                body.push(Instruction::Cmp(Operand::Imm(0), src.into()));
+                body.push(Instruction::Cmp(
+                    src.ty(symbol_table).into(),
+                    Operand::Imm(0),
+                    src.into(),
+                ));
                 body.push(Instruction::JmpCc(CondCode::Ne, dst.clone()));
             }
             tacky::Instruction::Label(label) => {
@@ -329,32 +424,51 @@ fn gen_function(
                 };
 
                 if stack_padding > 0 {
-                    body.push(Instruction::AllocateStack(stack_padding));
+                    body.push(Instruction::Binary {
+                        op: BinaryOp::Sub,
+                        ty: AssemblyType::QuadWord,
+                        lhs: Operand::Imm(stack_padding as _),
+                        rhs: Operand::Reg(Register::SP),
+                    });
                 }
 
-                for (i, arg) in args[..std::cmp::min(args.len(), 6)].iter().enumerate() {
+                let semantics::type_check::Attr::Fun { ty, .. } = &symbol_table[name] else {
+                    unreachable!()
+                };
+
+                for (i, (arg, ty)) in args[..std::cmp::min(args.len(), 6)]
+                    .iter()
+                    .zip(ty.params.iter())
+                    .enumerate()
+                {
                     match i {
                         0 => body.push(Instruction::Mov {
+                            ty: ty.into(),
                             src: arg.into(),
                             dst: Operand::Reg(Register::Di),
                         }),
                         1 => body.push(Instruction::Mov {
+                            ty: ty.into(),
                             src: arg.into(),
                             dst: Operand::Reg(Register::Si),
                         }),
                         2 => body.push(Instruction::Mov {
+                            ty: ty.into(),
                             src: arg.into(),
                             dst: Operand::Reg(Register::Dx),
                         }),
                         3 => body.push(Instruction::Mov {
+                            ty: ty.into(),
                             src: arg.into(),
                             dst: Operand::Reg(Register::Cx),
                         }),
                         4 => body.push(Instruction::Mov {
+                            ty: ty.into(),
                             src: arg.into(),
                             dst: Operand::Reg(Register::R8),
                         }),
                         5 => body.push(Instruction::Mov {
+                            ty: ty.into(),
                             src: arg.into(),
                             dst: Operand::Reg(Register::R9),
                         }),
@@ -366,17 +480,17 @@ fn gen_function(
 
                 if args.len() > 6 {
                     for arg in args[6..].iter().rev() {
-                        match arg {
-                            tacky::Val::Constant(imm) => {
-                                // body.push(Instruction::Push(Operand::Imm(*imm)));
-                                todo!()
-                            }
-                            tacky::Val::Var(var) => {
+                        match arg.ty(symbol_table) {
+                            ast::VarType::Int => {
                                 body.push(Instruction::Mov {
-                                    src: Operand::Pseudo(var.clone()),
+                                    ty: AssemblyType::LongWord,
+                                    src: arg.into(),
                                     dst: Operand::Reg(Register::Ax),
                                 });
                                 body.push(Instruction::Push(Operand::Reg(Register::Ax)));
+                            }
+                            ast::VarType::Long => {
+                                body.push(Instruction::Push(arg.into()));
                             }
                         }
                     }
@@ -387,22 +501,47 @@ fn gen_function(
                     8 * (if args.len() > 6 { args.len() - 6 } else { 0 }) + stack_padding;
 
                 if bytes_to_remove > 0 {
-                    body.push(Instruction::DeallocateStack(bytes_to_remove));
+                    body.push(Instruction::Binary {
+                        op: BinaryOp::Add,
+                        ty: AssemblyType::QuadWord,
+                        lhs: Operand::Imm(bytes_to_remove as _),
+                        rhs: Operand::Reg(Register::SP),
+                    });
                 }
 
-                let dst = dst.into();
                 body.push(Instruction::Mov {
+                    ty: dst.ty(symbol_table).into(),
                     src: Operand::Reg(Register::Ax),
-                    dst,
+                    dst: dst.into(),
                 });
             }
-            _ => todo!(),
+            tacky::Instruction::SignExtend { src, dst } => {
+                body.push(Instruction::Movsx {
+                    src: src.into(),
+                    dst: dst.into(),
+                });
+            }
+            tacky::Instruction::Truncate { src, dst } => {
+                body.push(Instruction::Mov {
+                    ty: AssemblyType::LongWord,
+                    src: src.into(),
+                    dst: dst.into(),
+                });
+            }
         }
     }
 
     let stack_size = pseudo_to_stack(&mut body, symbol_table);
     let stack_size = (stack_size + 15) / 16 * 16;
-    body.insert(0, Instruction::AllocateStack(stack_size));
+    body.insert(
+        0,
+        Instruction::Binary {
+            op: BinaryOp::Add,
+            ty: AssemblyType::QuadWord,
+            lhs: Operand::Imm(stack_size as _),
+            rhs: Operand::Reg(Register::SP),
+        },
+    );
     body = avoid_mov_mem_mem(body);
 
     Function {
@@ -412,37 +551,35 @@ fn gen_function(
     }
 }
 
-impl From<&tacky::Val> for Operand {
-    fn from(val: &tacky::Val) -> Self {
-        match val {
-            // tacky::Val::Constant(imm) => Operand::Imm(*imm),
-            _ => todo!(),
-            tacky::Val::Var(var) => Operand::Pseudo(var.clone()),
-        }
-    }
-}
-
 fn pseudo_to_stack(
     insts: &mut [Instruction],
     symbol_table: &HashMap<EcoString, semantics::type_check::Attr>,
 ) -> usize {
+    let mut total = 0;
     let mut known_vars = HashMap::new();
 
     let mut remove_pseudo = |operand: &mut Operand| {
         if let Operand::Pseudo(var) = operand {
-            if let Some(semantics::type_check::Attr::Static { .. }) = symbol_table.get(var) {
-                *operand = Operand::Data(var.clone());
-            } else {
-                let rsp = (known_vars.len() as i32 + 1) * -4;
-                let offset = known_vars.entry(var.clone()).or_insert(rsp);
-                *operand = Operand::Stack(*offset);
+            match &symbol_table[var] {
+                semantics::type_check::Attr::Static { .. } => {
+                    *operand = Operand::Data(var.clone());
+                }
+                attr => {
+                    if let Some(addr) = known_vars.get(var) {
+                        *operand = Operand::Stack(*addr);
+                    } else {
+                        total -= attr.ty().size() as i32;
+                        known_vars.insert(var.clone(), total);
+                        *operand = Operand::Stack(total);
+                    }
+                }
             }
         }
     };
 
     for inst in insts {
         match inst {
-            Instruction::Mov { src, dst } => {
+            Instruction::Mov { ty: _, src, dst } => {
                 remove_pseudo(src);
                 remove_pseudo(dst);
             }
@@ -453,13 +590,12 @@ fn pseudo_to_stack(
                 remove_pseudo(lhs);
                 remove_pseudo(rhs);
             }
-            Instruction::Cdq => {}
-            Instruction::Idiv(op) => {
+            Instruction::Cdq(_) => {}
+            Instruction::Idiv(_, op) => {
                 remove_pseudo(op);
             }
-            Instruction::AllocateStack(_) => {}
             Instruction::Ret => {}
-            Instruction::Cmp(lhs, rhs) => {
+            Instruction::Cmp(_, lhs, rhs) => {
                 remove_pseudo(lhs);
                 remove_pseudo(rhs);
             }
@@ -469,15 +605,18 @@ fn pseudo_to_stack(
                 remove_pseudo(dst);
             }
             Instruction::Label(_) => {}
-            Instruction::DeallocateStack(_) => {}
             Instruction::Push(op) => {
                 remove_pseudo(op);
             }
             Instruction::Call(_) => {}
+            Instruction::Movsx { src, dst } => {
+                remove_pseudo(src);
+                remove_pseudo(dst);
+            }
         }
     }
 
-    known_vars.len() * 4
+    (-total) as _
 }
 
 fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
@@ -486,75 +625,152 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
     for inst in insts {
         match inst {
             Instruction::Mov {
+                ty,
                 src: src @ (Operand::Stack(_) | Operand::Data(_)),
                 dst: dst @ (Operand::Stack(_) | Operand::Data(_)),
             } => {
                 new_insts.push(Instruction::Mov {
+                    ty,
                     src,
                     dst: Operand::Reg(Register::R10),
                 });
                 new_insts.push(Instruction::Mov {
+                    ty,
                     src: Operand::Reg(Register::R10),
                     dst,
                 });
             }
-            Instruction::Idiv(op @ Operand::Imm(_)) => {
+            Instruction::Mov {
+                ty: AssemblyType::QuadWord,
+                src: src @ Operand::Imm(_),
+                dst: dst @ (Operand::Stack(_) | Operand::Data(_)),
+            } => {
                 new_insts.push(Instruction::Mov {
+                    ty: AssemblyType::LongWord,
+                    src,
+                    dst: Operand::Reg(Register::R10),
+                });
+                new_insts.push(Instruction::Mov {
+                    ty: AssemblyType::QuadWord,
+                    src: Operand::Reg(Register::R10),
+                    dst,
+                });
+            }
+            Instruction::Movsx {
+                src: src @ Operand::Imm(_),
+                dst: dst @ (Operand::Stack(_) | Operand::Data(_)),
+            } => {
+                new_insts.push(Instruction::Mov {
+                    ty: AssemblyType::LongWord,
+                    src,
+                    dst: Operand::Reg(Register::R10),
+                });
+                new_insts.push(Instruction::Movsx {
+                    src: Operand::Reg(Register::R10),
+                    dst: Operand::Reg(Register::R11),
+                });
+                new_insts.push(Instruction::Mov {
+                    ty: AssemblyType::QuadWord,
+                    src: Operand::Reg(Register::R11),
+                    dst,
+                });
+            }
+            Instruction::Movsx {
+                src: src @ Operand::Imm(_),
+                dst,
+            } => {
+                new_insts.push(Instruction::Mov {
+                    ty: AssemblyType::LongWord,
+                    src,
+                    dst: Operand::Reg(Register::R10),
+                });
+                new_insts.push(Instruction::Movsx {
+                    src: Operand::Reg(Register::R10),
+                    dst,
+                });
+            }
+            Instruction::Movsx {
+                src,
+                dst: dst @ (Operand::Stack(_) | Operand::Data(_)),
+            } => {
+                new_insts.push(Instruction::Movsx {
+                    src,
+                    dst: Operand::Reg(Register::R10),
+                });
+                new_insts.push(Instruction::Mov {
+                    ty: AssemblyType::QuadWord,
+                    src: Operand::Reg(Register::R10),
+                    dst,
+                });
+            }
+            Instruction::Idiv(ty, op @ Operand::Imm(_)) => {
+                new_insts.push(Instruction::Mov {
+                    ty,
                     src: op,
                     dst: Operand::Reg(Register::R10),
                 });
-                new_insts.push(Instruction::Idiv(Operand::Reg(Register::R10)));
+                new_insts.push(Instruction::Idiv(ty, Operand::Reg(Register::R10)));
             }
             Instruction::Binary {
+                ty,
                 op: op @ (BinaryOp::Add | BinaryOp::Sub),
                 lhs: lhs @ (Operand::Stack(_) | Operand::Data(_)),
                 rhs: rhs @ (Operand::Stack(_) | Operand::Data(_)),
             } => {
                 new_insts.push(Instruction::Mov {
+                    ty,
                     src: lhs,
                     dst: Operand::Reg(Register::R10),
                 });
                 new_insts.push(Instruction::Binary {
+                    ty,
                     op,
                     lhs: Operand::Reg(Register::R10),
                     rhs,
                 });
             }
             Instruction::Binary {
+                ty,
                 op: BinaryOp::Mult,
                 lhs,
                 rhs: rhs @ (Operand::Stack(_) | Operand::Data(_)),
             } => {
                 new_insts.push(Instruction::Mov {
+                    ty,
                     src: rhs.clone(),
                     dst: Operand::Reg(Register::R11),
                 });
                 new_insts.push(Instruction::Binary {
+                    ty,
                     op: BinaryOp::Mult,
                     lhs,
                     rhs: Operand::Reg(Register::R11),
                 });
                 new_insts.push(Instruction::Mov {
+                    ty,
                     src: Operand::Reg(Register::R11),
                     dst: rhs,
                 });
             }
             Instruction::Cmp(
+                ty,
                 lhs @ (Operand::Stack(_) | Operand::Data(_)),
                 rhs @ (Operand::Stack(_) | Operand::Data(_)),
             ) => {
                 new_insts.push(Instruction::Mov {
+                    ty,
                     src: lhs,
                     dst: Operand::Reg(Register::R10),
                 });
-                new_insts.push(Instruction::Cmp(Operand::Reg(Register::R10), rhs));
+                new_insts.push(Instruction::Cmp(ty, Operand::Reg(Register::R10), rhs));
             }
-            Instruction::Cmp(lhs, rhs @ Operand::Imm(_)) => {
+            Instruction::Cmp(ty, lhs, rhs @ Operand::Imm(_)) => {
                 new_insts.push(Instruction::Mov {
+                    ty,
                     src: rhs,
                     dst: Operand::Reg(Register::R11),
                 });
-                new_insts.push(Instruction::Cmp(lhs, Operand::Reg(Register::R11)));
+                new_insts.push(Instruction::Cmp(ty, lhs, Operand::Reg(Register::R11)));
             }
             _ => new_insts.push(inst),
         }
@@ -600,6 +816,8 @@ impl Display for Function {
 
 impl Display for StaticVariable {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        todo!()
+        /*
         if self.global {
             writeln!(f, ".globl {}", self.name)?;
         }
@@ -614,11 +832,14 @@ impl Display for StaticVariable {
             writeln!(f, ".long {}", self.init)?;
         }
         Ok(())
+        */
     }
 }
 
 impl Display for Instruction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        todo!()
+        /*
         match self {
             Instruction::Mov { src, dst } => {
                 writeln!(f, "movl {src}, {dst}")?;
@@ -678,6 +899,7 @@ impl Display for Instruction {
             }
         }
         Ok(())
+        */
     }
 }
 
@@ -729,6 +951,7 @@ impl<'a> Display for RegisterSize<'a> {
                 Register::R11 => write!(f, "%r11b")?,
                 Register::R8 => write!(f, "%r8b")?,
                 Register::R9 => write!(f, "%r9b")?,
+                Register::SP => write!(f, "%spl")?,
             },
             RegisterSize::Dword(reg) => match reg {
                 Register::Ax => write!(f, "%eax")?,
@@ -740,6 +963,7 @@ impl<'a> Display for RegisterSize<'a> {
                 Register::R11 => write!(f, "%r11d")?,
                 Register::R8 => write!(f, "%r8d")?,
                 Register::R9 => write!(f, "%r9d")?,
+                Register::SP => write!(f, "%esp")?,
             },
             RegisterSize::Qword(reg) => match reg {
                 Register::Ax => write!(f, "%rax")?,
@@ -751,6 +975,7 @@ impl<'a> Display for RegisterSize<'a> {
                 Register::R11 => write!(f, "%r11")?,
                 Register::R8 => write!(f, "%r8")?,
                 Register::R9 => write!(f, "%r9")?,
+                Register::SP => write!(f, "%rsp")?,
             },
         }
         Ok(())

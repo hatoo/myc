@@ -4,7 +4,7 @@ use ecow::EcoString;
 
 use crate::{
     ast::{self, Block},
-    semantics,
+    semantics::{self, type_check::StaticInit},
     span::Spanned,
 };
 
@@ -32,7 +32,7 @@ pub struct StaticVariable {
     pub global: bool,
     pub name: EcoString,
     pub ty: ast::VarType,
-    pub init: semantics::type_check::InitialValue,
+    pub init: semantics::type_check::StaticInit,
 }
 
 #[derive(Debug)]
@@ -104,6 +104,21 @@ pub enum BinaryOp {
 pub enum Val {
     Constant(ast::Const),
     Var(EcoString),
+}
+
+impl Val {
+    pub fn ty(
+        &self,
+        symbol_table: &HashMap<EcoString, semantics::type_check::Attr>,
+    ) -> ast::VarType {
+        match self {
+            Val::Constant(c) => match c {
+                ast::Const::Int(_) => ast::VarType::Int,
+                ast::Const::Long(_) => ast::VarType::Long,
+            },
+            Val::Var(var) => symbol_table[var].ty(),
+        }
+    }
 }
 
 struct InstructionGenerator<'a> {
@@ -497,16 +512,10 @@ pub fn gen_program(
             .filter_map(|(key, value)| {
                 if let semantics::type_check::Attr::Static { init, global, ty } = value {
                     let init = match init {
-                        semantics::type_check::InitialValue::Initial(i) => {
-                            semantics::type_check::InitialValue::Initial(*i)
-                        }
+                        semantics::type_check::InitialValue::Initial(i) => *i,
                         semantics::type_check::InitialValue::Tentative => match ty {
-                            ast::VarType::Int => semantics::type_check::InitialValue::Initial(
-                                semantics::type_check::StaticInit::Int(0),
-                            ),
-                            ast::VarType::Long => semantics::type_check::InitialValue::Initial(
-                                semantics::type_check::StaticInit::Long(0),
-                            ),
+                            ast::VarType::Int => StaticInit::Int(0),
+                            ast::VarType::Long => StaticInit::Long(0),
                         },
                         semantics::type_check::InitialValue::NoInitializer => return None,
                     };

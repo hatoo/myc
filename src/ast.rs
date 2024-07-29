@@ -194,6 +194,15 @@ pub enum VarType {
     Long,
 }
 
+impl VarType {
+    pub fn size(&self) -> usize {
+        match self {
+            Self::Int => 4,
+            Self::Long => 8,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct FunType {
     pub params: Vec<VarType>,

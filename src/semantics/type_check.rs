@@ -27,6 +27,16 @@ pub enum Attr {
     Local(ast::VarType),
 }
 
+impl Attr {
+    pub fn ty(&self) -> ast::VarType {
+        match self {
+            Attr::Fun { ty, .. } => ty.ret,
+            Attr::Static { ty, .. } => *ty,
+            Attr::Local(ty) => *ty,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum InitialValue {
     Tentative,
