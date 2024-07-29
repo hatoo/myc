@@ -746,6 +746,16 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
                 lhs,
                 rhs: rhs @ (Operand::Stack(_) | Operand::Data(_)),
             } => {
+                let lhs = if ty == AssemblyType::QuadWord && matches!(lhs, Operand::Imm(_)) {
+                    new_insts.push(Instruction::Mov {
+                        ty,
+                        src: lhs,
+                        dst: Operand::Reg(Register::R10),
+                    });
+                    Operand::Reg(Register::R10)
+                } else {
+                    lhs
+                };
                 new_insts.push(Instruction::Mov {
                     ty,
                     src: rhs.clone(),
@@ -763,6 +773,41 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
                     dst: rhs,
                 });
             }
+            Instruction::Binary {
+                op,
+                ty: AssemblyType::QuadWord,
+                lhs,
+                rhs,
+            } => {
+                let lhs = if matches!(lhs, Operand::Imm(_)) {
+                    new_insts.push(Instruction::Mov {
+                        ty: AssemblyType::QuadWord,
+                        src: lhs,
+                        dst: Operand::Reg(Register::R10),
+                    });
+                    Operand::Reg(Register::R10)
+                } else {
+                    lhs
+                };
+
+                let rhs = if matches!(rhs, Operand::Imm(_)) {
+                    new_insts.push(Instruction::Mov {
+                        ty: AssemblyType::QuadWord,
+                        src: rhs,
+                        dst: Operand::Reg(Register::R11),
+                    });
+                    Operand::Reg(Register::R11)
+                } else {
+                    rhs
+                };
+
+                new_insts.push(Instruction::Binary {
+                    op,
+                    ty: AssemblyType::QuadWord,
+                    lhs,
+                    rhs,
+                });
+            }
             Instruction::Cmp(
                 ty,
                 lhs @ (Operand::Stack(_) | Operand::Data(_)),
@@ -775,13 +820,50 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
                 });
                 new_insts.push(Instruction::Cmp(ty, Operand::Reg(Register::R10), rhs));
             }
-            Instruction::Cmp(ty, lhs, rhs @ Operand::Imm(_)) => {
+            Instruction::Cmp(ty, lhs, rhs) => match ty {
+                AssemblyType::LongWord => {
+                    if matches!(rhs, Operand::Imm(_)) {
+                        new_insts.push(Instruction::Mov {
+                            ty,
+                            src: rhs,
+                            dst: Operand::Reg(Register::R11),
+                        });
+                        new_insts.push(Instruction::Cmp(ty, lhs, Operand::Reg(Register::R11)));
+                    }
+                }
+                AssemblyType::QuadWord => {
+                    let lhs = if matches!(lhs, Operand::Imm(_)) {
+                        new_insts.push(Instruction::Mov {
+                            ty,
+                            src: lhs,
+                            dst: Operand::Reg(Register::R10),
+                        });
+                        Operand::Reg(Register::R10)
+                    } else {
+                        lhs
+                    };
+
+                    let rhs = if matches!(rhs, Operand::Imm(_)) {
+                        new_insts.push(Instruction::Mov {
+                            ty,
+                            src: rhs,
+                            dst: Operand::Reg(Register::R11),
+                        });
+                        Operand::Reg(Register::R11)
+                    } else {
+                        rhs
+                    };
+
+                    new_insts.push(Instruction::Cmp(ty, lhs, rhs));
+                }
+            },
+            Instruction::Push(op @ Operand::Imm(_)) => {
                 new_insts.push(Instruction::Mov {
-                    ty,
-                    src: rhs,
-                    dst: Operand::Reg(Register::R11),
+                    ty: AssemblyType::QuadWord,
+                    src: op,
+                    dst: Operand::Reg(Register::R10),
                 });
-                new_insts.push(Instruction::Cmp(ty, lhs, Operand::Reg(Register::R11)));
+                new_insts.push(Instruction::Push(Operand::Reg(Register::R10)));
             }
             _ => new_insts.push(inst),
         }
