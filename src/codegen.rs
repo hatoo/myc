@@ -113,6 +113,8 @@ pub fn gen_program(
     program: &tacky::Program,
     symbol_table: &HashMap<EcoString, semantics::type_check::Attr>,
 ) -> Program {
+    todo!()
+    /*
     Program {
         top_levels: program
             .top_levels
@@ -133,6 +135,7 @@ pub fn gen_program(
             })
             .collect(),
     }
+    */
 }
 
 fn gen_function(
@@ -365,7 +368,8 @@ fn gen_function(
                     for arg in args[6..].iter().rev() {
                         match arg {
                             tacky::Val::Constant(imm) => {
-                                body.push(Instruction::Push(Operand::Imm(*imm)));
+                                // body.push(Instruction::Push(Operand::Imm(*imm)));
+                                todo!()
                             }
                             tacky::Val::Var(var) => {
                                 body.push(Instruction::Mov {
@@ -392,6 +396,7 @@ fn gen_function(
                     dst,
                 });
             }
+            _ => todo!(),
         }
     }
 
@@ -410,7 +415,8 @@ fn gen_function(
 impl From<&tacky::Val> for Operand {
     fn from(val: &tacky::Val) -> Self {
         match val {
-            tacky::Val::Constant(imm) => Operand::Imm(*imm),
+            // tacky::Val::Constant(imm) => Operand::Imm(*imm),
+            _ => todo!(),
             tacky::Val::Var(var) => Operand::Pseudo(var.clone()),
         }
     }

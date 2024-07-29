@@ -71,7 +71,7 @@ fn main() {
         return;
     }
 
-    let tacky = myc::tacky::gen_program(&program, &type_checker.sym_table);
+    let tacky = myc::tacky::gen_program(&program, &mut type_checker.sym_table);
 
     if opts.tacky {
         dbg!(tacky);

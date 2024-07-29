@@ -31,11 +31,20 @@ pub struct Function {
 pub struct StaticVariable {
     pub global: bool,
     pub name: EcoString,
-    pub init: i32,
+    pub ty: ast::VarType,
+    pub init: semantics::type_check::InitialValue,
 }
 
 #[derive(Debug)]
 pub enum Instruction {
+    SignExtend {
+        src: Val,
+        dst: Val,
+    },
+    Truncate {
+        src: Val,
+        dst: Val,
+    },
     Return(Val),
     Unary {
         op: UnaryOp,
@@ -93,26 +102,30 @@ pub enum BinaryOp {
 
 #[derive(Debug, Clone)]
 pub enum Val {
-    Constant(i32),
+    Constant(ast::Const),
     Var(EcoString),
 }
 
-struct InstructionGenerator {
+struct InstructionGenerator<'a> {
     var_counter: usize,
     instructions: Vec<Instruction>,
+    symbol_table: &'a mut HashMap<EcoString, semantics::type_check::Attr>,
 }
 
-impl InstructionGenerator {
-    fn new() -> Self {
+impl<'a> InstructionGenerator<'a> {
+    fn new(symbol_table: &'a mut HashMap<EcoString, semantics::type_check::Attr>) -> Self {
         Self {
             var_counter: 0,
             instructions: Vec::new(),
+            symbol_table,
         }
     }
 
-    fn new_var(&mut self) -> Val {
+    fn make_tmp_local(&mut self, ty: ast::VarType) -> Val {
         let var = EcoString::from(format!("tmp.{}", self.var_counter));
         self.var_counter += 1;
+        self.symbol_table
+            .insert(var.clone(), semantics::type_check::Attr::Local(ty));
         Val::Var(var)
     }
 
@@ -285,16 +298,14 @@ impl InstructionGenerator {
     }
 
     fn add_expression(&mut self, expression: &ast::Expression) -> Val {
-        todo!()
-        /*
         match expression {
-            // ast::Expression::Constant(Spanned { data: imm, .. }) => Val::Constant(*imm),
             ast::Expression::Unary {
                 op: Spanned { data: op, .. },
                 exp,
+                ty,
             } => {
                 let src = self.add_expression(exp);
-                let dst = self.new_var();
+                let dst = self.make_tmp_local(*ty);
                 self.instructions.push(Instruction::Unary {
                     op: match op {
                         ast::UnaryOp::Negate => UnaryOp::Negate,
@@ -310,9 +321,10 @@ impl InstructionGenerator {
                 op: ast::BinaryOp::And,
                 lhs,
                 rhs,
+                ty,
             } => {
                 let lhs = self.add_expression(lhs);
-                let dst = self.new_var();
+                let dst = self.make_tmp_local(*ty);
                 let and_false = self.new_label("and_false");
                 self.instructions.push(Instruction::JumpIfZero {
                     src: lhs.clone(),
@@ -324,7 +336,7 @@ impl InstructionGenerator {
                     dst: and_false.clone(),
                 });
                 self.instructions.push(Instruction::Copy {
-                    src: Val::Constant(1),
+                    src: Val::Constant(ast::Const::Int(1)),
                     dst: dst.clone(),
                 });
                 let end = self.new_label("and_end");
@@ -332,7 +344,7 @@ impl InstructionGenerator {
                 self.instructions
                     .push(Instruction::Label(and_false.clone()));
                 self.instructions.push(Instruction::Copy {
-                    src: Val::Constant(0),
+                    src: Val::Constant(ast::Const::Int(0)),
                     dst: dst.clone(),
                 });
                 self.instructions.push(Instruction::Label(end));
@@ -342,9 +354,10 @@ impl InstructionGenerator {
                 op: ast::BinaryOp::Or,
                 lhs,
                 rhs,
+                ty,
             } => {
                 let lhs = self.add_expression(lhs);
-                let dst = self.new_var();
+                let dst = self.make_tmp_local(*ty);
                 let or_true = self.new_label("or_true");
                 self.instructions.push(Instruction::JumpIfNotZero {
                     src: lhs.clone(),
@@ -356,23 +369,23 @@ impl InstructionGenerator {
                     dst: or_true.clone(),
                 });
                 self.instructions.push(Instruction::Copy {
-                    src: Val::Constant(0),
+                    src: Val::Constant(ast::Const::Int(0)),
                     dst: dst.clone(),
                 });
                 let end = self.new_label("or_end");
                 self.instructions.push(Instruction::Jump(end.clone()));
                 self.instructions.push(Instruction::Label(or_true.clone()));
                 self.instructions.push(Instruction::Copy {
-                    src: Val::Constant(1),
+                    src: Val::Constant(ast::Const::Int(1)),
                     dst: dst.clone(),
                 });
                 self.instructions.push(Instruction::Label(end));
                 dst
             }
-            ast::Expression::Binary { op, lhs, rhs } => {
+            ast::Expression::Binary { op, lhs, rhs, ty } => {
                 let lhs = self.add_expression(lhs);
                 let rhs = self.add_expression(rhs);
-                let dst = self.new_var();
+                let dst = self.make_tmp_local(*ty);
                 self.instructions.push(Instruction::Binary {
                     op: match op {
                         ast::BinaryOp::Add => BinaryOp::Add,
@@ -394,9 +407,9 @@ impl InstructionGenerator {
                 });
                 dst
             }
-            ast::Expression::Var(Spanned { data: var, .. }) => Val::Var(var.clone()),
+            ast::Expression::Var(Spanned { data: var, .. }, _) => Val::Var(var.clone()),
             ast::Expression::Assignment { lhs, rhs } => {
-                if let ast::Expression::Var(Spanned { data: var, .. }) = lhs.as_ref() {
+                if let ast::Expression::Var(Spanned { data: var, .. }, _) = lhs.as_ref() {
                     let rhs = self.add_expression(rhs);
                     self.instructions.push(Instruction::Copy {
                         src: rhs,
@@ -412,7 +425,7 @@ impl InstructionGenerator {
                 then_branch,
                 else_branch,
             } => {
-                let dst = self.new_var();
+                let dst = self.make_tmp_local(then_branch.ty());
                 let else_label = self.new_label("cond_else");
                 let end_label = self.new_label("cond_end");
                 let cond = self.add_expression(condition);
@@ -435,8 +448,8 @@ impl InstructionGenerator {
                 self.instructions.push(Instruction::Label(end_label));
                 dst
             }
-            ast::Expression::FunctionCall { name, args } => {
-                let dst = self.new_var();
+            ast::Expression::FunctionCall { name, args, ty } => {
+                let dst = self.make_tmp_local(*ty);
                 let args = args
                     .iter()
                     .map(|arg| self.add_expression(arg))
@@ -448,75 +461,95 @@ impl InstructionGenerator {
                 });
                 dst
             }
-            _ => todo!(),
+            ast::Expression::Cast { target, exp } => {
+                let val = self.add_expression(exp);
+                if *target == exp.ty() {
+                    val
+                } else {
+                    let dst = self.make_tmp_local(*target);
+                    match target {
+                        ast::VarType::Int => self.instructions.push(Instruction::Truncate {
+                            src: val,
+                            dst: dst.clone(),
+                        }),
+                        ast::VarType::Long => self.instructions.push(Instruction::SignExtend {
+                            src: val,
+                            dst: dst.clone(),
+                        }),
+                    }
+                    dst
+                }
+            }
+            ast::Expression::Constant(c) => Val::Constant(c.data.clone()),
         }
-        */
     }
 }
 
 pub fn gen_program(
     program: &ast::Program,
-    symbol_table: &HashMap<EcoString, semantics::type_check::Attr>,
+    symbol_table: &mut HashMap<EcoString, semantics::type_check::Attr>,
 ) -> Program {
-    todo!()
-    /*
-    let mut generator = InstructionGenerator::new();
+    let mut generator = InstructionGenerator::new(symbol_table);
     Program {
-        top_levels: symbol_table
+        top_levels: generator
+            .symbol_table
             .iter()
             .filter_map(|(key, value)| {
-                if let semantics::type_check::Attr::Static { init, global } = value {
+                if let semantics::type_check::Attr::Static { init, global, ty } = value {
                     let init = match init {
-                        semantics::type_check::InitialValue::Initial(i) => *i,
-                        semantics::type_check::InitialValue::Tentative => 0,
+                        semantics::type_check::InitialValue::Initial(i) => {
+                            semantics::type_check::InitialValue::Initial(*i)
+                        }
+                        semantics::type_check::InitialValue::Tentative => match ty {
+                            ast::VarType::Int => semantics::type_check::InitialValue::Initial(
+                                semantics::type_check::StaticInit::Int(0),
+                            ),
+                            ast::VarType::Long => semantics::type_check::InitialValue::Initial(
+                                semantics::type_check::StaticInit::Long(0),
+                            ),
+                        },
                         semantics::type_check::InitialValue::NoInitializer => return None,
                     };
                     Some(TopLevelItem::StaticVariable(StaticVariable {
                         global: *global,
                         name: key.clone(),
                         init,
+                        ty: *ty,
                     }))
                 } else {
                     None
                 }
             })
+            .collect::<Vec<_>>()
+            .into_iter()
             .chain(
                 program
                     .decls
                     .iter()
                     .filter_map(|f| match f {
-                        ast::Declaration::FunDecl(f) => {
-                            gen_function(&mut generator, f, symbol_table)
-                        }
+                        ast::Declaration::FunDecl(f) => gen_function(&mut generator, f),
                         _ => None,
                     })
                     .map(TopLevelItem::Function),
             )
             .collect(),
     }
-    */
 }
 
-fn gen_function(
-    generator: &mut InstructionGenerator,
-    function: &ast::FunDecl,
-    symbol_table: &HashMap<EcoString, semantics::type_check::Attr>,
-) -> Option<Function> {
-    todo!()
-    /*
+fn gen_function(generator: &mut InstructionGenerator, function: &ast::FunDecl) -> Option<Function> {
     if let Some(block) = &function.body {
         for block_item in &block.0 {
             generator.add_block_item(block_item);
         }
         generator.add_statement(&ast::Statement::Return(ast::Expression::Constant(
             Spanned {
-                data: 0,
+                data: ast::Const::Int(0),
                 span: 0..0,
             },
         )));
         Some(Function {
             global: if let semantics::type_check::Attr::Fun { global, .. } =
-                symbol_table[&function.name.data]
+                generator.symbol_table[&function.name.data]
             {
                 global
             } else {
@@ -529,5 +562,4 @@ fn gen_function(
     } else {
         None
     }
-    */
 }
