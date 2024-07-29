@@ -62,7 +62,7 @@ fn main() {
 
     let mut type_checker = TypeChecker::default();
     type_checker
-        .check_program(&program)
+        .check_program(&mut program)
         .map_err(|err| SpannedError::new(err, src.clone()))
         .unwrap();
 

@@ -285,6 +285,8 @@ impl InstructionGenerator {
     }
 
     fn add_expression(&mut self, expression: &ast::Expression) -> Val {
+        todo!()
+        /*
         match expression {
             // ast::Expression::Constant(Spanned { data: imm, .. }) => Val::Constant(*imm),
             ast::Expression::Unary {
@@ -448,6 +450,7 @@ impl InstructionGenerator {
             }
             _ => todo!(),
         }
+        */
     }
 }
 
@@ -455,6 +458,8 @@ pub fn gen_program(
     program: &ast::Program,
     symbol_table: &HashMap<EcoString, semantics::type_check::Attr>,
 ) -> Program {
+    todo!()
+    /*
     let mut generator = InstructionGenerator::new();
     Program {
         top_levels: symbol_table
@@ -489,6 +494,7 @@ pub fn gen_program(
             )
             .collect(),
     }
+    */
 }
 
 fn gen_function(

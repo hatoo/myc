@@ -87,8 +87,8 @@ fn convert_to(exp: &mut ast::Expression, ty: ast::VarType) {
 }
 
 impl TypeChecker {
-    pub fn check_program(&mut self, program: &crate::ast::Program) -> Result<(), Error> {
-        for decl in &program.decls {
+    pub fn check_program(&mut self, program: &mut crate::ast::Program) -> Result<(), Error> {
+        for decl in &mut program.decls {
             match decl {
                 crate::ast::Declaration::VarDecl(decl) => self.check_var_decl_file(decl)?,
                 crate::ast::Declaration::FunDecl(decl) => self.check_fun_decl(decl)?,
@@ -98,14 +98,13 @@ impl TypeChecker {
         Ok(())
     }
 
-    fn check_fun_decl(&mut self, fun_decl: &crate::ast::FunDecl) -> Result<(), Error> {
-        todo!()
-        /*
+    fn check_fun_decl(&mut self, fun_decl: &mut crate::ast::FunDecl) -> Result<(), Error> {
         let crate::ast::FunDecl {
             name,
             params,
             body,
             storage_class,
+            ty,
         } = fun_decl;
 
         let mut new_global = storage_class != &Some(crate::ast::StorageClass::Static);
@@ -113,12 +112,12 @@ impl TypeChecker {
 
         if let Some(attr) = self.sym_table.get(&name.data) {
             if let Attr::Fun {
-                arity,
                 defined,
                 global,
+                ty: ty0,
             } = attr
             {
-                if *arity != params.len() {
+                if ty0.params != ty.params {
                     return Err(Error::IncompatibleTypes(name.clone()));
                 }
                 if *defined && body.is_some() {
@@ -138,34 +137,37 @@ impl TypeChecker {
         self.sym_table.insert(
             name.data.clone(),
             Attr::Fun {
-                arity: params.len(),
                 defined: already_defined || body.is_some(),
                 global: new_global,
+                ty: ty.clone(),
             },
         );
 
         if let Some(body) = body {
-            for param in params {
-                self.sym_table.insert(param.data.clone(), Attr::Local);
+            for (param, ty) in params.iter().zip(ty.params.iter()) {
+                self.sym_table.insert(param.data.clone(), Attr::Local(*ty));
             }
-            self.check_block_local(body)?;
+            self.check_block_local(body, ty.ret)?;
         }
 
         Ok(())
-        */
     }
 
-    fn check_block_local(&mut self, block: &crate::ast::Block) -> Result<(), Error> {
-        for block_item in &block.0 {
+    fn check_block_local(
+        &mut self,
+        block: &mut crate::ast::Block,
+        ret_type: VarType,
+    ) -> Result<(), Error> {
+        for block_item in &mut block.0 {
             match block_item {
                 crate::ast::BlockItem::Declaration(decl) => self.check_decl_local(decl)?,
-                crate::ast::BlockItem::Statement(stmt) => self.check_statement(stmt)?,
+                crate::ast::BlockItem::Statement(stmt) => self.check_statement(stmt, ret_type)?,
             }
         }
         Ok(())
     }
 
-    fn check_decl_local(&mut self, decl: &crate::ast::Declaration) -> Result<(), Error> {
+    fn check_decl_local(&mut self, decl: &mut crate::ast::Declaration) -> Result<(), Error> {
         match decl {
             crate::ast::Declaration::VarDecl(decl) => self.check_var_decl_local(decl),
             crate::ast::Declaration::FunDecl(decl) => {
@@ -249,13 +251,12 @@ impl TypeChecker {
         Ok(())
     }
 
-    fn check_var_decl_local(&mut self, decl: &crate::ast::VarDecl) -> Result<(), Error> {
-        todo!()
-        /*
+    fn check_var_decl_local(&mut self, decl: &mut crate::ast::VarDecl) -> Result<(), Error> {
         let crate::ast::VarDecl {
             ident,
             init,
             storage_class,
+            ty,
         } = decl;
 
         match storage_class {
@@ -267,13 +268,18 @@ impl TypeChecker {
                     Some(Attr::Fun { .. }) => {
                         return Err(Error::IncompatibleTypes(ident.clone()));
                     }
-                    Some(_) => {}
+                    Some(Attr::Local(ty0) | Attr::Static { ty: ty0, .. }) => {
+                        if ty0 != ty {
+                            return Err(Error::IncompatibleTypes(ident.clone()));
+                        }
+                    }
                     None => {
                         self.sym_table.insert(
                             ident.data.clone(),
                             Attr::Static {
                                 init: InitialValue::NoInitializer,
                                 global: true,
+                                ty: *ty,
                             },
                         );
                     }
@@ -281,8 +287,18 @@ impl TypeChecker {
             }
             Some(crate::ast::StorageClass::Static) => {
                 let init = match init {
-                    Some(Expression::Constant(val)) => InitialValue::Initial(val.data),
-                    None => InitialValue::Initial(0),
+                    Some(Expression::Constant(val)) => match ty {
+                        ast::VarType::Int => {
+                            InitialValue::Initial(StaticInit::Int(val.data.get_int()))
+                        }
+                        ast::VarType::Long => {
+                            InitialValue::Initial(StaticInit::Long(val.data.get_long()))
+                        }
+                    },
+                    None => InitialValue::Initial(match ty {
+                        ast::VarType::Int => StaticInit::Int(0),
+                        ast::VarType::Long => StaticInit::Long(0),
+                    }),
                     _ => return Err(Error::BadInitializer(ident.clone())),
                 };
                 self.sym_table.insert(
@@ -290,11 +306,12 @@ impl TypeChecker {
                     Attr::Static {
                         init,
                         global: false,
+                        ty: *ty,
                     },
                 );
             }
             _ => {
-                self.sym_table.insert(ident.data.clone(), Attr::Local);
+                self.sym_table.insert(ident.data.clone(), Attr::Local(*ty));
                 if let Some(exp) = init {
                     self.check_expression(exp)?;
                 }
@@ -302,7 +319,6 @@ impl TypeChecker {
         }
 
         Ok(())
-        */
     }
 
     fn check_expression(
@@ -318,7 +334,7 @@ impl TypeChecker {
                 }
                 None => Err(Error::IncompatibleTypes(name.clone())),
             },
-            exp @ crate::ast::Expression::Constant(c) => Ok(exp.ty()),
+            crate::ast::Expression::Constant(_) => Ok(exp.ty()),
             crate::ast::Expression::Unary { op, exp, ty } => {
                 match op.data {
                     ast::UnaryOp::Not => {
@@ -411,14 +427,19 @@ impl TypeChecker {
         }
     }
 
-    fn check_statement(&mut self, stmt: &mut crate::ast::Statement) -> Result<(), Error> {
+    fn check_statement(
+        &mut self,
+        stmt: &mut crate::ast::Statement,
+        ret_type: ast::VarType,
+    ) -> Result<(), Error> {
         match stmt {
             crate::ast::Statement::Return(exp) => {
                 self.check_expression(exp)?;
+                convert_to(exp, ret_type);
                 Ok(())
             }
             crate::ast::Statement::Expression(exp) => {
-                self.check_expression(exp);
+                self.check_expression(exp)?;
                 Ok(())
             }
             crate::ast::Statement::If {
@@ -427,14 +448,14 @@ impl TypeChecker {
                 else_branch,
             } => {
                 self.check_expression(condition)?;
-                self.check_statement(then_branch)?;
+                self.check_statement(then_branch, ret_type)?;
                 if let Some(else_branch) = else_branch {
-                    self.check_statement(else_branch)?;
+                    self.check_statement(else_branch, ret_type)?;
                 }
                 Ok(())
             }
             crate::ast::Statement::Compound(block) => {
-                self.check_block_local(block)?;
+                self.check_block_local(block, ret_type)?;
                 Ok(())
             }
             crate::ast::Statement::Break { .. } => Ok(()),
@@ -445,7 +466,7 @@ impl TypeChecker {
                 body,
             } => {
                 self.check_expression(condition)?;
-                self.check_statement(body)?;
+                self.check_statement(body, ret_type)?;
                 Ok(())
             }
             crate::ast::Statement::DoWhile {
@@ -453,7 +474,7 @@ impl TypeChecker {
                 condition,
                 body,
             } => {
-                self.check_statement(body)?;
+                self.check_statement(body, ret_type)?;
                 self.check_expression(condition)?;
                 Ok(())
             }
@@ -466,8 +487,12 @@ impl TypeChecker {
             } => {
                 if let Some(init) = init {
                     match init {
-                        crate::ast::ForInit::VarDecl(decl) => self.check_var_decl_local(decl)?,
-                        crate::ast::ForInit::Expression(exp) => self.check_expression(exp)?,
+                        crate::ast::ForInit::VarDecl(decl) => {
+                            self.check_var_decl_local(decl)?;
+                        }
+                        crate::ast::ForInit::Expression(exp) => {
+                            self.check_expression(exp)?;
+                        }
                     }
                 }
                 if let Some(condition) = condition {
@@ -476,7 +501,7 @@ impl TypeChecker {
                 if let Some(step) = step {
                     self.check_expression(step)?;
                 }
-                self.check_statement(body)?;
+                self.check_statement(body, ret_type)?;
                 Ok(())
             }
             crate::ast::Statement::Null => Ok(()),

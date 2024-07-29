@@ -162,13 +162,12 @@ impl VarResolver {
         }
     }
     fn resolve_fun_decl(&mut self, decl: &mut ast::FunDecl, file_scope: bool) -> Result<(), Error> {
-        todo!()
-        /*
         let ast::FunDecl {
             name,
             params,
             body,
             storage_class,
+            ty: _,
         } = decl;
 
         if !file_scope && storage_class == &Some(ast::StorageClass::Static) {
@@ -218,16 +217,14 @@ impl VarResolver {
 
         self.scopes.pop().unwrap();
         Ok(())
-        */
     }
 
     fn resolve_var_decl_file_scope(&mut self, decl: &mut ast::VarDecl) -> Result<(), Error> {
-        todo!()
-        /*
         let ast::VarDecl {
             ident,
             init: _,
             storage_class: _,
+            ty: _,
         } = decl;
 
         self.current_scope().insert(
@@ -238,16 +235,14 @@ impl VarResolver {
             },
         );
         Ok(())
-        */
     }
 
     fn resolve_var_decl_local(&mut self, decl: &mut ast::VarDecl) -> Result<(), Error> {
-        todo!()
-        /*
         let ast::VarDecl {
             ident,
             init,
             storage_class,
+            ty: _,
         } = decl;
 
         if let Some(var) = self.current_scope().get(&ident.data) {
@@ -280,58 +275,58 @@ impl VarResolver {
             }
             Ok(())
         }
-        */
     }
 
     fn resolve_expression(&mut self, exp: &mut ast::Expression) -> Result<(), Error> {
-        todo!()
-        /*
-            match exp {
-                ast::Expression::Constant(_) => Ok(()),
-                ast::Expression::Unary { exp, .. } => self.resolve_expression(exp),
-                ast::Expression::Binary { lhs, rhs, .. } => {
-                    self.resolve_expression(lhs)?;
-                    self.resolve_expression(rhs)?;
+        match exp {
+            ast::Expression::Constant(_) => Ok(()),
+            ast::Expression::Unary { exp, .. } => self.resolve_expression(exp),
+            ast::Expression::Binary { lhs, rhs, .. } => {
+                self.resolve_expression(lhs)?;
+                self.resolve_expression(rhs)?;
+                Ok(())
+            }
+            ast::Expression::Var(var, ..) => {
+                if let Some(unique_name) = self.lookup(&var.data) {
+                    var.data = unique_name.new_name.clone();
                     Ok(())
-                }
-                ast::Expression::Var(var) => {
-                    if let Some(unique_name) = self.lookup(&var.data) {
-                        var.data = unique_name.new_name.clone();
-                        Ok(())
-                    } else {
-                        Err(Error::VariableNotDeclared(var.clone()))
-                    }
-                }
-                ast::Expression::Assignment { lhs, rhs } => {
-                    if !matches!(lhs.as_ref(), ast::Expression::Var(_)) {
-                        return Err(Error::InvalidLValue(lhs.as_ref().clone()));
-                    }
-                    self.resolve_expression(lhs)?;
-                    self.resolve_expression(rhs)?;
-                    Ok(())
-                }
-                ast::Expression::Conditional {
-                    condition,
-                    then_branch,
-                    else_branch,
-                } => {
-                    self.resolve_expression(condition)?;
-                    self.resolve_expression(then_branch)?;
-                    self.resolve_expression(else_branch)?;
-                    Ok(())
-                }
-                ast::Expression::FunctionCall { name, args, .. } => {
-                    if let Some(var_info) = self.lookup(&name.data) {
-                        name.data = var_info.new_name.clone();
-                        for arg in args {
-                            self.resolve_expression(arg)?;
-                        }
-                        Ok(())
-                    } else {
-                        Err(Error::UndeclaredFunction(exp.clone()))
-                    }
+                } else {
+                    Err(Error::VariableNotDeclared(var.clone()))
                 }
             }
-        */
+            ast::Expression::Assignment { lhs, rhs } => {
+                if !matches!(lhs.as_ref(), ast::Expression::Var(..)) {
+                    return Err(Error::InvalidLValue(lhs.as_ref().clone()));
+                }
+                self.resolve_expression(lhs)?;
+                self.resolve_expression(rhs)?;
+                Ok(())
+            }
+            ast::Expression::Conditional {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
+                self.resolve_expression(condition)?;
+                self.resolve_expression(then_branch)?;
+                self.resolve_expression(else_branch)?;
+                Ok(())
+            }
+            ast::Expression::FunctionCall { name, args, .. } => {
+                if let Some(var_info) = self.lookup(&name.data) {
+                    name.data = var_info.new_name.clone();
+                    for arg in args {
+                        self.resolve_expression(arg)?;
+                    }
+                    Ok(())
+                } else {
+                    Err(Error::UndeclaredFunction(exp.clone()))
+                }
+            }
+            ast::Expression::Cast { target: _, exp } => {
+                self.resolve_expression(exp)?;
+                Ok(())
+            }
+        }
     }
 }

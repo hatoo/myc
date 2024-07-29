@@ -194,7 +194,7 @@ pub enum VarType {
     Long,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FunType {
     pub params: Vec<VarType>,
     pub ret: VarType,
