@@ -44,6 +44,7 @@ pub enum Token {
     Comma,
     Static,
     Extern,
+    Long,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -76,6 +77,9 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
             b'0'..=b'9' => {
                 let start = index;
                 while index < src.len() && src[index].is_ascii_digit() {
+                    index += 1;
+                }
+                if index < src.len() && (src[index] == b'l' || src[index] == b'L') {
                     index += 1;
                 }
                 if index < src.len() && (src[index].is_ascii_alphanumeric() || src[index] == b'_') {
@@ -114,6 +118,7 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
                     "continue" => Token::Continue,
                     "static" => Token::Static,
                     "extern" => Token::Extern,
+                    "long" => Token::Long,
                     _ => Token::Ident(EcoString::from(ident)),
                 };
                 tokens.push(Spanned {
