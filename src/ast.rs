@@ -21,6 +21,7 @@ pub struct FunDecl {
     pub name: Spanned<EcoString>,
     pub params: Vec<Spanned<EcoString>>,
     pub body: Option<Block>,
+    pub ty: Type,
     pub storage_class: Option<StorageClass>,
 }
 
@@ -77,10 +78,20 @@ pub enum Statement {
     Null,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum Const {
+    Int(i32),
+    Long(i64),
+}
+
 #[derive(Debug, Clone)]
 pub enum Expression {
     Var(Spanned<EcoString>),
-    Constant(Spanned<i32>),
+    Cast {
+        target: Type,
+        exp: Box<Expression>,
+    },
+    Constant(Spanned<Const>),
     Unary {
         op: Spanned<UnaryOp>,
         exp: Box<Expression>,
@@ -119,6 +130,7 @@ impl HasSpan for Expression {
                 ..
             } => condition.span().start..else_branch.span().end,
             Self::FunctionCall { name, .. } => name.span.clone(),
+            Self::Cast { exp, .. } => exp.span(),
         }
     }
 }
@@ -126,6 +138,7 @@ impl HasSpan for Expression {
 pub struct VarDecl {
     pub ident: Spanned<EcoString>,
     pub init: Option<Expression>,
+    pub ty: Type,
     pub storage_class: Option<StorageClass>,
 }
 
@@ -133,6 +146,13 @@ pub struct VarDecl {
 pub enum Declaration {
     VarDecl(VarDecl),
     FunDecl(FunDecl),
+}
+
+#[derive(Debug, Clone)]
+pub enum Type {
+    Int,
+    Long,
+    FunType { params: Vec<Type>, ret: Box<Type> },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -243,6 +263,8 @@ pub enum Error {
     ConflictingSpecifier(Spanned<Token>),
     #[error("No type specifier")]
     NoTypeSpecifier(std::ops::Range<usize>),
+    #[error("Bad type specifier")]
+    BadTypeSpecifier(std::ops::Range<usize>),
     #[error("Unexpected specifier")]
     UnexpectedSpecifier(Spanned<Token>),
 }
@@ -257,8 +279,44 @@ impl MayHasSpan for Error {
             Error::MalformedBody(spanned) => Some(spanned.span.clone()),
             Error::ConflictingSpecifier(spanned) => Some(spanned.span.clone()),
             Error::NoTypeSpecifier(span) => Some(span.clone()),
+            Error::BadTypeSpecifier(span) => Some(span.clone()),
             Error::UnexpectedSpecifier(spanned) => Some(spanned.span.clone()),
         }
+    }
+}
+
+fn solve_type_specifier(ty: &[Spanned<Type>]) -> Result<Type, Error> {
+    debug_assert!(!ty.is_empty());
+    match ty {
+        [Spanned {
+            data: Type::Int, ..
+        }] => Ok(Type::Int),
+        [Spanned {
+            data: Type::Long, ..
+        }] => Ok(Type::Long),
+        [Spanned {
+            data: Type::Int, ..
+        }, Spanned {
+            data: Type::Int,
+            span,
+        }] => Err(Error::BadTypeSpecifier(span.clone())),
+        [Spanned {
+            data: Type::Int, ..
+        }, Spanned {
+            data: Type::Long, ..
+        }] => Ok(Type::Long),
+        [Spanned {
+            data: Type::Long, ..
+        }, Spanned {
+            data: Type::Int, ..
+        }] => Ok(Type::Long),
+        [Spanned {
+            data: Type::Long, ..
+        }, Spanned {
+            data: Type::Long,
+            span,
+        }] => Err(Error::BadTypeSpecifier(span.clone())),
+        _ => Err(Error::BadTypeSpecifier(ty[0].span.clone())),
     }
 }
 
@@ -502,8 +560,11 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_specifiers(&mut self, is_for_init: bool) -> Result<Option<StorageClass>, Error> {
-        let mut ty: Option<()> = None;
+    fn parse_specifiers(
+        &mut self,
+        is_for_init: bool,
+    ) -> Result<(Type, Option<StorageClass>), Error> {
+        let mut ty = Vec::new();
         let mut storage_class = None;
         let start = if let Some(spanned) = self.peek() {
             spanned.span.start
@@ -520,12 +581,17 @@ impl<'a> Parser<'a> {
                         data: Token::Int, ..
                     },
                 ) => {
-                    // TODO better error handling
-                    if ty.is_some() {
-                        return Err(Error::ConflictingSpecifier(s.clone()));
-                    }
+                    ty.push(Type::Int);
                     end = s.span.end;
-                    ty = Some(());
+                    self.advance();
+                }
+                Some(
+                    s @ Spanned {
+                        data: Token::Long, ..
+                    },
+                ) => {
+                    ty.push(Type::Long);
+                    end = s.span.end;
                     self.advance();
                 }
                 Some(
@@ -564,21 +630,30 @@ impl<'a> Parser<'a> {
             }
         }
 
-        let Some(_) = ty else {
-            return Err(Error::NoTypeSpecifier(start..end));
-        };
-
-        Ok(storage_class)
+        match ty.len() {
+            0 => Err(Error::NoTypeSpecifier(start..end)),
+            1 => Ok((ty.pop().unwrap(), storage_class)),
+            2 => match (&ty[0], &ty[1]) {
+                (Type::Int, Type::Int) => Err(Error::BadTypeSpecifier(start..end)),
+                (Type::Int, Type::Long) | (Type::Long, Type::Int) => {
+                    Ok((Type::Long, storage_class))
+                }
+                (Type::Long, Type::Long) => Err(Error::BadTypeSpecifier(start..end)),
+                _ => unreachable!(),
+            },
+            _ => Err(Error::BadTypeSpecifier(start..end)),
+        }
     }
 
     fn parse_var_decl(&mut self, is_for_init: bool) -> Result<VarDecl, Error> {
-        let storage_class = self.parse_specifiers(is_for_init)?;
+        let (ty, storage_class) = self.parse_specifiers(is_for_init)?;
         let ident = self.expect_ident()?;
         if self.expect(Token::Equal).is_ok() {
             let exp = self.parse_expression(0)?;
             self.expect(Token::SemiColon)?;
             Ok(VarDecl {
                 ident,
+                ty,
                 init: Some(exp),
                 storage_class,
             })
@@ -586,22 +661,66 @@ impl<'a> Parser<'a> {
             self.expect(Token::SemiColon)?;
             Ok(VarDecl {
                 ident,
+                ty,
                 init: None,
                 storage_class,
             })
         }
     }
 
-    fn parse_param_list(&mut self) -> Result<Vec<Spanned<EcoString>>, Error> {
+    fn expect_param_type(&mut self) -> Result<Type, Error> {
+        let mut ty = Vec::new();
+        loop {
+            match self.peek() {
+                Some(
+                    t @ Spanned {
+                        data: Token::Int, ..
+                    },
+                ) => {
+                    ty.push(t.clone().map(|_| Type::Int));
+                    self.advance();
+                }
+                Some(
+                    t @ Spanned {
+                        data: Token::Long, ..
+                    },
+                ) => {
+                    ty.push(t.clone().map(|_| Type::Long));
+                    self.advance();
+                }
+                Some(_) => {
+                    if ty.is_empty() {
+                        return Err(Error::Unexpected(
+                            self.peek().unwrap().clone(),
+                            ExpectedToken::Specifier,
+                        ));
+                    } else {
+                        break;
+                    }
+                }
+                None => {
+                    if ty.is_empty() {
+                        return Err(Error::UnexpectedEof);
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
+
+        solve_type_specifier(&ty)
+    }
+
+    fn parse_param_list(&mut self) -> Result<Vec<(Type, Spanned<EcoString>)>, Error> {
         if self.expect(Token::Void).is_ok() {
             return Ok(Vec::new());
         }
 
         let mut params = Vec::new();
         loop {
-            self.expect(Token::Int)?;
+            let param_type = self.expect_param_type()?;
             let ident = self.expect_ident()?;
-            params.push(ident);
+            params.push((param_type, ident));
             if self.expect(Token::Comma).is_err() {
                 break;
             }
@@ -611,7 +730,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_fun_decl(&mut self) -> Result<FunDecl, Error> {
-        let storage_class = self.parse_specifiers(false)?;
+        let (return_type, storage_class) = self.parse_specifiers(false)?;
         let name = self.expect_ident()?;
         self.expect(Token::OpenParen)?;
         let params = self.parse_param_list()?;
@@ -621,9 +740,22 @@ impl<'a> Parser<'a> {
         } else {
             Some(self.expect_block()?)
         };
+
+        let mut param_ident = Vec::new();
+        let mut param_type = Vec::new();
+
+        for (ty, ident) in params {
+            param_ident.push(ident);
+            param_type.push(ty);
+        }
+
         Ok(FunDecl {
             name,
-            params,
+            params: param_ident,
+            ty: Type::FunType {
+                params: param_type,
+                ret: Box::new(return_type),
+            },
             body,
             storage_class,
         })
