@@ -531,6 +531,18 @@ fn gen_function(
                 });
             }
             tacky::Instruction::Truncate { src, dst } => {
+                /*
+                body.push(Instruction::Mov {
+                    ty: AssemblyType::QuadWord,
+                    src: src.into(),
+                    dst: Operand::Reg(Register::R10),
+                });
+                body.push(Instruction::Mov {
+                    ty: AssemblyType::LongWord,
+                    src: Operand::Reg(Register::R10),
+                    dst: dst.into(),
+                });
+                */
                 body.push(Instruction::Mov {
                     ty: AssemblyType::LongWord,
                     src: src.into(),
@@ -829,6 +841,8 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
                             dst: Operand::Reg(Register::R11),
                         });
                         new_insts.push(Instruction::Cmp(ty, lhs, Operand::Reg(Register::R11)));
+                    } else {
+                        new_insts.push(Instruction::Cmp(ty, lhs, rhs));
                     }
                 }
                 AssemblyType::QuadWord => {

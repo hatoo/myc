@@ -170,10 +170,24 @@ impl<'a> InstructionGenerator<'a> {
         }
         if let Some(exp) = &decl.init {
             let val = self.add_expression(exp);
-            self.instructions.push(Instruction::Copy {
-                src: val,
-                dst: Val::Var(decl.ident.data.clone()),
-            });
+            if decl.ty == val.ty(self.symbol_table) {
+                self.instructions.push(Instruction::Copy {
+                    src: val,
+                    dst: Val::Var(decl.ident.data.clone()),
+                });
+            } else {
+                let dst = Val::Var(decl.ident.data.clone());
+                match decl.ty {
+                    ast::VarType::Int => self.instructions.push(Instruction::Truncate {
+                        src: val,
+                        dst: dst.clone(),
+                    }),
+                    ast::VarType::Long => self.instructions.push(Instruction::SignExtend {
+                        src: val,
+                        dst: dst.clone(),
+                    }),
+                }
+            }
         }
     }
 
