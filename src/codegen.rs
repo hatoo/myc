@@ -1,4 +1,4 @@
-use std::{arch::x86_64::__m128, collections::HashMap, fmt::Display};
+use std::{collections::HashMap, fmt::Display};
 
 use ecow::EcoString;
 
@@ -16,6 +16,15 @@ pub struct Program {
 pub enum AssemblyType {
     LongWord,
     QuadWord,
+}
+
+impl AssemblyType {
+    pub fn suffix(&self) -> &'static str {
+        match self {
+            AssemblyType::LongWord => "l",
+            AssemblyType::QuadWord => "q",
+        }
+    }
 }
 
 impl<'a> From<&'a ast::VarType> for AssemblyType {
@@ -536,7 +545,7 @@ fn gen_function(
     body.insert(
         0,
         Instruction::Binary {
-            op: BinaryOp::Add,
+            op: BinaryOp::Sub,
             ty: AssemblyType::QuadWord,
             lhs: Operand::Imm(stack_size as _),
             rhs: Operand::Reg(Register::SP),
@@ -568,7 +577,9 @@ fn pseudo_to_stack(
                     if let Some(addr) = known_vars.get(var) {
                         *operand = Operand::Stack(*addr);
                     } else {
-                        total -= attr.ty().size() as i32;
+                        let size = attr.ty().size() as i32;
+                        total -= size;
+                        total = (total - (size - 1)) / size * size;
                         known_vars.insert(var.clone(), total);
                         *operand = Operand::Stack(total);
                     }
@@ -646,7 +657,7 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
                 dst: dst @ (Operand::Stack(_) | Operand::Data(_)),
             } => {
                 new_insts.push(Instruction::Mov {
-                    ty: AssemblyType::LongWord,
+                    ty: AssemblyType::QuadWord,
                     src,
                     dst: Operand::Reg(Register::R10),
                 });
@@ -778,6 +789,34 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
     new_insts
 }
 
+struct SizedOperand {
+    ty: AssemblyType,
+    op: Operand,
+}
+
+impl SizedOperand {
+    fn new(ty: AssemblyType, op: Operand) -> Self {
+        SizedOperand { ty, op }
+    }
+}
+
+impl Display for SizedOperand {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.op {
+            Operand::Imm(imm) => write!(f, "${}", imm)?,
+            Operand::Reg(reg) => match self.ty {
+                AssemblyType::LongWord => write!(f, "{}", RegisterSize::Dword(&reg))?,
+                AssemblyType::QuadWord => write!(f, "{}", RegisterSize::Qword(&reg))?,
+            },
+            Operand::Pseudo(_) => panic!("Pseudo operand should have been removed"),
+            Operand::Stack(offset) => write!(f, "{}(%rbp)", offset)?,
+            Operand::Data(name) => write!(f, "{}(%rip)", name)?,
+        }
+
+        Ok(())
+    }
+}
+
 impl Display for Program {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for top in &self.top_levels {
@@ -816,56 +855,98 @@ impl Display for Function {
 
 impl Display for StaticVariable {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        todo!()
-        /*
         if self.global {
             writeln!(f, ".globl {}", self.name)?;
         }
-        if self.init == 0 {
-            writeln!(f, ".bss")?;
-            writeln!(f, ".align 4")?;
-            writeln!(f, "{}:", self.name)?;
-            writeln!(f, ".zero 4")?;
-        } else {
-            writeln!(f, ".data")?;
-            writeln!(f, "{}:", self.name)?;
-            writeln!(f, ".long {}", self.init)?;
+        // fixme
+        match self.init {
+            semantics::type_check::StaticInit::Int(0) => {
+                writeln!(f, ".bss")?;
+                writeln!(f, ".align {}", self.alignment)?;
+                writeln!(f, "{}:", self.name)?;
+                writeln!(f, ".zero {}", self.alignment)?;
+            }
+            semantics::type_check::StaticInit::Int(x) => {
+                writeln!(f, ".data")?;
+                writeln!(f, ".align {}", self.alignment)?;
+                writeln!(f, "{}:", self.name)?;
+                writeln!(f, ".long {}", x)?;
+            }
+            semantics::type_check::StaticInit::Long(0) => {
+                writeln!(f, ".bss")?;
+                writeln!(f, ".align {}", self.alignment)?;
+                writeln!(f, "{}:", self.name)?;
+                writeln!(f, ".zero {}", self.alignment)?;
+            }
+            semantics::type_check::StaticInit::Long(x) => {
+                writeln!(f, ".data")?;
+                writeln!(f, ".align {}", self.alignment)?;
+                writeln!(f, "{}:", self.name)?;
+                writeln!(f, ".quad {}", x)?;
+            }
         }
         Ok(())
-        */
     }
 }
 
 impl Display for Instruction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        todo!()
-        /*
         match self {
-            Instruction::Mov { src, dst } => {
-                writeln!(f, "movl {src}, {dst}")?;
+            Instruction::Mov { ty, src, dst } => {
+                writeln!(
+                    f,
+                    "mov{} {}, {}",
+                    ty.suffix(),
+                    SizedOperand::new(*ty, src.clone()),
+                    SizedOperand::new(*ty, dst.clone())
+                )?;
             }
-            Instruction::Unary { op, src } => {
-                writeln!(f, "{op} {src}")?;
-            }
-            Instruction::AllocateStack(n) => {
-                writeln!(f, "subq ${n}, %rsp")?;
+            Instruction::Unary { ty, op, src } => {
+                writeln!(
+                    f,
+                    "{op}{} {}",
+                    ty.suffix(),
+                    SizedOperand::new(*ty, src.clone())
+                )?;
             }
             Instruction::Ret => {
                 writeln!(f, "movq %rbp, %rsp")?;
                 writeln!(f, "popq %rbp")?;
                 writeln!(f, "ret")?;
             }
-            Instruction::Binary { op, lhs, rhs } => {
-                writeln!(f, "{op} {lhs}, {rhs}")?;
+            Instruction::Binary { ty, op, lhs, rhs } => {
+                writeln!(
+                    f,
+                    "{op}{} {}, {}",
+                    ty.suffix(),
+                    SizedOperand::new(*ty, lhs.clone()),
+                    SizedOperand::new(*ty, rhs.clone())
+                )?;
             }
-            Instruction::Cdq => {
-                writeln!(f, "cdq")?;
+            Instruction::Cdq(ty) => match ty {
+                AssemblyType::LongWord => {
+                    writeln!(f, "cdq")?;
+                }
+                AssemblyType::QuadWord => {
+                    writeln!(f, "cqo")?;
+                }
+            },
+            Instruction::Idiv(ty, op) => {
+                writeln!(
+                    f,
+                    "idiv{} {}",
+                    ty.suffix(),
+                    SizedOperand::new(*ty, op.clone())
+                )?;
             }
-            Instruction::Idiv(op) => {
-                writeln!(f, "idivl {op}")?;
-            }
-            Instruction::Cmp(lhs, rhs) => {
-                writeln!(f, "cmpl {lhs}, {rhs}")?;
+            Instruction::Cmp(ty, lhs, rhs) => {
+                writeln!(
+                    f,
+                    "cmp{} {}, {}",
+                    ty.suffix(),
+                    SizedOperand::new(*ty, lhs.clone()),
+                    SizedOperand::new(*ty, rhs.clone())
+                )?;
             }
             Instruction::Jmp(l) => {
                 writeln!(f, "jmp .L{}", l)?;
@@ -877,37 +958,44 @@ impl Display for Instruction {
                 writeln!(f, "set{} {}", cond, RegisterSize::Byte(reg))?;
             }
             Instruction::SetCc(cond, dst) => {
-                writeln!(f, "set{} {dst}", cond)?;
+                writeln!(
+                    f,
+                    "set{} {}",
+                    cond,
+                    SizedOperand::new(AssemblyType::LongWord, dst.clone())
+                )?;
             }
             Instruction::Label(l) => {
                 writeln!(f, ".L{}:", l)?;
             }
-            Instruction::DeallocateStack(n) => {
-                writeln!(f, "addq ${n}, %rsp")?;
+            Instruction::Push(op) => {
+                writeln!(
+                    f,
+                    "pushq {}",
+                    SizedOperand::new(AssemblyType::QuadWord, op.clone())
+                )?;
             }
-            Instruction::Push(op) => match op {
-                Operand::Imm(imm) => {
-                    writeln!(f, "pushq ${}", imm)?;
-                }
-                Operand::Reg(reg) => {
-                    writeln!(f, "pushq {}", RegisterSize::Qword(reg))?;
-                }
-                _ => unimplemented!(),
-            },
             Instruction::Call(name) => {
                 writeln!(f, "call {}@PLT", name)?;
             }
+            Instruction::Movsx { src, dst } => {
+                writeln!(
+                    f,
+                    "movslq {}, {}",
+                    SizedOperand::new(AssemblyType::LongWord, src.clone()),
+                    SizedOperand::new(AssemblyType::QuadWord, dst.clone()),
+                )?;
+            }
         }
         Ok(())
-        */
     }
 }
 
 impl Display for UnaryOp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            UnaryOp::Neg => write!(f, "negl")?,
-            UnaryOp::Not => write!(f, "notl")?,
+            UnaryOp::Neg => write!(f, "neg")?,
+            UnaryOp::Not => write!(f, "not")?,
         }
         Ok(())
     }
@@ -916,24 +1004,10 @@ impl Display for UnaryOp {
 impl Display for BinaryOp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            BinaryOp::Add => write!(f, "addl")?,
-            BinaryOp::Sub => write!(f, "subl")?,
-            BinaryOp::Mult => write!(f, "imull")?,
+            BinaryOp::Add => write!(f, "add")?,
+            BinaryOp::Sub => write!(f, "sub")?,
+            BinaryOp::Mult => write!(f, "imul")?,
         }
-        Ok(())
-    }
-}
-
-impl Display for Operand {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Operand::Imm(imm) => write!(f, "${}", imm)?,
-            Operand::Reg(reg) => write!(f, "{}", RegisterSize::Dword(reg))?,
-            Operand::Pseudo(_) => panic!("Pseudo operand should have been removed"),
-            Operand::Stack(offset) => write!(f, "{}(%rbp)", offset)?,
-            Operand::Data(name) => write!(f, "{}(%rip)", name)?,
-        }
-
         Ok(())
     }
 }
