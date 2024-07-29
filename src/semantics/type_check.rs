@@ -54,6 +54,8 @@ pub enum Error {
     IncompatibleLinkage(Spanned<EcoString>),
     #[error("Function declaration in block scope has a body")]
     BlockScopeFunWithBody(Spanned<EcoString>),
+    #[error("For loop init must not has storage class")]
+    BadForInit(Spanned<EcoString>),
 }
 
 impl HasSpan for Error {
@@ -65,6 +67,7 @@ impl HasSpan for Error {
             Error::BadInitializer(ident) => ident.span.clone(),
             Error::IncompatibleLinkage(ident) => ident.span.clone(),
             Error::BlockScopeFunWithBody(ident) => ident.span.clone(),
+            Error::BadForInit(ident) => ident.span.clone(),
         }
     }
 }
@@ -488,6 +491,9 @@ impl TypeChecker {
                 if let Some(init) = init {
                     match init {
                         crate::ast::ForInit::VarDecl(decl) => {
+                            if decl.storage_class.is_some() {
+                                return Err(Error::BadForInit(decl.ident.clone()));
+                            }
                             self.check_var_decl_local(decl)?;
                         }
                         crate::ast::ForInit::Expression(exp) => {

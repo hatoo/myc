@@ -438,8 +438,7 @@ impl<'a> Parser<'a> {
             return Ok(None);
         }
         let index = self.index;
-        if let Ok(decl) = self.parse_var_decl(true) {
-            debug_assert!(decl.storage_class.is_none());
+        if let Ok(decl) = self.parse_var_decl() {
             Ok(Some(ForInit::VarDecl(decl)))
         } else {
             self.index = index;
@@ -609,10 +608,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_specifiers(
-        &mut self,
-        is_for_init: bool,
-    ) -> Result<(VarType, Option<StorageClass>), Error> {
+    fn parse_specifiers(&mut self) -> Result<(VarType, Option<StorageClass>), Error> {
         let mut ty = Vec::new();
         let mut storage_class = None;
         let start = if let Some(spanned) = self.peek() {
@@ -652,9 +648,6 @@ impl<'a> Parser<'a> {
                     if storage_class.is_some() {
                         return Err(Error::ConflictingSpecifier(s.clone()));
                     }
-                    if is_for_init {
-                        return Err(Error::UnexpectedSpecifier(s.clone()));
-                    }
                     end = s.span.end;
                     storage_class = Some(StorageClass::Static);
                     self.advance();
@@ -667,9 +660,6 @@ impl<'a> Parser<'a> {
                 ) => {
                     if storage_class.is_some() {
                         return Err(Error::ConflictingSpecifier(s.clone()));
-                    }
-                    if is_for_init {
-                        return Err(Error::UnexpectedSpecifier(s.clone()));
                     }
                     end = s.span.end;
                     storage_class = Some(StorageClass::Extern);
@@ -685,8 +675,8 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_var_decl(&mut self, is_for_init: bool) -> Result<VarDecl, Error> {
-        let (ty, storage_class) = self.parse_specifiers(is_for_init)?;
+    fn parse_var_decl(&mut self) -> Result<VarDecl, Error> {
+        let (ty, storage_class) = self.parse_specifiers()?;
         let ident = self.expect_ident()?;
         if self.expect(Token::Equal).is_ok() {
             let exp = self.parse_expression(0)?;
@@ -770,7 +760,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_fun_decl(&mut self) -> Result<FunDecl, Error> {
-        let (return_type, storage_class) = self.parse_specifiers(false)?;
+        let (return_type, storage_class) = self.parse_specifiers()?;
         let name = self.expect_ident()?;
         self.expect(Token::OpenParen)?;
         let params = self.parse_param_list()?;
@@ -804,7 +794,7 @@ impl<'a> Parser<'a> {
     fn parse_declaration(&mut self) -> Result<Declaration, Error> {
         let index = self.index;
 
-        if let Ok(decl) = self.parse_var_decl(false) {
+        if let Ok(decl) = self.parse_var_decl() {
             Ok(Declaration::VarDecl(decl))
         } else {
             self.index = index;
