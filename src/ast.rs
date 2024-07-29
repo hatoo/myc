@@ -21,7 +21,7 @@ pub struct FunDecl {
     pub name: Spanned<EcoString>,
     pub params: Vec<Spanned<EcoString>>,
     pub body: Option<Block>,
-    pub ty: Type,
+    pub ty: FunType,
     pub storage_class: Option<StorageClass>,
 }
 
@@ -84,22 +84,39 @@ pub enum Const {
     Long(i64),
 }
 
+impl Const {
+    pub fn get_int(&self) -> i32 {
+        match self {
+            Self::Int(i) => *i,
+            Self::Long(i) => *i as i32,
+        }
+    }
+    pub fn get_long(&self) -> i64 {
+        match self {
+            Self::Int(i) => *i as i64,
+            Self::Long(i) => *i,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Expression {
-    Var(Spanned<EcoString>),
+    Var(Spanned<EcoString>, VarType),
     Cast {
-        target: Type,
+        target: VarType,
         exp: Box<Expression>,
     },
     Constant(Spanned<Const>),
     Unary {
         op: Spanned<UnaryOp>,
         exp: Box<Expression>,
+        ty: VarType,
     },
     Binary {
         op: BinaryOp,
         lhs: Box<Expression>,
         rhs: Box<Expression>,
+        ty: VarType,
     },
     Assignment {
         lhs: Box<Expression>,
@@ -113,17 +130,40 @@ pub enum Expression {
     FunctionCall {
         name: Spanned<EcoString>,
         args: Vec<Expression>,
+        ty: VarType,
     },
+}
+
+impl Expression {
+    pub fn ty(&self) -> VarType {
+        match self {
+            Self::Var(_, ty) => ty.clone(),
+            Self::Cast { target, .. } => target.clone(),
+            Self::Constant(Spanned {
+                data: Const::Int(_),
+                ..
+            }) => VarType::Int,
+            Self::Constant(Spanned {
+                data: Const::Long(_),
+                ..
+            }) => VarType::Long,
+            Self::Unary { ty, .. } => ty.clone(),
+            Self::Binary { ty, .. } => ty.clone(),
+            Self::Assignment { lhs, .. } => lhs.ty(),
+            Self::Conditional { then_branch, .. } => then_branch.ty(),
+            Self::FunctionCall { ty, .. } => ty.clone(),
+        }
+    }
 }
 
 impl HasSpan for Expression {
     fn span(&self) -> std::ops::Range<usize> {
         match self {
-            Self::Var(ident) => ident.span.clone(),
+            Self::Var(ident, ..) => ident.span.clone(),
             Self::Constant(constant) => constant.span.clone(),
-            Self::Unary { op, exp } => op.span.start..exp.span().end,
+            Self::Unary { op, exp, .. } => op.span.start..exp.span().end,
             Self::Binary { lhs, rhs, .. } => lhs.span().start..rhs.span().end,
-            Self::Assignment { lhs, rhs } => lhs.span().start..rhs.span().end,
+            Self::Assignment { lhs, rhs, .. } => lhs.span().start..rhs.span().end,
             Self::Conditional {
                 condition,
                 else_branch,
@@ -138,7 +178,7 @@ impl HasSpan for Expression {
 pub struct VarDecl {
     pub ident: Spanned<EcoString>,
     pub init: Option<Expression>,
-    pub ty: Type,
+    pub ty: VarType,
     pub storage_class: Option<StorageClass>,
 }
 
@@ -148,11 +188,16 @@ pub enum Declaration {
     FunDecl(FunDecl),
 }
 
-#[derive(Debug, Clone)]
-pub enum Type {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VarType {
     Int,
     Long,
-    FunType { params: Vec<Type>, ret: Box<Type> },
+}
+
+#[derive(Debug)]
+pub struct FunType {
+    pub params: Vec<VarType>,
+    pub ret: VarType,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -285,35 +330,39 @@ impl MayHasSpan for Error {
     }
 }
 
-fn solve_type_specifier(ty: &[Spanned<Type>]) -> Result<Type, Error> {
+fn solve_type_specifier(ty: &[Spanned<VarType>]) -> Result<VarType, Error> {
     debug_assert!(!ty.is_empty());
     match ty {
         [Spanned {
-            data: Type::Int, ..
-        }] => Ok(Type::Int),
+            data: VarType::Int, ..
+        }] => Ok(VarType::Int),
         [Spanned {
-            data: Type::Long, ..
-        }] => Ok(Type::Long),
+            data: VarType::Long,
+            ..
+        }] => Ok(VarType::Long),
         [Spanned {
-            data: Type::Int, ..
+            data: VarType::Int, ..
         }, Spanned {
-            data: Type::Int,
+            data: VarType::Int,
             span,
         }] => Err(Error::BadTypeSpecifier(span.clone())),
         [Spanned {
-            data: Type::Int, ..
+            data: VarType::Int, ..
         }, Spanned {
-            data: Type::Long, ..
-        }] => Ok(Type::Long),
+            data: VarType::Long,
+            ..
+        }] => Ok(VarType::Long),
         [Spanned {
-            data: Type::Long, ..
+            data: VarType::Long,
+            ..
         }, Spanned {
-            data: Type::Int, ..
-        }] => Ok(Type::Long),
+            data: VarType::Int, ..
+        }] => Ok(VarType::Long),
         [Spanned {
-            data: Type::Long, ..
+            data: VarType::Long,
+            ..
         }, Spanned {
-            data: Type::Long,
+            data: VarType::Long,
             span,
         }] => Err(Error::BadTypeSpecifier(span.clone())),
         _ => Err(Error::BadTypeSpecifier(ty[0].span.clone())),
@@ -563,7 +612,7 @@ impl<'a> Parser<'a> {
     fn parse_specifiers(
         &mut self,
         is_for_init: bool,
-    ) -> Result<(Type, Option<StorageClass>), Error> {
+    ) -> Result<(VarType, Option<StorageClass>), Error> {
         let mut ty = Vec::new();
         let mut storage_class = None;
         let start = if let Some(spanned) = self.peek() {
@@ -581,7 +630,7 @@ impl<'a> Parser<'a> {
                         data: Token::Int, ..
                     },
                 ) => {
-                    ty.push(Type::Int);
+                    ty.push(s.clone().map(|_| VarType::Int));
                     end = s.span.end;
                     self.advance();
                 }
@@ -590,7 +639,7 @@ impl<'a> Parser<'a> {
                         data: Token::Long, ..
                     },
                 ) => {
-                    ty.push(Type::Long);
+                    ty.push(s.clone().map(|_| VarType::Long));
                     end = s.span.end;
                     self.advance();
                 }
@@ -632,16 +681,7 @@ impl<'a> Parser<'a> {
 
         match ty.len() {
             0 => Err(Error::NoTypeSpecifier(start..end)),
-            1 => Ok((ty.pop().unwrap(), storage_class)),
-            2 => match (&ty[0], &ty[1]) {
-                (Type::Int, Type::Int) => Err(Error::BadTypeSpecifier(start..end)),
-                (Type::Int, Type::Long) | (Type::Long, Type::Int) => {
-                    Ok((Type::Long, storage_class))
-                }
-                (Type::Long, Type::Long) => Err(Error::BadTypeSpecifier(start..end)),
-                _ => unreachable!(),
-            },
-            _ => Err(Error::BadTypeSpecifier(start..end)),
+            _ => Ok((solve_type_specifier(&ty)?, storage_class)),
         }
     }
 
@@ -668,7 +708,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn expect_param_type(&mut self) -> Result<Type, Error> {
+    fn expect_param_type(&mut self) -> Result<VarType, Error> {
         let mut ty = Vec::new();
         loop {
             match self.peek() {
@@ -677,7 +717,7 @@ impl<'a> Parser<'a> {
                         data: Token::Int, ..
                     },
                 ) => {
-                    ty.push(t.clone().map(|_| Type::Int));
+                    ty.push(t.clone().map(|_| VarType::Int));
                     self.advance();
                 }
                 Some(
@@ -685,7 +725,7 @@ impl<'a> Parser<'a> {
                         data: Token::Long, ..
                     },
                 ) => {
-                    ty.push(t.clone().map(|_| Type::Long));
+                    ty.push(t.clone().map(|_| VarType::Long));
                     self.advance();
                 }
                 Some(_) => {
@@ -711,7 +751,7 @@ impl<'a> Parser<'a> {
         solve_type_specifier(&ty)
     }
 
-    fn parse_param_list(&mut self) -> Result<Vec<(Type, Spanned<EcoString>)>, Error> {
+    fn parse_param_list(&mut self) -> Result<Vec<(VarType, Spanned<EcoString>)>, Error> {
         if self.expect(Token::Void).is_ok() {
             return Ok(Vec::new());
         }
@@ -752,9 +792,9 @@ impl<'a> Parser<'a> {
         Ok(FunDecl {
             name,
             params: param_ident,
-            ty: Type::FunType {
+            ty: FunType {
                 params: param_type,
-                ret: Box::new(return_type),
+                ret: return_type,
             },
             body,
             storage_class,
@@ -776,10 +816,21 @@ impl<'a> Parser<'a> {
         if let Some(token) = self.peek() {
             match &token.data {
                 Token::Constant(s) => {
-                    let value = s.parse()?;
-                    let constant = token.clone().map(|_| value);
-                    self.advance();
-                    Ok(Expression::Constant(constant))
+                    if s.ends_with('l') || s.ends_with('L') {
+                        let value = s[..s.len() - 1].parse()?;
+                        let constant = token.clone().map(|_| Const::Long(value));
+                        self.advance();
+                        Ok(Expression::Constant(constant))
+                    } else {
+                        let value: i64 = s.parse()?;
+                        let constant = if let Ok(value) = i32::try_from(value) {
+                            token.clone().map(|_| Const::Int(value))
+                        } else {
+                            token.clone().map(|_| Const::Long(value))
+                        };
+                        self.advance();
+                        Ok(Expression::Constant(constant))
+                    }
                 }
                 _ if UnaryOp::try_from(&token.data).is_ok() => {
                     let op = UnaryOp::try_from(&token.data).unwrap();
@@ -789,10 +840,23 @@ impl<'a> Parser<'a> {
                     Ok(Expression::Unary {
                         op,
                         exp: Box::new(exp),
+                        // Fixed in type check pass
+                        ty: VarType::Int,
                     })
                 }
                 Token::OpenParen => {
                     self.advance();
+                    let index = self.index;
+                    if let Ok(ty) = self.expect_param_type() {
+                        if self.expect(Token::CloseParen).is_ok() {
+                            let exp = self.parse_factor()?;
+                            return Ok(Expression::Cast {
+                                target: ty,
+                                exp: Box::new(exp),
+                            });
+                        }
+                    }
+                    self.index = index;
                     let exp = self.parse_expression(0)?;
                     self.expect(Token::CloseParen)?;
                     Ok(exp)
@@ -823,12 +887,16 @@ impl<'a> Parser<'a> {
                         Ok(Expression::FunctionCall {
                             name: Spanned { data: ident, span },
                             args,
+                            ty: VarType::Int,
                         })
                     } else {
-                        Ok(Expression::Var(Spanned {
-                            data: ident,
-                            span: span.clone(),
-                        }))
+                        Ok(Expression::Var(
+                            Spanned {
+                                data: ident,
+                                span: span.clone(),
+                            },
+                            VarType::Int,
+                        ))
                     }
                 }
                 _ => Err(Error::MalformedExpression(token.clone())),
@@ -896,6 +964,7 @@ impl<'a> Parser<'a> {
                             op: bin_op,
                             lhs: Box::new(left),
                             rhs: Box::new(right),
+                            ty: VarType::Int,
                         };
                     }
                 }

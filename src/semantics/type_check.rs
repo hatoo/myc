@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use ecow::EcoString;
 
 use crate::{
-    ast::Expression,
+    ast::{self, Expression, VarType},
     span::{HasSpan, Spanned},
 };
 
@@ -15,22 +15,29 @@ pub struct TypeChecker {
 #[derive(Debug)]
 pub enum Attr {
     Fun {
-        arity: usize,
+        ty: ast::FunType,
         defined: bool,
         global: bool,
     },
     Static {
+        ty: ast::VarType,
         init: InitialValue,
         global: bool,
     },
-    Local,
+    Local(ast::VarType),
 }
 
 #[derive(Debug, Clone, Copy)]
 pub enum InitialValue {
     Tentative,
-    Initial(i32),
+    Initial(StaticInit),
     NoInitializer,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum StaticInit {
+    Int(i32),
+    Long(i64),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -62,6 +69,23 @@ impl HasSpan for Error {
     }
 }
 
+fn common_type(ty0: ast::VarType, ty1: ast::VarType) -> ast::VarType {
+    if ty0 == ty1 {
+        ty0
+    } else {
+        VarType::Long
+    }
+}
+
+fn convert_to(exp: &mut ast::Expression, ty: ast::VarType) {
+    if exp.ty() != ty {
+        *exp = ast::Expression::Cast {
+            exp: Box::new(exp.clone()),
+            target: ty,
+        };
+    }
+}
+
 impl TypeChecker {
     pub fn check_program(&mut self, program: &crate::ast::Program) -> Result<(), Error> {
         for decl in &program.decls {
@@ -75,6 +99,8 @@ impl TypeChecker {
     }
 
     fn check_fun_decl(&mut self, fun_decl: &crate::ast::FunDecl) -> Result<(), Error> {
+        todo!()
+        /*
         let crate::ast::FunDecl {
             name,
             params,
@@ -126,6 +152,7 @@ impl TypeChecker {
         }
 
         Ok(())
+        */
     }
 
     fn check_block_local(&mut self, block: &crate::ast::Block) -> Result<(), Error> {
@@ -155,10 +182,14 @@ impl TypeChecker {
             ident,
             init,
             storage_class,
+            ty,
         } = decl;
 
         let mut init = match init {
-            Some(Expression::Constant(val)) => InitialValue::Initial(val.data),
+            Some(Expression::Constant(Spanned { data: c, .. })) => match ty {
+                VarType::Int => InitialValue::Initial(StaticInit::Int(c.get_int())),
+                VarType::Long => InitialValue::Initial(StaticInit::Long(c.get_long())),
+            },
             Some(_) => return Err(Error::BadInitializer(ident.clone())),
             None => {
                 if storage_class == &Some(crate::ast::StorageClass::Extern) {
@@ -178,11 +209,16 @@ impl TypeChecker {
             Some(Attr::Static {
                 init: old_init,
                 global: old_global,
+                ty: old_ty,
             }) => {
                 if storage_class == &Some(crate::ast::StorageClass::Extern) {
                     global = *old_global;
                 } else if *old_global != global {
                     return Err(Error::IncompatibleLinkage(ident.clone()));
+                }
+
+                if ty != old_ty {
+                    return Err(Error::IncompatibleTypes(ident.clone()));
                 }
 
                 if matches!(old_init, InitialValue::Initial(_)) {
@@ -196,18 +232,26 @@ impl TypeChecker {
                     init = InitialValue::Tentative;
                 }
             }
-            Some(Attr::Local) => {
+            Some(Attr::Local(_)) => {
                 unreachable!()
             }
             None => {}
         }
 
-        self.sym_table
-            .insert(ident.data.clone(), Attr::Static { init, global });
+        self.sym_table.insert(
+            ident.data.clone(),
+            Attr::Static {
+                init,
+                global,
+                ty: *ty,
+            },
+        );
         Ok(())
     }
 
     fn check_var_decl_local(&mut self, decl: &crate::ast::VarDecl) -> Result<(), Error> {
+        todo!()
+        /*
         let crate::ast::VarDecl {
             ident,
             init,
@@ -258,28 +302,70 @@ impl TypeChecker {
         }
 
         Ok(())
+        */
     }
 
-    fn check_expression(&mut self, exp: &crate::ast::Expression) -> Result<(), Error> {
+    fn check_expression(
+        &mut self,
+        exp: &mut crate::ast::Expression,
+    ) -> Result<ast::VarType, Error> {
         match exp {
-            crate::ast::Expression::Var(name) => {
-                if let Some(Attr::Fun { .. }) = self.sym_table.get(&name.data) {
-                    Err(Error::IncompatibleTypes(name.clone()))
-                } else {
-                    Ok(())
+            crate::ast::Expression::Var(name, ty) => match self.sym_table.get(&name.data) {
+                Some(Attr::Fun { .. }) => Err(Error::IncompatibleTypes(name.clone())),
+                Some(Attr::Static { ty: ty1, .. }) | Some(Attr::Local(ty1)) => {
+                    *ty = *ty1;
+                    Ok(*ty1)
                 }
+                None => Err(Error::IncompatibleTypes(name.clone())),
+            },
+            exp @ crate::ast::Expression::Constant(c) => Ok(exp.ty()),
+            crate::ast::Expression::Unary { op, exp, ty } => {
+                match op.data {
+                    ast::UnaryOp::Not => {
+                        self.check_expression(exp)?;
+                        *ty = ast::VarType::Int;
+                    }
+                    _ => {
+                        *ty = self.check_expression(exp)?;
+                    }
+                }
+                Ok(*ty)
             }
-            crate::ast::Expression::Constant(_) => Ok(()),
-            crate::ast::Expression::Unary { op: _, exp } => self.check_expression(exp),
-            crate::ast::Expression::Binary { op: _, lhs, rhs } => {
-                self.check_expression(lhs)?;
-                self.check_expression(rhs)?;
-                Ok(())
+            crate::ast::Expression::Binary { op, lhs, rhs, ty } => {
+                let tyl = self.check_expression(lhs)?;
+                let tyr = self.check_expression(rhs)?;
+
+                match op {
+                    ast::BinaryOp::And | ast::BinaryOp::Or => {
+                        *ty = ast::VarType::Int;
+                    }
+                    _ => {
+                        let cty = common_type(tyl, tyr);
+                        convert_to(lhs, cty);
+                        convert_to(rhs, cty);
+
+                        match op {
+                            ast::BinaryOp::Add
+                            | ast::BinaryOp::Subtract
+                            | ast::BinaryOp::Multiply
+                            | ast::BinaryOp::Divide
+                            | ast::BinaryOp::Remainder => {
+                                *ty = cty;
+                            }
+                            _ => {
+                                *ty = ast::VarType::Int;
+                            }
+                        }
+                    }
+                }
+
+                Ok(*ty)
             }
             crate::ast::Expression::Assignment { lhs, rhs } => {
-                self.check_expression(lhs)?;
+                let tyl = self.check_expression(lhs)?;
                 self.check_expression(rhs)?;
-                Ok(())
+                convert_to(rhs, tyl);
+                Ok(tyl)
             }
             crate::ast::Expression::Conditional {
                 condition,
@@ -287,30 +373,54 @@ impl TypeChecker {
                 else_branch,
             } => {
                 self.check_expression(condition)?;
-                self.check_expression(then_branch)?;
-                self.check_expression(else_branch)?;
-                Ok(())
+                let tyl = self.check_expression(then_branch)?;
+                let tyr = self.check_expression(else_branch)?;
+
+                let cty = common_type(tyl, tyr);
+
+                convert_to(then_branch, cty);
+                convert_to(else_branch, cty);
+
+                Ok(cty)
             }
-            crate::ast::Expression::FunctionCall { name, args } => {
-                if let Some(Attr::Fun { arity, .. }) = self.sym_table.get(&name.data) {
-                    if *arity != args.len() {
+            crate::ast::Expression::FunctionCall {
+                name,
+                args,
+                ty: fty,
+            } => {
+                if let Some(Attr::Fun { ty, .. }) = self.sym_table.get(&name.data) {
+                    if ty.params.len() != args.len() {
                         return Err(Error::IncompatibleTypes(name.clone()));
                     }
-                    for arg in args {
+                    let ret = ty.ret;
+
+                    for (arg, ty) in args.iter_mut().zip(ty.params.clone().into_iter()) {
                         self.check_expression(arg)?;
+                        convert_to(arg, ty);
                     }
-                    Ok(())
+                    *fty = ret;
+                    Ok(ret)
                 } else {
                     Err(Error::IncompatibleTypes(name.clone()))
                 }
             }
+            crate::ast::Expression::Cast { target, exp } => {
+                self.check_expression(exp)?;
+                Ok(*target)
+            }
         }
     }
 
-    fn check_statement(&mut self, stmt: &crate::ast::Statement) -> Result<(), Error> {
+    fn check_statement(&mut self, stmt: &mut crate::ast::Statement) -> Result<(), Error> {
         match stmt {
-            crate::ast::Statement::Return(exp) => self.check_expression(exp),
-            crate::ast::Statement::Expression(exp) => self.check_expression(exp),
+            crate::ast::Statement::Return(exp) => {
+                self.check_expression(exp)?;
+                Ok(())
+            }
+            crate::ast::Statement::Expression(exp) => {
+                self.check_expression(exp);
+                Ok(())
+            }
             crate::ast::Statement::If {
                 condition,
                 then_branch,

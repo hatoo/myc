@@ -286,7 +286,7 @@ impl InstructionGenerator {
 
     fn add_expression(&mut self, expression: &ast::Expression) -> Val {
         match expression {
-            ast::Expression::Constant(Spanned { data: imm, .. }) => Val::Constant(*imm),
+            // ast::Expression::Constant(Spanned { data: imm, .. }) => Val::Constant(*imm),
             ast::Expression::Unary {
                 op: Spanned { data: op, .. },
                 exp,
@@ -446,6 +446,7 @@ impl InstructionGenerator {
                 });
                 dst
             }
+            _ => todo!(),
         }
     }
 }
@@ -495,6 +496,8 @@ fn gen_function(
     function: &ast::FunDecl,
     symbol_table: &HashMap<EcoString, semantics::type_check::Attr>,
 ) -> Option<Function> {
+    todo!()
+    /*
     if let Some(block) = &function.body {
         for block_item in &block.0 {
             generator.add_block_item(block_item);
@@ -520,4 +523,5 @@ fn gen_function(
     } else {
         None
     }
+    */
 }
