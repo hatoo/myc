@@ -121,6 +121,12 @@ pub enum Operand {
     Data(EcoString),
 }
 
+impl Operand {
+    fn sized(&self, size: AssemblyType) -> SizedOperand {
+        SizedOperand { ty: size, op: self }
+    }
+}
+
 impl From<tacky::Val> for Operand {
     fn from(val: tacky::Val) -> Self {
         match val {
@@ -867,18 +873,12 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
     new_insts
 }
 
-struct SizedOperand {
+struct SizedOperand<'a> {
     ty: AssemblyType,
-    op: Operand,
+    op: &'a Operand,
 }
 
-impl SizedOperand {
-    fn new(ty: AssemblyType, op: Operand) -> Self {
-        SizedOperand { ty, op }
-    }
-}
-
-impl Display for SizedOperand {
+impl<'a> Display for SizedOperand<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self.op {
             Operand::Imm(imm) => match self.ty {
@@ -978,17 +978,12 @@ impl Display for Instruction {
                     f,
                     "mov{} {}, {}",
                     ty.suffix(),
-                    SizedOperand::new(*ty, src.clone()),
-                    SizedOperand::new(*ty, dst.clone())
+                    src.sized(*ty),
+                    dst.sized(*ty)
                 )?;
             }
             Instruction::Unary { ty, op, src } => {
-                writeln!(
-                    f,
-                    "{op}{} {}",
-                    ty.suffix(),
-                    SizedOperand::new(*ty, src.clone())
-                )?;
+                writeln!(f, "{op}{} {}", ty.suffix(), src.sized(*ty))?;
             }
             Instruction::Ret => {
                 writeln!(f, "movq %rbp, %rsp")?;
@@ -1000,8 +995,8 @@ impl Display for Instruction {
                     f,
                     "{op}{} {}, {}",
                     ty.suffix(),
-                    SizedOperand::new(*ty, lhs.clone()),
-                    SizedOperand::new(*ty, rhs.clone())
+                    lhs.sized(*ty),
+                    rhs.sized(*ty)
                 )?;
             }
             Instruction::Cdq(ty) => match ty {
@@ -1013,20 +1008,15 @@ impl Display for Instruction {
                 }
             },
             Instruction::Idiv(ty, op) => {
-                writeln!(
-                    f,
-                    "idiv{} {}",
-                    ty.suffix(),
-                    SizedOperand::new(*ty, op.clone())
-                )?;
+                writeln!(f, "idiv{} {}", ty.suffix(), op.sized(*ty))?;
             }
             Instruction::Cmp(ty, lhs, rhs) => {
                 writeln!(
                     f,
                     "cmp{} {}, {}",
                     ty.suffix(),
-                    SizedOperand::new(*ty, lhs.clone()),
-                    SizedOperand::new(*ty, rhs.clone())
+                    lhs.sized(*ty),
+                    rhs.sized(*ty)
                 )?;
             }
             Instruction::Jmp(l) => {
@@ -1039,22 +1029,13 @@ impl Display for Instruction {
                 writeln!(f, "set{} {}", cond, RegisterSize::Byte(reg))?;
             }
             Instruction::SetCc(cond, dst) => {
-                writeln!(
-                    f,
-                    "set{} {}",
-                    cond,
-                    SizedOperand::new(AssemblyType::LongWord, dst.clone())
-                )?;
+                writeln!(f, "set{} {}", cond, dst.sized(AssemblyType::LongWord))?;
             }
             Instruction::Label(l) => {
                 writeln!(f, ".L{}:", l)?;
             }
             Instruction::Push(op) => {
-                writeln!(
-                    f,
-                    "pushq {}",
-                    SizedOperand::new(AssemblyType::QuadWord, op.clone())
-                )?;
+                writeln!(f, "pushq {}", op.sized(AssemblyType::QuadWord))?;
             }
             Instruction::Call(name) => {
                 writeln!(f, "call {}@PLT", name)?;
@@ -1063,8 +1044,8 @@ impl Display for Instruction {
                 writeln!(
                     f,
                     "movslq {}, {}",
-                    SizedOperand::new(AssemblyType::LongWord, src.clone()),
-                    SizedOperand::new(AssemblyType::QuadWord, dst.clone()),
+                    src.sized(AssemblyType::LongWord),
+                    dst.sized(AssemblyType::QuadWord)
                 )?;
             }
         }
