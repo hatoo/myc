@@ -431,11 +431,33 @@ impl<'a> Parser<'a> {
             })
         ) {
             let index = self.index;
-            if let Ok(decl) = self.parse_declaration() {
-                body.push(BlockItem::Declaration(decl));
+
+            let err_decl = match self.parse_declaration() {
+                Ok(decl) => {
+                    body.push(BlockItem::Declaration(decl));
+                    continue;
+                }
+                Err(err) => err,
+            };
+
+            let index_decl = self.index;
+
+            self.index = index;
+
+            let err_stmt = match self.parse_statement() {
+                Ok(stmt) => {
+                    body.push(BlockItem::Statement(stmt));
+                    continue;
+                }
+                Err(err) => err,
+            };
+
+            let index_stmt = self.index;
+
+            if index_decl > index_stmt {
+                return Err(err_decl);
             } else {
-                self.index = index;
-                body.push(BlockItem::Statement(self.parse_statement()?));
+                return Err(err_stmt);
             }
         }
         self.expect(Token::CloseBrace)?;
