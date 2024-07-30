@@ -899,7 +899,11 @@ impl SizedOperand {
 impl Display for SizedOperand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self.op {
-            Operand::Imm(imm) => write!(f, "${}", imm)?,
+            Operand::Imm(imm) => match self.ty {
+                // trucated anyway
+                AssemblyType::LongWord => write!(f, "${}", *imm as i32)?,
+                AssemblyType::QuadWord => write!(f, "${}", imm)?,
+            },
             Operand::Reg(reg) => match self.ty {
                 AssemblyType::LongWord => write!(f, "{}", RegisterSize::Dword(reg))?,
                 AssemblyType::QuadWord => write!(f, "{}", RegisterSize::Qword(reg))?,
