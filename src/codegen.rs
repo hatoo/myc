@@ -176,6 +176,13 @@ pub enum CondCode {
     Le,
 }
 
+/*
+pub enum AsmEntry {
+    Obj { ty: AssemblyType, is_static: bool },
+    Fun { is_defined: bool },
+}
+*/
+
 pub fn gen_program(program: &tacky::Program, symbol_table: &SymbolTable) -> Program {
     Program {
         top_levels: program
