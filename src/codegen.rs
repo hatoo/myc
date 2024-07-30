@@ -145,7 +145,7 @@ impl<'a> From<&'a tacky::Val> for Operand {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum Register {
     Ax,
     Cx,
@@ -213,45 +213,18 @@ fn gen_function(
 
     for (i, (param, ty)) in function.params.iter().zip(ty.params.iter()).enumerate() {
         match i {
-            0 => {
+            0..6 => {
+                const REGISTERS: [Register; 6] = [
+                    Register::Di,
+                    Register::Si,
+                    Register::Dx,
+                    Register::Cx,
+                    Register::R8,
+                    Register::R9,
+                ];
                 body.push(Instruction::Mov {
                     ty: ty.into(),
-                    src: Operand::Reg(Register::Di),
-                    dst: Operand::Pseudo(param.clone()),
-                });
-            }
-            1 => {
-                body.push(Instruction::Mov {
-                    ty: ty.into(),
-                    src: Operand::Reg(Register::Si),
-                    dst: Operand::Pseudo(param.clone()),
-                });
-            }
-            2 => {
-                body.push(Instruction::Mov {
-                    ty: ty.into(),
-                    src: Operand::Reg(Register::Dx),
-                    dst: Operand::Pseudo(param.clone()),
-                });
-            }
-            3 => {
-                body.push(Instruction::Mov {
-                    ty: ty.into(),
-                    src: Operand::Reg(Register::Cx),
-                    dst: Operand::Pseudo(param.clone()),
-                });
-            }
-            4 => {
-                body.push(Instruction::Mov {
-                    ty: ty.into(),
-                    src: Operand::Reg(Register::R8),
-                    dst: Operand::Pseudo(param.clone()),
-                });
-            }
-            5 => {
-                body.push(Instruction::Mov {
-                    ty: ty.into(),
-                    src: Operand::Reg(Register::R9),
+                    src: Operand::Reg(REGISTERS[i]),
                     dst: Operand::Pseudo(param.clone()),
                 });
             }
