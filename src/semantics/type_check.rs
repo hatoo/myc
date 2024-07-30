@@ -7,9 +7,11 @@ use crate::{
     span::{HasSpan, Spanned},
 };
 
+pub type SymbolTable = HashMap<EcoString, Attr>;
+
 #[derive(Debug, Default)]
 pub struct TypeChecker {
-    pub sym_table: HashMap<EcoString, Attr>,
+    pub sym_table: SymbolTable,
 }
 
 #[derive(Debug)]

@@ -4,7 +4,8 @@ use ecow::EcoString;
 
 use crate::{
     ast::{self},
-    semantics, tacky,
+    semantics::{self, type_check::SymbolTable},
+    tacky,
 };
 
 #[derive(Debug)]
@@ -175,10 +176,7 @@ pub enum CondCode {
     Le,
 }
 
-pub fn gen_program(
-    program: &tacky::Program,
-    symbol_table: &HashMap<EcoString, semantics::type_check::Attr>,
-) -> Program {
+pub fn gen_program(program: &tacky::Program, symbol_table: &SymbolTable) -> Program {
     Program {
         top_levels: program
             .top_levels
@@ -201,10 +199,7 @@ pub fn gen_program(
     }
 }
 
-fn gen_function(
-    function: &tacky::Function,
-    symbol_table: &HashMap<EcoString, semantics::type_check::Attr>,
-) -> Function {
+fn gen_function(function: &tacky::Function, symbol_table: &SymbolTable) -> Function {
     let mut body = Vec::new();
 
     let semantics::type_check::Attr::Fun { ty, .. } = &symbol_table[&function.name] else {
@@ -533,10 +528,7 @@ fn gen_function(
     }
 }
 
-fn pseudo_to_stack(
-    insts: &mut [Instruction],
-    symbol_table: &HashMap<EcoString, semantics::type_check::Attr>,
-) -> usize {
+fn pseudo_to_stack(insts: &mut [Instruction], symbol_table: &SymbolTable) -> usize {
     let mut total = 0;
     let mut known_vars = HashMap::new();
 

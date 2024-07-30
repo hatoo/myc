@@ -4,7 +4,10 @@ use ecow::EcoString;
 
 use crate::{
     ast::{self, Block},
-    semantics::{self, type_check::StaticInit},
+    semantics::{
+        self,
+        type_check::{Attr, StaticInit, SymbolTable},
+    },
     span::Spanned,
 };
 
@@ -106,10 +109,7 @@ pub enum Val {
 }
 
 impl Val {
-    pub fn ty(
-        &self,
-        symbol_table: &HashMap<EcoString, semantics::type_check::Attr>,
-    ) -> ast::VarType {
+    pub fn ty(&self, symbol_table: &SymbolTable) -> ast::VarType {
         match self {
             Val::Constant(c) => match c {
                 ast::Const::Int(_) => ast::VarType::Int,
@@ -123,11 +123,11 @@ impl Val {
 struct InstructionGenerator<'a> {
     var_counter: usize,
     instructions: Vec<Instruction>,
-    symbol_table: &'a mut HashMap<EcoString, semantics::type_check::Attr>,
+    symbol_table: &'a mut SymbolTable,
 }
 
 impl<'a> InstructionGenerator<'a> {
-    fn new(symbol_table: &'a mut HashMap<EcoString, semantics::type_check::Attr>) -> Self {
+    fn new(symbol_table: &'a mut SymbolTable) -> Self {
         Self {
             var_counter: 0,
             instructions: Vec::new(),
@@ -138,8 +138,7 @@ impl<'a> InstructionGenerator<'a> {
     fn make_tmp_local(&mut self, ty: ast::VarType) -> Val {
         let var = EcoString::from(format!("tmp.{}", self.var_counter));
         self.var_counter += 1;
-        self.symbol_table
-            .insert(var.clone(), semantics::type_check::Attr::Local(ty));
+        self.symbol_table.insert(var.clone(), Attr::Local(ty));
         Val::Var(var)
     }
 
@@ -513,17 +512,14 @@ impl<'a> InstructionGenerator<'a> {
     }
 }
 
-pub fn gen_program(
-    program: &ast::Program,
-    symbol_table: &mut HashMap<EcoString, semantics::type_check::Attr>,
-) -> Program {
+pub fn gen_program(program: &ast::Program, symbol_table: &mut HashMap<EcoString, Attr>) -> Program {
     let mut generator = InstructionGenerator::new(symbol_table);
     Program {
         top_levels: generator
             .symbol_table
             .iter()
             .filter_map(|(key, value)| {
-                if let semantics::type_check::Attr::Static { init, global, ty } = value {
+                if let Attr::Static { init, global, ty } = value {
                     let init = match init {
                         semantics::type_check::InitialValue::Initial(i) => *i,
                         semantics::type_check::InitialValue::Tentative => match ty {
@@ -569,9 +565,7 @@ fn gen_function(generator: &mut InstructionGenerator, function: &ast::FunDecl) -
             },
         )));
         Some(Function {
-            global: if let semantics::type_check::Attr::Fun { global, .. } =
-                generator.symbol_table[&function.name.data]
-            {
+            global: if let Attr::Fun { global, .. } = generator.symbol_table[&function.name.data] {
                 global
             } else {
                 unreachable!()
