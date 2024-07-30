@@ -3,7 +3,7 @@ use std::{collections::HashMap, fmt::Display};
 use ecow::EcoString;
 
 use crate::{
-    ast::{self, VarType},
+    ast::{self},
     semantics, tacky,
 };
 
@@ -56,7 +56,6 @@ pub struct StaticVariable {
     pub global: bool,
     pub name: EcoString,
     pub init: semantics::type_check::StaticInit,
-    pub alignment: usize,
 }
 
 #[derive(Debug)]
@@ -180,7 +179,6 @@ pub fn gen_program(
             .iter()
             .map(|item| match item {
                 tacky::TopLevelItem::StaticVariable(tacky::StaticVariable {
-                    ty,
                     global,
                     name,
                     init,
@@ -188,10 +186,6 @@ pub fn gen_program(
                     global: *global,
                     name: name.clone(),
                     init: *init,
-                    alignment: match ty {
-                        VarType::Int => 4,
-                        VarType::Long => 8,
-                    },
                 }),
                 tacky::TopLevelItem::Function(function) => {
                     TopLevel::Function(gen_function(function, symbol_table))
@@ -946,29 +940,28 @@ impl Display for StaticVariable {
         if self.global {
             writeln!(f, ".globl {}", self.name)?;
         }
-        // fixme
         match self.init {
             semantics::type_check::StaticInit::Int(0) => {
                 writeln!(f, ".bss")?;
-                writeln!(f, ".align {}", self.alignment)?;
+                writeln!(f, ".align {}", self.init.alignment())?;
                 writeln!(f, "{}:", self.name)?;
-                writeln!(f, ".zero {}", self.alignment)?;
+                writeln!(f, ".zero {}", self.init.size())?;
             }
             semantics::type_check::StaticInit::Int(x) => {
                 writeln!(f, ".data")?;
-                writeln!(f, ".align {}", self.alignment)?;
+                writeln!(f, ".align {}", self.init.alignment())?;
                 writeln!(f, "{}:", self.name)?;
                 writeln!(f, ".long {}", x)?;
             }
             semantics::type_check::StaticInit::Long(0) => {
                 writeln!(f, ".bss")?;
-                writeln!(f, ".align {}", self.alignment)?;
+                writeln!(f, ".align {}", self.init.alignment())?;
                 writeln!(f, "{}:", self.name)?;
-                writeln!(f, ".zero {}", self.alignment)?;
+                writeln!(f, ".zero {}", self.init.size())?;
             }
             semantics::type_check::StaticInit::Long(x) => {
                 writeln!(f, ".data")?;
-                writeln!(f, ".align {}", self.alignment)?;
+                writeln!(f, ".align {}", self.init.alignment())?;
                 writeln!(f, "{}:", self.name)?;
                 writeln!(f, ".quad {}", x)?;
             }

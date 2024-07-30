@@ -50,6 +50,22 @@ pub enum StaticInit {
     Long(i64),
 }
 
+impl StaticInit {
+    pub fn alignment(&self) -> usize {
+        match self {
+            StaticInit::Int(_) => 4,
+            StaticInit::Long(_) => 8,
+        }
+    }
+
+    pub fn size(&self) -> usize {
+        match self {
+            StaticInit::Int(_) => 4,
+            StaticInit::Long(_) => 8,
+        }
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("Incompatible types: {0}")]

@@ -31,7 +31,6 @@ pub struct Function {
 pub struct StaticVariable {
     pub global: bool,
     pub name: EcoString,
-    pub ty: ast::VarType,
     pub init: semantics::type_check::StaticInit,
 }
 
@@ -537,7 +536,6 @@ pub fn gen_program(
                         global: *global,
                         name: key.clone(),
                         init,
-                        ty: *ty,
                     }))
                 } else {
                     None
