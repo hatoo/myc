@@ -531,18 +531,6 @@ fn gen_function(
                 });
             }
             tacky::Instruction::Truncate { src, dst } => {
-                /*
-                body.push(Instruction::Mov {
-                    ty: AssemblyType::QuadWord,
-                    src: src.into(),
-                    dst: Operand::Reg(Register::R10),
-                });
-                body.push(Instruction::Mov {
-                    ty: AssemblyType::LongWord,
-                    src: Operand::Reg(Register::R10),
-                    dst: dst.into(),
-                });
-                */
                 body.push(Instruction::Mov {
                     ty: AssemblyType::LongWord,
                     src: src.into(),
