@@ -509,7 +509,7 @@ impl<'a> InstructionGenerator<'a> {
                     dst
                 }
             }
-            ast::Expression::Constant(c) => Val::Constant(c.data.clone()),
+            ast::Expression::Constant(c) => Val::Constant(c.data),
         }
     }
 }

@@ -137,8 +137,8 @@ pub enum Expression {
 impl Expression {
     pub fn ty(&self) -> VarType {
         match self {
-            Self::Var(_, ty) => ty.clone(),
-            Self::Cast { target, .. } => target.clone(),
+            Self::Var(_, ty) => *ty,
+            Self::Cast { target, .. } => *target,
             Self::Constant(Spanned {
                 data: Const::Int(_),
                 ..
@@ -147,11 +147,11 @@ impl Expression {
                 data: Const::Long(_),
                 ..
             }) => VarType::Long,
-            Self::Unary { ty, .. } => ty.clone(),
-            Self::Binary { ty, .. } => ty.clone(),
+            Self::Unary { ty, .. } => *ty,
+            Self::Binary { ty, .. } => *ty,
             Self::Assignment { lhs, .. } => lhs.ty(),
             Self::Conditional { then_branch, .. } => then_branch.ty(),
-            Self::FunctionCall { ty, .. } => ty.clone(),
+            Self::FunctionCall { ty, .. } => *ty,
         }
     }
 }

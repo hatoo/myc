@@ -901,8 +901,8 @@ impl Display for SizedOperand {
         match &self.op {
             Operand::Imm(imm) => write!(f, "${}", imm)?,
             Operand::Reg(reg) => match self.ty {
-                AssemblyType::LongWord => write!(f, "{}", RegisterSize::Dword(&reg))?,
-                AssemblyType::QuadWord => write!(f, "{}", RegisterSize::Qword(&reg))?,
+                AssemblyType::LongWord => write!(f, "{}", RegisterSize::Dword(reg))?,
+                AssemblyType::QuadWord => write!(f, "{}", RegisterSize::Qword(reg))?,
             },
             Operand::Pseudo(_) => panic!("Pseudo operand should have been removed"),
             Operand::Stack(offset) => write!(f, "{}(%rbp)", offset)?,
