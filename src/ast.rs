@@ -10,10 +10,18 @@ pub struct Program {
     pub decls: Vec<Declaration>,
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub enum StorageClass {
-    Static,
-    Extern,
+#[derive(Debug)]
+pub enum Declaration {
+    VarDecl(VarDecl),
+    FunDecl(FunDecl),
+}
+
+#[derive(Debug)]
+pub struct VarDecl {
+    pub ident: Spanned<EcoString>,
+    pub init: Option<Expression>,
+    pub ty: VarType,
+    pub storage_class: Option<StorageClass>,
 }
 
 #[derive(Debug)]
@@ -23,6 +31,12 @@ pub struct FunDecl {
     pub body: Option<Block>,
     pub ty: FunType,
     pub storage_class: Option<StorageClass>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum StorageClass {
+    Static,
+    Extern,
 }
 
 #[derive(Debug)]
@@ -173,19 +187,6 @@ impl HasSpan for Expression {
             Self::Cast { exp, .. } => exp.span(),
         }
     }
-}
-#[derive(Debug)]
-pub struct VarDecl {
-    pub ident: Spanned<EcoString>,
-    pub init: Option<Expression>,
-    pub ty: VarType,
-    pub storage_class: Option<StorageClass>,
-}
-
-#[derive(Debug)]
-pub enum Declaration {
-    VarDecl(VarDecl),
-    FunDecl(FunDecl),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
