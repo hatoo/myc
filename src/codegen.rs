@@ -551,10 +551,10 @@ fn pseudo_to_stack(
                         *operand = Operand::Stack(*addr);
                     } else {
                         let size = attr.ty().size() as i32;
-                        total -= size;
-                        total = (total - (size - 1)) / size * size;
-                        known_vars.insert(var.clone(), total);
-                        *operand = Operand::Stack(total);
+                        total += size;
+                        total = (total + (size - 1)) / size * size;
+                        known_vars.insert(var.clone(), -total);
+                        *operand = Operand::Stack(-total);
                     }
                 }
             }
@@ -600,7 +600,7 @@ fn pseudo_to_stack(
         }
     }
 
-    (-total) as _
+    total as _
 }
 
 fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
