@@ -702,49 +702,45 @@ impl<'a> Parser<'a> {
 
         let mut end = start;
 
-        loop {
-            if let Some(s) = self.peek() {
-                match &s.data {
-                    Token::Int => {
-                        ty.push(s.clone().map(|_| TypeSpecifier::Int));
-                        end = s.span.end;
-                        self.advance();
-                    }
-                    Token::Long => {
-                        ty.push(s.clone().map(|_| TypeSpecifier::Long));
-                        end = s.span.end;
-                        self.advance();
-                    }
-                    Token::Signed => {
-                        ty.push(s.clone().map(|_| TypeSpecifier::Signed));
-                        end = s.span.end;
-                        self.advance();
-                    }
-                    Token::Unsigned => {
-                        ty.push(s.clone().map(|_| TypeSpecifier::Unsigned));
-                        end = s.span.end;
-                        self.advance();
-                    }
-                    Token::Static => {
-                        if storage_class.is_some() {
-                            return Err(Error::ConflictingSpecifier(s.span.clone()));
-                        }
-                        end = s.span.end;
-                        storage_class = Some(StorageClass::Static);
-                        self.advance();
-                    }
-                    Token::Extern => {
-                        if storage_class.is_some() {
-                            return Err(Error::ConflictingSpecifier(s.span.clone()));
-                        }
-                        end = s.span.end;
-                        storage_class = Some(StorageClass::Extern);
-                        self.advance();
-                    }
-                    _ => break,
+        while let Some(s) = self.peek() {
+            match &s.data {
+                Token::Int => {
+                    ty.push(s.clone().map(|_| TypeSpecifier::Int));
+                    end = s.span.end;
+                    self.advance();
                 }
-            } else {
-                break;
+                Token::Long => {
+                    ty.push(s.clone().map(|_| TypeSpecifier::Long));
+                    end = s.span.end;
+                    self.advance();
+                }
+                Token::Signed => {
+                    ty.push(s.clone().map(|_| TypeSpecifier::Signed));
+                    end = s.span.end;
+                    self.advance();
+                }
+                Token::Unsigned => {
+                    ty.push(s.clone().map(|_| TypeSpecifier::Unsigned));
+                    end = s.span.end;
+                    self.advance();
+                }
+                Token::Static => {
+                    if storage_class.is_some() {
+                        return Err(Error::ConflictingSpecifier(s.span.clone()));
+                    }
+                    end = s.span.end;
+                    storage_class = Some(StorageClass::Static);
+                    self.advance();
+                }
+                Token::Extern => {
+                    if storage_class.is_some() {
+                        return Err(Error::ConflictingSpecifier(s.span.clone()));
+                    }
+                    end = s.span.end;
+                    storage_class = Some(StorageClass::Extern);
+                    self.advance();
+                }
+                _ => break,
             }
         }
 
