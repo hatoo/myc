@@ -43,6 +43,10 @@ pub enum Instruction {
         src: Val,
         dst: Val,
     },
+    ZeroExtend {
+        src: Val,
+        dst: Val,
+    },
     Truncate {
         src: Val,
         dst: Val,
@@ -114,7 +118,8 @@ impl Val {
             Val::Constant(c) => match c {
                 ast::Const::Int(_) => ast::VarType::Int,
                 ast::Const::Long(_) => ast::VarType::Long,
-                _ => todo!(),
+                ast::Const::Uint(_) => ast::VarType::Uint,
+                ast::Const::Ulong(_) => ast::VarType::Ulong,
             },
             Val::Var(var) => symbol_table[var].ty(),
         }
@@ -169,25 +174,10 @@ impl<'a> InstructionGenerator<'a> {
         }
         if let Some(exp) = &decl.init {
             let val = self.add_expression(exp);
-            if decl.ty == val.ty(self.symbol_table) {
-                self.instructions.push(Instruction::Copy {
-                    src: val,
-                    dst: Val::Var(decl.ident.data.clone()),
-                });
-            } else {
-                let dst = Val::Var(decl.ident.data.clone());
-                match decl.ty {
-                    ast::VarType::Int => self.instructions.push(Instruction::Truncate {
-                        src: val,
-                        dst: dst.clone(),
-                    }),
-                    ast::VarType::Long => self.instructions.push(Instruction::SignExtend {
-                        src: val,
-                        dst: dst.clone(),
-                    }),
-                    _ => todo!(),
-                }
-            }
+            self.instructions.push(Instruction::Copy {
+                src: val,
+                dst: Val::Var(decl.ident.data.clone()),
+            });
         }
     }
 
@@ -492,22 +482,40 @@ impl<'a> InstructionGenerator<'a> {
             }
             ast::Expression::Cast { target, exp } => {
                 let val = self.add_expression(exp);
-                if *target == exp.ty() {
-                    val
-                } else {
-                    let dst = self.make_tmp_local(*target);
-                    match target {
-                        ast::VarType::Int => self.instructions.push(Instruction::Truncate {
+                match (exp.ty(), *target) {
+                    (from, to) if from == to => val,
+                    (from, to) if from.size() == to.size() => {
+                        let dst = self.make_tmp_local(to);
+                        self.instructions.push(Instruction::Copy {
                             src: val,
                             dst: dst.clone(),
-                        }),
-                        ast::VarType::Long => self.instructions.push(Instruction::SignExtend {
-                            src: val,
-                            dst: dst.clone(),
-                        }),
-                        _ => todo!(),
+                        });
+                        dst
                     }
-                    dst
+                    (from, to) if from.size() > to.size() => {
+                        let dst = self.make_tmp_local(to);
+                        self.instructions.push(Instruction::Truncate {
+                            src: val,
+                            dst: dst.clone(),
+                        });
+                        dst
+                    }
+                    (from, to) if from.is_signed() => {
+                        let dst = self.make_tmp_local(to);
+                        self.instructions.push(Instruction::SignExtend {
+                            src: val,
+                            dst: dst.clone(),
+                        });
+                        dst
+                    }
+                    (_, to) => {
+                        let dst = self.make_tmp_local(to);
+                        self.instructions.push(Instruction::ZeroExtend {
+                            src: val,
+                            dst: dst.clone(),
+                        });
+                        dst
+                    }
                 }
             }
             ast::Expression::Constant(c) => Val::Constant(c.data),
@@ -528,7 +536,8 @@ pub fn gen_program(program: &ast::Program, symbol_table: &mut HashMap<EcoString,
                         semantics::type_check::InitialValue::Tentative => match ty {
                             ast::VarType::Int => StaticInit::Int(0),
                             ast::VarType::Long => StaticInit::Long(0),
-                            _ => todo!(),
+                            ast::VarType::Uint => StaticInit::Uint(0),
+                            ast::VarType::Ulong => StaticInit::Ulong(0),
                         },
                         semantics::type_check::InitialValue::NoInitializer => return None,
                     };

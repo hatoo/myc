@@ -109,12 +109,28 @@ impl Const {
             Self::Ulong(i) => *i as i32,
         }
     }
+    pub fn get_uint(&self) -> u32 {
+        match self {
+            Self::Int(i) => *i as u32,
+            Self::Uint(i) => *i,
+            Self::Long(i) => *i as u32,
+            Self::Ulong(i) => *i as u32,
+        }
+    }
     pub fn get_long(&self) -> i64 {
         match self {
             Self::Int(i) => *i as i64,
             Self::Uint(i) => *i as i64,
             Self::Long(i) => *i,
             Self::Ulong(i) => *i as i64,
+        }
+    }
+    pub fn get_ulong(&self) -> u64 {
+        match self {
+            Self::Int(i) => *i as u64,
+            Self::Uint(i) => *i as u64,
+            Self::Long(i) => *i as u64,
+            Self::Ulong(i) => *i,
         }
     }
 }
@@ -210,9 +226,18 @@ impl VarType {
             Self::Ulong => 8,
         }
     }
+
+    pub fn is_signed(&self) -> bool {
+        match self {
+            Self::Int => true,
+            Self::Uint => false,
+            Self::Long => true,
+            Self::Ulong => false,
+        }
+    }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FunType {
     pub params: Vec<VarType>,
     pub ret: VarType,

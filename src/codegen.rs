@@ -515,6 +515,7 @@ fn gen_function(function: &tacky::Function, symbol_table: &SymbolTable) -> Funct
                     dst: dst.into(),
                 });
             }
+            _ => todo!(),
         }
     }
 
@@ -940,6 +941,7 @@ impl Display for StaticVariable {
                 writeln!(f, "{}:", self.name)?;
                 writeln!(f, ".quad {}", x)?;
             }
+            _ => todo!(),
         }
         Ok(())
     }

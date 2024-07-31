@@ -50,20 +50,26 @@ pub enum InitialValue {
 pub enum StaticInit {
     Int(i32),
     Long(i64),
+    Uint(u32),
+    Ulong(u64),
 }
 
 impl StaticInit {
     pub fn alignment(&self) -> usize {
         match self {
             StaticInit::Int(_) => 4,
+            StaticInit::Uint(_) => 4,
             StaticInit::Long(_) => 8,
+            StaticInit::Ulong(_) => 8,
         }
     }
 
     pub fn size(&self) -> usize {
         match self {
             StaticInit::Int(_) => 4,
+            StaticInit::Uint(_) => 4,
             StaticInit::Long(_) => 8,
+            StaticInit::Ulong(_) => 8,
         }
     }
 }
@@ -103,8 +109,16 @@ impl HasSpan for Error {
 fn common_type(ty0: ast::VarType, ty1: ast::VarType) -> ast::VarType {
     if ty0 == ty1 {
         ty0
+    } else if ty0.size() == ty1.size() {
+        if ty0.is_signed() {
+            ty1
+        } else {
+            ty0
+        }
+    } else if ty0.size() > ty1.size() {
+        ty0
     } else {
-        VarType::Long
+        ty1
     }
 }
 
@@ -148,7 +162,7 @@ impl TypeChecker {
                 ty: ty0,
             } = attr
             {
-                if ty0.params != ty.params {
+                if ty0 != ty {
                     return Err(Error::IncompatibleTypes(name.clone()));
                 }
                 if *defined && body.is_some() {
@@ -221,8 +235,9 @@ impl TypeChecker {
         let mut init = match init {
             Some(Expression::Constant(Spanned { data: c, .. })) => match ty {
                 VarType::Int => InitialValue::Initial(StaticInit::Int(c.get_int())),
+                VarType::Uint => InitialValue::Initial(StaticInit::Uint(c.get_uint())),
                 VarType::Long => InitialValue::Initial(StaticInit::Long(c.get_long())),
-                _ => todo!(),
+                VarType::Ulong => InitialValue::Initial(StaticInit::Ulong(c.get_ulong())),
             },
             Some(_) => return Err(Error::BadInitializer(ident.clone())),
             None => {
@@ -323,15 +338,21 @@ impl TypeChecker {
                         ast::VarType::Int => {
                             InitialValue::Initial(StaticInit::Int(val.data.get_int()))
                         }
+                        ast::VarType::Uint => {
+                            InitialValue::Initial(StaticInit::Uint(val.data.get_uint()))
+                        }
                         ast::VarType::Long => {
                             InitialValue::Initial(StaticInit::Long(val.data.get_long()))
                         }
-                        _ => todo!(),
+                        ast::VarType::Ulong => {
+                            InitialValue::Initial(StaticInit::Ulong(val.data.get_ulong()))
+                        }
                     },
                     None => InitialValue::Initial(match ty {
                         ast::VarType::Int => StaticInit::Int(0),
                         ast::VarType::Long => StaticInit::Long(0),
-                        _ => todo!(),
+                        ast::VarType::Uint => StaticInit::Uint(0),
+                        ast::VarType::Ulong => StaticInit::Ulong(0),
                     }),
                     _ => return Err(Error::BadInitializer(ident.clone())),
                 };
@@ -348,6 +369,7 @@ impl TypeChecker {
                 self.sym_table.insert(ident.data.clone(), Attr::Local(*ty));
                 if let Some(exp) = init {
                     self.check_expression(exp)?;
+                    convert_to(exp, *ty);
                 }
             }
         }
