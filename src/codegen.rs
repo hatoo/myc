@@ -33,6 +33,7 @@ impl<'a> From<&'a ast::VarType> for AssemblyType {
         match ty {
             ast::VarType::Int => AssemblyType::LongWord,
             ast::VarType::Long => AssemblyType::QuadWord,
+            _ => todo!(),
         }
     }
 }
@@ -42,6 +43,7 @@ impl From<ast::VarType> for AssemblyType {
         match ty {
             ast::VarType::Int => AssemblyType::LongWord,
             ast::VarType::Long => AssemblyType::QuadWord,
+            _ => todo!(),
         }
     }
 }
@@ -476,6 +478,7 @@ fn gen_function(function: &tacky::Function, symbol_table: &SymbolTable) -> Funct
                             ast::VarType::Long => {
                                 body.push(Instruction::Push(arg.into()));
                             }
+                            _ => todo!(),
                         }
                     }
                 }

@@ -114,6 +114,7 @@ impl Val {
             Val::Constant(c) => match c {
                 ast::Const::Int(_) => ast::VarType::Int,
                 ast::Const::Long(_) => ast::VarType::Long,
+                _ => todo!(),
             },
             Val::Var(var) => symbol_table[var].ty(),
         }
@@ -184,6 +185,7 @@ impl<'a> InstructionGenerator<'a> {
                         src: val,
                         dst: dst.clone(),
                     }),
+                    _ => todo!(),
                 }
             }
         }
@@ -503,6 +505,7 @@ impl<'a> InstructionGenerator<'a> {
                             src: val,
                             dst: dst.clone(),
                         }),
+                        _ => todo!(),
                     }
                     dst
                 }
@@ -525,6 +528,7 @@ pub fn gen_program(program: &ast::Program, symbol_table: &mut HashMap<EcoString,
                         semantics::type_check::InitialValue::Tentative => match ty {
                             ast::VarType::Int => StaticInit::Int(0),
                             ast::VarType::Long => StaticInit::Long(0),
+                            _ => todo!(),
                         },
                         semantics::type_check::InitialValue::NoInitializer => return None,
                     };

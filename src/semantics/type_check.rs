@@ -222,6 +222,7 @@ impl TypeChecker {
             Some(Expression::Constant(Spanned { data: c, .. })) => match ty {
                 VarType::Int => InitialValue::Initial(StaticInit::Int(c.get_int())),
                 VarType::Long => InitialValue::Initial(StaticInit::Long(c.get_long())),
+                _ => todo!(),
             },
             Some(_) => return Err(Error::BadInitializer(ident.clone())),
             None => {
@@ -325,10 +326,12 @@ impl TypeChecker {
                         ast::VarType::Long => {
                             InitialValue::Initial(StaticInit::Long(val.data.get_long()))
                         }
+                        _ => todo!(),
                     },
                     None => InitialValue::Initial(match ty {
                         ast::VarType::Int => StaticInit::Int(0),
                         ast::VarType::Long => StaticInit::Long(0),
+                        _ => todo!(),
                     }),
                     _ => return Err(Error::BadInitializer(ident.clone())),
                 };

@@ -96,19 +96,25 @@ pub enum Statement {
 pub enum Const {
     Int(i32),
     Long(i64),
+    Uint(u32),
+    Ulong(u64),
 }
 
 impl Const {
     pub fn get_int(&self) -> i32 {
         match self {
             Self::Int(i) => *i,
+            Self::Uint(i) => *i as i32,
             Self::Long(i) => *i as i32,
+            Self::Ulong(i) => *i as i32,
         }
     }
     pub fn get_long(&self) -> i64 {
         match self {
             Self::Int(i) => *i as i64,
+            Self::Uint(i) => *i as i64,
             Self::Long(i) => *i,
+            Self::Ulong(i) => *i as i64,
         }
     }
 }
@@ -153,14 +159,12 @@ impl Expression {
         match self {
             Self::Var(_, ty) => *ty,
             Self::Cast { target, .. } => *target,
-            Self::Constant(Spanned {
-                data: Const::Int(_),
-                ..
-            }) => VarType::Int,
-            Self::Constant(Spanned {
-                data: Const::Long(_),
-                ..
-            }) => VarType::Long,
+            Self::Constant(Spanned { data, .. }) => match data {
+                Const::Int(_) => VarType::Int,
+                Const::Long(_) => VarType::Long,
+                Const::Uint(_) => VarType::Uint,
+                Const::Ulong(_) => VarType::Ulong,
+            },
             Self::Unary { ty, .. } => *ty,
             Self::Binary { ty, .. } => *ty,
             Self::Assignment { lhs, .. } => lhs.ty(),
@@ -193,13 +197,17 @@ impl HasSpan for Expression {
 pub enum VarType {
     Int,
     Long,
+    Uint,
+    Ulong,
 }
 
 impl VarType {
     pub fn size(&self) -> usize {
         match self {
             Self::Int => 4,
+            Self::Uint => 4,
             Self::Long => 8,
+            Self::Ulong => 8,
         }
     }
 }
@@ -302,6 +310,13 @@ pub enum ExpectedToken {
     Specifier,
 }
 
+enum TypeSpecifier {
+    Int,
+    Long,
+    Unsigned,
+    Signed,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("Unexpected token: {0:?}, expected {1:?}")]
@@ -315,7 +330,7 @@ pub enum Error {
     #[error("Malformed body: {0:?}")]
     MalformedBody(Spanned<Token>),
     #[error("Conflicting specifier: {0:?}")]
-    ConflictingSpecifier(Spanned<Token>),
+    ConflictingSpecifier(std::ops::Range<usize>),
     #[error("No type specifier")]
     NoTypeSpecifier(std::ops::Range<usize>),
     #[error("Bad type specifier")]
@@ -332,7 +347,7 @@ impl MayHasSpan for Error {
             Error::ParseIntError(_) => None,
             Error::MalformedExpression(spanned) => Some(spanned.span.clone()),
             Error::MalformedBody(spanned) => Some(spanned.span.clone()),
-            Error::ConflictingSpecifier(spanned) => Some(spanned.span.clone()),
+            Error::ConflictingSpecifier(span) => Some(span.clone()),
             Error::NoTypeSpecifier(span) => Some(span.clone()),
             Error::BadTypeSpecifier(span) => Some(span.clone()),
             Error::UnexpectedSpecifier(spanned) => Some(spanned.span.clone()),
@@ -340,42 +355,55 @@ impl MayHasSpan for Error {
     }
 }
 
-fn solve_type_specifier(ty: &[Spanned<VarType>]) -> Result<VarType, Error> {
+fn solve_type_specifier(ty: &[Spanned<TypeSpecifier>]) -> Result<VarType, Error> {
     debug_assert!(!ty.is_empty());
-    match ty {
-        [Spanned {
-            data: VarType::Int, ..
-        }] => Ok(VarType::Int),
-        [Spanned {
-            data: VarType::Long,
-            ..
-        }] => Ok(VarType::Long),
-        [Spanned {
-            data: VarType::Int, ..
-        }, Spanned {
-            data: VarType::Int,
-            span,
-        }] => Err(Error::BadTypeSpecifier(span.clone())),
-        [Spanned {
-            data: VarType::Int, ..
-        }, Spanned {
-            data: VarType::Long,
-            ..
-        }] => Ok(VarType::Long),
-        [Spanned {
-            data: VarType::Long,
-            ..
-        }, Spanned {
-            data: VarType::Int, ..
-        }] => Ok(VarType::Long),
-        [Spanned {
-            data: VarType::Long,
-            ..
-        }, Spanned {
-            data: VarType::Long,
-            span,
-        }] => Err(Error::BadTypeSpecifier(span.clone())),
-        _ => Err(Error::BadTypeSpecifier(ty[0].span.clone())),
+
+    let mut int = false;
+    let mut long = false;
+    let mut signed = false;
+    let mut unsigned = false;
+
+    for s in ty {
+        match s.data {
+            TypeSpecifier::Int => {
+                if int {
+                    return Err(Error::ConflictingSpecifier(s.span.clone()));
+                }
+                int = true;
+            }
+            TypeSpecifier::Long => {
+                if long {
+                    return Err(Error::ConflictingSpecifier(s.span.clone()));
+                }
+                long = true;
+            }
+            TypeSpecifier::Signed => {
+                if signed || unsigned {
+                    return Err(Error::ConflictingSpecifier(s.span.clone()));
+                }
+                signed = true;
+            }
+            TypeSpecifier::Unsigned => {
+                if signed || unsigned {
+                    return Err(Error::ConflictingSpecifier(s.span.clone()));
+                }
+                unsigned = true;
+            }
+        }
+    }
+
+    if long {
+        if unsigned {
+            Ok(VarType::Ulong)
+        } else {
+            Ok(VarType::Long)
+        }
+    } else {
+        if unsigned {
+            Ok(VarType::Uint)
+        } else {
+            Ok(VarType::Int)
+        }
     }
 }
 
@@ -652,52 +680,48 @@ impl<'a> Parser<'a> {
         let mut end = start;
 
         loop {
-            match self.peek() {
-                Some(
-                    s @ Spanned {
-                        data: Token::Int, ..
-                    },
-                ) => {
-                    ty.push(s.clone().map(|_| VarType::Int));
-                    end = s.span.end;
-                    self.advance();
-                }
-                Some(
-                    s @ Spanned {
-                        data: Token::Long, ..
-                    },
-                ) => {
-                    ty.push(s.clone().map(|_| VarType::Long));
-                    end = s.span.end;
-                    self.advance();
-                }
-                Some(
-                    s @ Spanned {
-                        data: Token::Static,
-                        ..
-                    },
-                ) => {
-                    if storage_class.is_some() {
-                        return Err(Error::ConflictingSpecifier(s.clone()));
+            if let Some(s) = self.peek() {
+                match &s.data {
+                    Token::Int => {
+                        ty.push(s.clone().map(|_| TypeSpecifier::Int));
+                        end = s.span.end;
+                        self.advance();
                     }
-                    end = s.span.end;
-                    storage_class = Some(StorageClass::Static);
-                    self.advance();
-                }
-                Some(
-                    s @ Spanned {
-                        data: Token::Extern,
-                        ..
-                    },
-                ) => {
-                    if storage_class.is_some() {
-                        return Err(Error::ConflictingSpecifier(s.clone()));
+                    Token::Long => {
+                        ty.push(s.clone().map(|_| TypeSpecifier::Long));
+                        end = s.span.end;
+                        self.advance();
                     }
-                    end = s.span.end;
-                    storage_class = Some(StorageClass::Extern);
-                    self.advance();
+                    Token::Signed => {
+                        ty.push(s.clone().map(|_| TypeSpecifier::Signed));
+                        end = s.span.end;
+                        self.advance();
+                    }
+                    Token::Unsigned => {
+                        ty.push(s.clone().map(|_| TypeSpecifier::Unsigned));
+                        end = s.span.end;
+                        self.advance();
+                    }
+                    Token::Static => {
+                        if storage_class.is_some() {
+                            return Err(Error::ConflictingSpecifier(s.span.clone()));
+                        }
+                        end = s.span.end;
+                        storage_class = Some(StorageClass::Static);
+                        self.advance();
+                    }
+                    Token::Extern => {
+                        if storage_class.is_some() {
+                            return Err(Error::ConflictingSpecifier(s.span.clone()));
+                        }
+                        end = s.span.end;
+                        storage_class = Some(StorageClass::Extern);
+                        self.advance();
+                    }
+                    _ => break,
                 }
-                _ => break,
+            } else {
+                break;
             }
         }
 
@@ -733,39 +757,37 @@ impl<'a> Parser<'a> {
     fn expect_param_type(&mut self) -> Result<VarType, Error> {
         let mut ty = Vec::new();
         loop {
-            match self.peek() {
-                Some(
-                    t @ Spanned {
-                        data: Token::Int, ..
-                    },
-                ) => {
-                    ty.push(t.clone().map(|_| VarType::Int));
-                    self.advance();
-                }
-                Some(
-                    t @ Spanned {
-                        data: Token::Long, ..
-                    },
-                ) => {
-                    ty.push(t.clone().map(|_| VarType::Long));
-                    self.advance();
-                }
-                Some(_) => {
-                    if ty.is_empty() {
-                        return Err(Error::Unexpected(
-                            self.peek().unwrap().clone(),
-                            ExpectedToken::Specifier,
-                        ));
-                    } else {
-                        break;
+            if let Some(s) = self.peek() {
+                match &s.data {
+                    Token::Int => {
+                        ty.push(s.clone().map(|_| TypeSpecifier::Int));
+                        self.advance();
+                    }
+                    Token::Long => {
+                        ty.push(s.clone().map(|_| TypeSpecifier::Long));
+                        self.advance();
+                    }
+                    Token::Signed => {
+                        ty.push(s.clone().map(|_| TypeSpecifier::Signed));
+                        self.advance();
+                    }
+                    Token::Unsigned => {
+                        ty.push(s.clone().map(|_| TypeSpecifier::Unsigned));
+                        self.advance();
+                    }
+                    _ => {
+                        if ty.is_empty() {
+                            return Err(Error::UnexpectedSpecifier(s.clone()));
+                        } else {
+                            break;
+                        }
                     }
                 }
-                None => {
-                    if ty.is_empty() {
-                        return Err(Error::UnexpectedEof);
-                    } else {
-                        break;
-                    }
+            } else {
+                if ty.is_empty() {
+                    return Err(Error::UnexpectedEof);
+                } else {
+                    break;
                 }
             }
         }
