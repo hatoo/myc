@@ -1,7 +1,7 @@
 use ecow::EcoString;
 
 use crate::{
-    lexer::Token,
+    lexer::{Suffix, Token},
     span::{HasSpan, MayHasSpan, Spanned},
 };
 
@@ -884,21 +884,40 @@ impl<'a> Parser<'a> {
     fn parse_factor(&mut self) -> Result<Expression, Error> {
         if let Some(token) = self.peek() {
             match &token.data {
-                Token::Constant { value, suffix } => {
-                    if suffix.l {
-                        let constant = token.clone().map(|_| Const::Long(*value as i64));
-                        self.advance();
-                        Ok(Expression::Constant(constant))
-                    } else {
-                        let constant = if let Ok(value) = i32::try_from(*value) {
-                            token.clone().map(|_| Const::Int(value))
-                        } else {
-                            token.clone().map(|_| Const::Long(*value as _))
-                        };
+                Token::Constant { value, suffix } => match suffix {
+                    Suffix { u: true, l: true } => {
+                        let constant = token.clone().map(|_| Const::Ulong(*value as u64));
                         self.advance();
                         Ok(Expression::Constant(constant))
                     }
-                }
+                    Suffix { u: true, l: false } => {
+                        if let Ok(value) = u32::try_from(*value) {
+                            let constant = token.clone().map(|_| Const::Uint(value));
+                            self.advance();
+                            Ok(Expression::Constant(constant))
+                        } else {
+                            let constant = token.clone().map(|_| Const::Ulong(*value as u64));
+                            self.advance();
+                            Ok(Expression::Constant(constant))
+                        }
+                    }
+                    Suffix { u: false, l: true } => {
+                        let constant = token.clone().map(|_| Const::Long(*value as i64));
+                        self.advance();
+                        Ok(Expression::Constant(constant))
+                    }
+                    Suffix { u: false, l: false } => {
+                        if let Ok(value) = i32::try_from(*value) {
+                            let constant = token.clone().map(|_| Const::Int(value));
+                            self.advance();
+                            Ok(Expression::Constant(constant))
+                        } else {
+                            let constant = token.clone().map(|_| Const::Long(*value as i64));
+                            self.advance();
+                            Ok(Expression::Constant(constant))
+                        }
+                    }
+                },
                 _ if UnaryOp::try_from(&token.data).is_ok() => {
                     let op = UnaryOp::try_from(&token.data).unwrap();
                     let op = token.clone().map(|_| op);

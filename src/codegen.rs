@@ -1,3 +1,4 @@
+use core::panic;
 use std::{collections::HashMap, fmt::Display};
 
 use ecow::EcoString;
@@ -1029,7 +1030,8 @@ impl Display for StaticVariable {
             writeln!(f, ".globl {}", self.name)?;
         }
         match self.init {
-            semantics::type_check::StaticInit::Int(0) => {
+            semantics::type_check::StaticInit::Int(0)
+            | semantics::type_check::StaticInit::Uint(0) => {
                 writeln!(f, ".bss")?;
                 writeln!(f, ".align {}", self.init.alignment())?;
                 writeln!(f, "{}:", self.name)?;
@@ -1041,7 +1043,14 @@ impl Display for StaticVariable {
                 writeln!(f, "{}:", self.name)?;
                 writeln!(f, ".long {}", x)?;
             }
-            semantics::type_check::StaticInit::Long(0) => {
+            semantics::type_check::StaticInit::Uint(x) => {
+                writeln!(f, ".data")?;
+                writeln!(f, ".align {}", self.init.alignment())?;
+                writeln!(f, "{}:", self.name)?;
+                writeln!(f, ".long {}", x)?;
+            }
+            semantics::type_check::StaticInit::Long(0)
+            | semantics::type_check::StaticInit::Ulong(0) => {
                 writeln!(f, ".bss")?;
                 writeln!(f, ".align {}", self.init.alignment())?;
                 writeln!(f, "{}:", self.name)?;
@@ -1053,7 +1062,12 @@ impl Display for StaticVariable {
                 writeln!(f, "{}:", self.name)?;
                 writeln!(f, ".quad {}", x)?;
             }
-            _ => todo!(),
+            semantics::type_check::StaticInit::Ulong(x) => {
+                writeln!(f, ".data")?;
+                writeln!(f, ".align {}", self.init.alignment())?;
+                writeln!(f, "{}:", self.name)?;
+                writeln!(f, ".quad {}", x)?;
+            }
         }
         Ok(())
     }
@@ -1137,7 +1151,10 @@ impl Display for Instruction {
                     dst.sized(AssemblyType::QuadWord)
                 )?;
             }
-            _ => todo!(),
+            Instruction::MovZeroExtend { .. } => unimplemented!(),
+            Instruction::Div(ty, op) => {
+                writeln!(f, "div{} {}", ty.suffix(), op.sized(*ty))?;
+            }
         }
         Ok(())
     }
@@ -1217,7 +1234,10 @@ impl Display for CondCode {
             CondCode::Ge => write!(f, "ge")?,
             CondCode::L => write!(f, "l")?,
             CondCode::Le => write!(f, "le")?,
-            _ => todo!(),
+            CondCode::A => write!(f, "a")?,
+            CondCode::Ae => write!(f, "ae")?,
+            CondCode::B => write!(f, "b")?,
+            CondCode::Be => write!(f, "be")?,
         }
         Ok(())
     }
