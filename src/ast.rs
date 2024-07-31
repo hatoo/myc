@@ -423,12 +423,10 @@ fn solve_type_specifier(ty: &[Spanned<TypeSpecifier>]) -> Result<VarType, Error>
         } else {
             Ok(VarType::Long)
         }
+    } else if unsigned {
+        Ok(VarType::Uint)
     } else {
-        if unsigned {
-            Ok(VarType::Uint)
-        } else {
-            Ok(VarType::Int)
-        }
+        Ok(VarType::Int)
     }
 }
 
@@ -808,12 +806,10 @@ impl<'a> Parser<'a> {
                         }
                     }
                 }
+            } else if ty.is_empty() {
+                return Err(Error::UnexpectedEof);
             } else {
-                if ty.is_empty() {
-                    return Err(Error::UnexpectedEof);
-                } else {
-                    break;
-                }
+                break;
             }
         }
 
@@ -886,7 +882,7 @@ impl<'a> Parser<'a> {
             match &token.data {
                 Token::Constant { value, suffix } => match suffix {
                     Suffix { u: true, l: true } => {
-                        let constant = token.clone().map(|_| Const::Ulong(*value as u64));
+                        let constant = token.clone().map(|_| Const::Ulong(*value));
                         self.advance();
                         Ok(Expression::Constant(constant))
                     }
@@ -896,7 +892,7 @@ impl<'a> Parser<'a> {
                             self.advance();
                             Ok(Expression::Constant(constant))
                         } else {
-                            let constant = token.clone().map(|_| Const::Ulong(*value as u64));
+                            let constant = token.clone().map(|_| Const::Ulong(*value));
                             self.advance();
                             Ok(Expression::Constant(constant))
                         }
