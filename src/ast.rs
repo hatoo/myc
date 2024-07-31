@@ -837,18 +837,16 @@ impl<'a> Parser<'a> {
     fn parse_factor(&mut self) -> Result<Expression, Error> {
         if let Some(token) = self.peek() {
             match &token.data {
-                Token::Constant(s) => {
-                    if s.ends_with('l') || s.ends_with('L') {
-                        let value = s[..s.len() - 1].parse()?;
-                        let constant = token.clone().map(|_| Const::Long(value));
+                Token::Constant { value, suffix } => {
+                    if suffix.l {
+                        let constant = token.clone().map(|_| Const::Long(*value as i64));
                         self.advance();
                         Ok(Expression::Constant(constant))
                     } else {
-                        let value: i64 = s.parse()?;
-                        let constant = if let Ok(value) = i32::try_from(value) {
+                        let constant = if let Ok(value) = i32::try_from(*value) {
                             token.clone().map(|_| Const::Int(value))
                         } else {
-                            token.clone().map(|_| Const::Long(value))
+                            token.clone().map(|_| Const::Long(*value as _))
                         };
                         self.advance();
                         Ok(Expression::Constant(constant))

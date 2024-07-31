@@ -5,7 +5,7 @@ use crate::span::{MayHasSpan, Spanned};
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Token {
     Ident(EcoString),
-    Constant(EcoString),
+    Constant { value: u64, suffix: Suffix },
     Int,
     Void,
     Return,
@@ -45,18 +45,29 @@ pub enum Token {
     Static,
     Extern,
     Long,
+    Signed,
+    Unsigned,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct Suffix {
+    pub l: bool,
+    pub u: bool,
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("Unexpected character: {0:?}")]
     Unexpected(Spanned<char>),
+    #[error("Failed to parse integer: {0:?}")]
+    ParseIntError(Spanned<std::num::ParseIntError>),
 }
 
 impl MayHasSpan for Error {
     fn may_span(&self) -> Option<std::ops::Range<usize>> {
         match self {
             Error::Unexpected(spanned) => Some(spanned.span.clone()),
+            Error::ParseIntError(spanned) => Some(spanned.span.clone()),
         }
     }
 }
@@ -79,8 +90,37 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
                 while index < src.len() && src[index].is_ascii_digit() {
                     index += 1;
                 }
-                if index < src.len() && (src[index] == b'l' || src[index] == b'L') {
-                    index += 1;
+                let value: u64 = std::str::from_utf8(&src[start..index])
+                    .unwrap()
+                    .parse()
+                    .map_err(|err| {
+                        Error::ParseIntError(Spanned {
+                            data: err,
+                            span: start..index,
+                        })
+                    })?;
+                let mut suffix = Suffix { l: false, u: false };
+                for _ in 0..2 {
+                    if index < src.len() && (src[index] == b'l' || src[index] == b'L') {
+                        if suffix.l {
+                            return Err(Error::Unexpected(Spanned {
+                                data: src[index] as char,
+                                span: index..index + 1,
+                            }));
+                        }
+                        suffix.l = true;
+                        index += 1;
+                    }
+                    if index < src.len() && (src[index] == b'u' || src[index] == b'U') {
+                        if suffix.u {
+                            return Err(Error::Unexpected(Spanned {
+                                data: src[index] as char,
+                                span: index..index + 1,
+                            }));
+                        }
+                        suffix.u = true;
+                        index += 1;
+                    }
                 }
                 if index < src.len() && (src[index].is_ascii_alphanumeric() || src[index] == b'_') {
                     return Err(Error::Unexpected(Spanned {
@@ -90,9 +130,7 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
                 }
 
                 tokens.push(Spanned {
-                    data: Token::Constant(EcoString::from(
-                        std::str::from_utf8(&src[start..index]).unwrap(),
-                    )),
+                    data: Token::Constant { value, suffix },
                     span: start..index,
                 });
             }
@@ -119,6 +157,8 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
                     "static" => Token::Static,
                     "extern" => Token::Extern,
                     "long" => Token::Long,
+                    "signed" => Token::Signed,
+                    "unsigned" => Token::Unsigned,
                     _ => Token::Ident(EcoString::from(ident)),
                 };
                 tokens.push(Spanned {
