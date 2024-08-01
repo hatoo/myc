@@ -1,11 +1,18 @@
 use ecow::EcoString;
+use regex::bytes::Regex;
 
 use crate::span::{MayHasSpan, Spanned};
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
+pub enum Constant {
+    Integer { value: u64, suffix: Suffix },
+    Float(f64),
+}
+
+#[derive(Debug, PartialEq, Clone)]
 pub enum Token {
     Ident(EcoString),
-    Constant { value: u64, suffix: Suffix },
+    Constant(Constant),
     Int,
     Void,
     Return,
@@ -47,6 +54,7 @@ pub enum Token {
     Long,
     Signed,
     Unsigned,
+    Double,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -75,6 +83,10 @@ impl MayHasSpan for Error {
 pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
     let mut tokens = Vec::new();
 
+    let float_re =
+        Regex::new(r"^(([0-9]*\.[0-9]+|[0-9]+\.?)[Ee][+-]?[0-9]+|[0-9]*\.[0-9]+|[0-9]+\.)")
+            .unwrap();
+
     let mut index = 0;
 
     while index < src.len() {
@@ -86,53 +98,113 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
                 index += 1;
             }
             b'0'..=b'9' => {
-                let start = index;
-                while index < src.len() && src[index].is_ascii_digit() {
-                    index += 1;
-                }
-                let value: u64 = std::str::from_utf8(&src[start..index])
-                    .unwrap()
-                    .parse()
-                    .map_err(|err| {
-                        Error::ParseIntError(Spanned {
-                            data: err,
-                            span: start..index,
-                        })
-                    })?;
-                let mut suffix = Suffix { l: false, u: false };
-                for _ in 0..2 {
-                    if index < src.len() && (src[index] == b'l' || src[index] == b'L') {
-                        if suffix.l {
-                            return Err(Error::Unexpected(Spanned {
-                                data: src[index] as char,
-                                span: index..index + 1,
-                            }));
-                        }
-                        suffix.l = true;
+                // float
+                if let Some(m) = float_re.find(&src[index..]) {
+                    debug_assert_eq!(m.start(), 0);
+                    tokens.push(Spanned {
+                        data: Token::Constant(Constant::Float(
+                            std::str::from_utf8(&src[index..index + m.end()])
+                                .unwrap()
+                                .parse()
+                                .unwrap(),
+                        )),
+                        span: index..index + m.end(),
+                    });
+                    index += m.len();
+
+                    if index < src.len()
+                        && (src[index].is_ascii_alphanumeric()
+                            || src[index] == b'_'
+                            || src[index] == b'.')
+                    {
+                        return Err(Error::Unexpected(Spanned {
+                            data: src[index] as char,
+                            span: index..index + 1,
+                        }));
+                    }
+                } else {
+                    let start = index;
+                    while index < src.len() && src[index].is_ascii_digit() {
                         index += 1;
                     }
-                    if index < src.len() && (src[index] == b'u' || src[index] == b'U') {
-                        if suffix.u {
-                            return Err(Error::Unexpected(Spanned {
-                                data: src[index] as char,
-                                span: index..index + 1,
-                            }));
+                    let value: u64 = std::str::from_utf8(&src[start..index])
+                        .unwrap()
+                        .parse()
+                        .map_err(|err| {
+                            Error::ParseIntError(Spanned {
+                                data: err,
+                                span: start..index,
+                            })
+                        })?;
+                    let mut suffix = Suffix { l: false, u: false };
+                    for _ in 0..2 {
+                        if index < src.len() && (src[index] == b'l' || src[index] == b'L') {
+                            if suffix.l {
+                                return Err(Error::Unexpected(Spanned {
+                                    data: src[index] as char,
+                                    span: index..index + 1,
+                                }));
+                            }
+                            suffix.l = true;
+                            index += 1;
                         }
-                        suffix.u = true;
-                        index += 1;
+                        if index < src.len() && (src[index] == b'u' || src[index] == b'U') {
+                            if suffix.u {
+                                return Err(Error::Unexpected(Spanned {
+                                    data: src[index] as char,
+                                    span: index..index + 1,
+                                }));
+                            }
+                            suffix.u = true;
+                            index += 1;
+                        }
                     }
+                    if index < src.len()
+                        && (src[index].is_ascii_alphanumeric() || src[index] == b'_')
+                    {
+                        return Err(Error::Unexpected(Spanned {
+                            data: src[index] as char,
+                            span: index..index + 1,
+                        }));
+                    }
+
+                    tokens.push(Spanned {
+                        data: Token::Constant(Constant::Integer { value, suffix }),
+                        span: start..index,
+                    });
                 }
-                if index < src.len() && (src[index].is_ascii_alphanumeric() || src[index] == b'_') {
+            }
+            b'.' => {
+                // float
+                if let Some(m) = float_re.find(&src[index..]) {
+                    debug_assert_eq!(m.start(), 0);
+                    tokens.push(Spanned {
+                        data: Token::Constant(Constant::Float(
+                            std::str::from_utf8(&src[index..index + m.end()])
+                                .unwrap()
+                                .parse()
+                                .unwrap(),
+                        )),
+                        span: index..index + m.end(),
+                    });
+                    index += m.len();
+
+                    if index < src.len()
+                        && (src[index].is_ascii_alphanumeric()
+                            || src[index] == b'_'
+                            || src[index] == b'.')
+                    {
+                        return Err(Error::Unexpected(Spanned {
+                            data: src[index] as char,
+                            span: index..index + 1,
+                        }));
+                    }
+                } else {
                     return Err(Error::Unexpected(Spanned {
-                        data: src[index] as char,
+                        data: c as char,
                         span: index..index + 1,
                     }));
                 }
-
-                tokens.push(Spanned {
-                    data: Token::Constant { value, suffix },
-                    span: start..index,
-                });
             }
             _ if c.is_ascii_alphanumeric() || c == b'_' => {
                 let start = index;
@@ -159,6 +231,7 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
                     "long" => Token::Long,
                     "signed" => Token::Signed,
                     "unsigned" => Token::Unsigned,
+                    "double" => Token::Double,
                     _ => Token::Ident(EcoString::from(ident)),
                 };
                 tokens.push(Spanned {

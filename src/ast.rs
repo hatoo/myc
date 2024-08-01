@@ -876,6 +876,7 @@ impl<'a> Parser<'a> {
     fn parse_factor(&mut self) -> Result<Expression, Error> {
         if let Some(token) = self.peek() {
             match &token.data {
+                /*
                 Token::Constant { value, suffix } => match suffix {
                     Suffix { u: true, l: true } => {
                         let constant = token.clone().map(|_| Const::Ulong(*value));
@@ -910,6 +911,7 @@ impl<'a> Parser<'a> {
                         }
                     }
                 },
+                */
                 _ if UnaryOp::try_from(&token.data).is_ok() => {
                     let op = UnaryOp::try_from(&token.data).unwrap();
                     let op = token.clone().map(|_| op);
