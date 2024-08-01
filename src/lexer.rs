@@ -1,3 +1,5 @@
+use std::sync::LazyLock;
+
 use ecow::EcoString;
 use regex::bytes::Regex;
 
@@ -81,11 +83,11 @@ impl MayHasSpan for Error {
 }
 
 pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
-    let mut tokens = Vec::new();
+    static FLOAT_RE: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"^(([0-9]*\.[0-9]+|[0-9]+\.?)[Ee][+-]?[0-9]+|[0-9]*\.[0-9]+|[0-9]+\.)").unwrap()
+    });
 
-    let float_re =
-        Regex::new(r"^(([0-9]*\.[0-9]+|[0-9]+\.?)[Ee][+-]?[0-9]+|[0-9]*\.[0-9]+|[0-9]+\.)")
-            .unwrap();
+    let mut tokens = Vec::new();
 
     let mut index = 0;
 
@@ -99,7 +101,7 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
             }
             b'0'..=b'9' => {
                 // float
-                if let Some(m) = float_re.find(&src[index..]) {
+                if let Some(m) = FLOAT_RE.find(&src[index..]) {
                     debug_assert_eq!(m.start(), 0);
                     tokens.push(Spanned {
                         data: Token::Constant(Constant::Float(
@@ -176,7 +178,7 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
             }
             b'.' => {
                 // float
-                if let Some(m) = float_re.find(&src[index..]) {
+                if let Some(m) = FLOAT_RE.find(&src[index..]) {
                     debug_assert_eq!(m.start(), 0);
                     tokens.push(Spanned {
                         data: Token::Constant(Constant::Float(
