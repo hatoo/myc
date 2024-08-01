@@ -409,6 +409,16 @@ impl TypeChecker {
                         self.check_expression(exp)?;
                         *ty = ast::VarType::Int;
                     }
+                    ast::UnaryOp::Complement => {
+                        *ty = self.check_expression(exp)?;
+                        if *ty == ast::VarType::Double {
+                            // todo
+                            return Err(Error::IncompatibleTypes(Spanned {
+                                data: "".into(),
+                                span: exp.span(),
+                            }));
+                        }
+                    }
                     _ => {
                         *ty = self.check_expression(exp)?;
                     }
@@ -432,8 +442,17 @@ impl TypeChecker {
                             ast::BinaryOp::Add
                             | ast::BinaryOp::Subtract
                             | ast::BinaryOp::Multiply
-                            | ast::BinaryOp::Divide
-                            | ast::BinaryOp::Remainder => {
+                            | ast::BinaryOp::Divide => {
+                                *ty = cty;
+                            }
+                            ast::BinaryOp::Remainder => {
+                                if cty == ast::VarType::Double {
+                                    // todo
+                                    return Err(Error::IncompatibleTypes(Spanned {
+                                        data: "".into(),
+                                        span: exp.span(),
+                                    }));
+                                }
                                 *ty = cty;
                             }
                             _ => {

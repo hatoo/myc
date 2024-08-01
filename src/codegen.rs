@@ -1071,6 +1071,7 @@ impl Display for StaticVariable {
                 writeln!(f, "{}:", self.name)?;
                 writeln!(f, ".quad {}", x)?;
             }
+            _ => todo!(),
         }
         Ok(())
     }
