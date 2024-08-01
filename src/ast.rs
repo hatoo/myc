@@ -138,6 +138,15 @@ impl Const {
             Self::Double(i) => *i as u64,
         }
     }
+    pub fn get_double(&self) -> f64 {
+        match self {
+            Self::Int(i) => *i as f64,
+            Self::Uint(i) => *i as f64,
+            Self::Long(i) => *i as f64,
+            Self::Ulong(i) => *i as f64,
+            Self::Double(i) => *i,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

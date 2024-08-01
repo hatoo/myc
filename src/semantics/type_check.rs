@@ -52,6 +52,7 @@ pub enum StaticInit {
     Long(i64),
     Uint(u32),
     Ulong(u64),
+    Double(f64),
 }
 
 impl StaticInit {
@@ -61,6 +62,7 @@ impl StaticInit {
             StaticInit::Uint(_) => 4,
             StaticInit::Long(_) => 8,
             StaticInit::Ulong(_) => 8,
+            StaticInit::Double(_) => 8,
         }
     }
 
@@ -70,6 +72,7 @@ impl StaticInit {
             StaticInit::Uint(_) => 4,
             StaticInit::Long(_) => 8,
             StaticInit::Ulong(_) => 8,
+            StaticInit::Double(_) => 8,
         }
     }
 }
@@ -107,6 +110,10 @@ impl HasSpan for Error {
 }
 
 fn common_type(ty0: ast::VarType, ty1: ast::VarType) -> ast::VarType {
+    if ty0 == ast::VarType::Double || ty1 == ast::VarType::Double {
+        return ast::VarType::Double;
+    }
+
     if ty0 == ty1 {
         ty0
     } else if ty0.size() == ty1.size() {
@@ -238,7 +245,7 @@ impl TypeChecker {
                 VarType::Uint => InitialValue::Initial(StaticInit::Uint(c.get_uint())),
                 VarType::Long => InitialValue::Initial(StaticInit::Long(c.get_long())),
                 VarType::Ulong => InitialValue::Initial(StaticInit::Ulong(c.get_ulong())),
-                _ => todo!(),
+                VarType::Double => InitialValue::Initial(StaticInit::Double(c.get_double())),
             },
             Some(_) => return Err(Error::BadInitializer(ident.clone())),
             None => {
@@ -348,14 +355,16 @@ impl TypeChecker {
                         ast::VarType::Ulong => {
                             InitialValue::Initial(StaticInit::Ulong(val.data.get_ulong()))
                         }
-                        _ => todo!(),
+                        ast::VarType::Double => {
+                            InitialValue::Initial(StaticInit::Double(val.data.get_double()))
+                        }
                     },
                     None => InitialValue::Initial(match ty {
                         ast::VarType::Int => StaticInit::Int(0),
                         ast::VarType::Long => StaticInit::Long(0),
                         ast::VarType::Uint => StaticInit::Uint(0),
                         ast::VarType::Ulong => StaticInit::Ulong(0),
-                        _ => todo!(),
+                        ast::VarType::Double => StaticInit::Double(0.0),
                     }),
                     _ => return Err(Error::BadInitializer(ident.clone())),
                 };
