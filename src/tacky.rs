@@ -120,6 +120,7 @@ impl Val {
                 ast::Const::Long(_) => ast::VarType::Long,
                 ast::Const::Uint(_) => ast::VarType::Uint,
                 ast::Const::Ulong(_) => ast::VarType::Ulong,
+                _ => todo!(),
             },
             Val::Var(var) => symbol_table[var].ty(),
         }
@@ -538,6 +539,7 @@ pub fn gen_program(program: &ast::Program, symbol_table: &mut HashMap<EcoString,
                             ast::VarType::Long => StaticInit::Long(0),
                             ast::VarType::Uint => StaticInit::Uint(0),
                             ast::VarType::Ulong => StaticInit::Ulong(0),
+                            _ => todo!(),
                         },
                         semantics::type_check::InitialValue::NoInitializer => return None,
                     };

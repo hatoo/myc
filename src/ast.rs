@@ -1,7 +1,7 @@
 use ecow::EcoString;
 
 use crate::{
-    lexer::{Suffix, Token},
+    lexer::{Constant, Suffix, Token},
     span::{HasSpan, MayHasSpan, Spanned},
 };
 
@@ -98,6 +98,7 @@ pub enum Const {
     Long(i64),
     Uint(u32),
     Ulong(u64),
+    Double(f64),
 }
 
 impl Const {
@@ -107,6 +108,7 @@ impl Const {
             Self::Uint(i) => *i as i32,
             Self::Long(i) => *i as i32,
             Self::Ulong(i) => *i as i32,
+            Self::Double(i) => *i as i32,
         }
     }
     pub fn get_uint(&self) -> u32 {
@@ -115,6 +117,7 @@ impl Const {
             Self::Uint(i) => *i,
             Self::Long(i) => *i as u32,
             Self::Ulong(i) => *i as u32,
+            Self::Double(i) => *i as u32,
         }
     }
     pub fn get_long(&self) -> i64 {
@@ -123,6 +126,7 @@ impl Const {
             Self::Uint(i) => *i as i64,
             Self::Long(i) => *i,
             Self::Ulong(i) => *i as i64,
+            Self::Double(i) => *i as i64,
         }
     }
     pub fn get_ulong(&self) -> u64 {
@@ -131,6 +135,7 @@ impl Const {
             Self::Uint(i) => *i as u64,
             Self::Long(i) => *i as u64,
             Self::Ulong(i) => *i,
+            Self::Double(i) => *i as u64,
         }
     }
 }
@@ -180,6 +185,7 @@ impl Expression {
                 Const::Long(_) => VarType::Long,
                 Const::Uint(_) => VarType::Uint,
                 Const::Ulong(_) => VarType::Ulong,
+                Const::Double(_) => VarType::Double,
             },
             Self::Unary { ty, .. } => *ty,
             Self::Binary { ty, .. } => *ty,
@@ -215,6 +221,7 @@ pub enum VarType {
     Long,
     Uint,
     Ulong,
+    Double,
 }
 
 impl VarType {
@@ -224,6 +231,7 @@ impl VarType {
             Self::Uint => 4,
             Self::Long => 8,
             Self::Ulong => 8,
+            Self::Double => 8,
         }
     }
 
@@ -233,6 +241,7 @@ impl VarType {
             Self::Uint => false,
             Self::Long => true,
             Self::Ulong => false,
+            Self::Double => true,
         }
     }
 }
@@ -340,6 +349,7 @@ enum TypeSpecifier {
     Long,
     Unsigned,
     Signed,
+    Double,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -388,6 +398,16 @@ fn solve_type_specifier(ty: &[Spanned<TypeSpecifier>]) -> Result<VarType, Error>
     let mut signed = false;
     let mut unsigned = false;
 
+    if matches!(
+        ty,
+        [Spanned {
+            data: TypeSpecifier::Double,
+            ..
+        }]
+    ) {
+        return Ok(VarType::Double);
+    }
+
     for s in ty {
         match s.data {
             TypeSpecifier::Int => {
@@ -413,6 +433,9 @@ fn solve_type_specifier(ty: &[Spanned<TypeSpecifier>]) -> Result<VarType, Error>
                     return Err(Error::ConflictingSpecifier(s.span.clone()));
                 }
                 unsigned = true;
+            }
+            TypeSpecifier::Double => {
+                return Err(Error::BadTypeSpecifier(s.span.clone()));
             }
         }
     }
@@ -724,6 +747,11 @@ impl<'a> Parser<'a> {
                     end = s.span.end;
                     self.advance();
                 }
+                Token::Double => {
+                    ty.push(s.clone().map(|_| TypeSpecifier::Double));
+                    end = s.span.end;
+                    self.advance();
+                }
                 Token::Static => {
                     if storage_class.is_some() {
                         return Err(Error::ConflictingSpecifier(s.span.clone()));
@@ -792,6 +820,10 @@ impl<'a> Parser<'a> {
                     }
                     Token::Unsigned => {
                         ty.push(s.clone().map(|_| TypeSpecifier::Unsigned));
+                        self.advance();
+                    }
+                    Token::Double => {
+                        ty.push(s.clone().map(|_| TypeSpecifier::Double));
                         self.advance();
                     }
                     _ => {
@@ -876,42 +908,47 @@ impl<'a> Parser<'a> {
     fn parse_factor(&mut self) -> Result<Expression, Error> {
         if let Some(token) = self.peek() {
             match &token.data {
-                /*
-                Token::Constant { value, suffix } => match suffix {
-                    Suffix { u: true, l: true } => {
-                        let constant = token.clone().map(|_| Const::Ulong(*value));
-                        self.advance();
-                        Ok(Expression::Constant(constant))
-                    }
-                    Suffix { u: true, l: false } => {
-                        if let Ok(value) = u32::try_from(*value) {
-                            let constant = token.clone().map(|_| Const::Uint(value));
-                            self.advance();
-                            Ok(Expression::Constant(constant))
-                        } else {
+                Token::Constant(constant) => match constant {
+                    Constant::Integer { value, suffix } => match suffix {
+                        Suffix { u: true, l: true } => {
                             let constant = token.clone().map(|_| Const::Ulong(*value));
                             self.advance();
                             Ok(Expression::Constant(constant))
                         }
-                    }
-                    Suffix { u: false, l: true } => {
-                        let constant = token.clone().map(|_| Const::Long(*value as i64));
-                        self.advance();
-                        Ok(Expression::Constant(constant))
-                    }
-                    Suffix { u: false, l: false } => {
-                        if let Ok(value) = i32::try_from(*value) {
-                            let constant = token.clone().map(|_| Const::Int(value));
-                            self.advance();
-                            Ok(Expression::Constant(constant))
-                        } else {
+                        Suffix { u: true, l: false } => {
+                            if let Ok(value) = u32::try_from(*value) {
+                                let constant = token.clone().map(|_| Const::Uint(value));
+                                self.advance();
+                                Ok(Expression::Constant(constant))
+                            } else {
+                                let constant = token.clone().map(|_| Const::Ulong(*value));
+                                self.advance();
+                                Ok(Expression::Constant(constant))
+                            }
+                        }
+                        Suffix { u: false, l: true } => {
                             let constant = token.clone().map(|_| Const::Long(*value as i64));
                             self.advance();
                             Ok(Expression::Constant(constant))
                         }
+                        Suffix { u: false, l: false } => {
+                            if let Ok(value) = i32::try_from(*value) {
+                                let constant = token.clone().map(|_| Const::Int(value));
+                                self.advance();
+                                Ok(Expression::Constant(constant))
+                            } else {
+                                let constant = token.clone().map(|_| Const::Long(*value as i64));
+                                self.advance();
+                                Ok(Expression::Constant(constant))
+                            }
+                        }
+                    },
+                    Constant::Float(value) => {
+                        let constant = token.clone().map(|_| Const::Double(*value));
+                        self.advance();
+                        Ok(Expression::Constant(constant))
                     }
                 },
-                */
                 _ if UnaryOp::try_from(&token.data).is_ok() => {
                     let op = UnaryOp::try_from(&token.data).unwrap();
                     let op = token.clone().map(|_| op);

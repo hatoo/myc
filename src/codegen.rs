@@ -36,6 +36,7 @@ impl<'a> From<&'a ast::VarType> for AssemblyType {
             ast::VarType::Uint => AssemblyType::LongWord,
             ast::VarType::Ulong => AssemblyType::QuadWord,
             ast::VarType::Long => AssemblyType::QuadWord,
+            _ => todo!(),
         }
     }
 }
@@ -47,6 +48,7 @@ impl From<ast::VarType> for AssemblyType {
             ast::VarType::Uint => AssemblyType::LongWord,
             ast::VarType::Ulong => AssemblyType::QuadWord,
             ast::VarType::Long => AssemblyType::QuadWord,
+            _ => todo!(),
         }
     }
 }
@@ -552,6 +554,7 @@ fn gen_function(function: &tacky::Function, symbol_table: &SymbolTable) -> Funct
                             ast::VarType::Long | ast::VarType::Ulong => {
                                 body.push(Instruction::Push(arg.into()));
                             }
+                            _ => todo!(),
                         }
                     }
                 }

@@ -238,6 +238,7 @@ impl TypeChecker {
                 VarType::Uint => InitialValue::Initial(StaticInit::Uint(c.get_uint())),
                 VarType::Long => InitialValue::Initial(StaticInit::Long(c.get_long())),
                 VarType::Ulong => InitialValue::Initial(StaticInit::Ulong(c.get_ulong())),
+                _ => todo!(),
             },
             Some(_) => return Err(Error::BadInitializer(ident.clone())),
             None => {
@@ -347,12 +348,14 @@ impl TypeChecker {
                         ast::VarType::Ulong => {
                             InitialValue::Initial(StaticInit::Ulong(val.data.get_ulong()))
                         }
+                        _ => todo!(),
                     },
                     None => InitialValue::Initial(match ty {
                         ast::VarType::Int => StaticInit::Int(0),
                         ast::VarType::Long => StaticInit::Long(0),
                         ast::VarType::Uint => StaticInit::Uint(0),
                         ast::VarType::Ulong => StaticInit::Ulong(0),
+                        _ => todo!(),
                     }),
                     _ => return Err(Error::BadInitializer(ident.clone())),
                 };
