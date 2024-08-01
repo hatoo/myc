@@ -47,6 +47,22 @@ pub enum Instruction {
         src: Val,
         dst: Val,
     },
+    DoubleToInt {
+        src: Val,
+        dst: Val,
+    },
+    DoubleToUint {
+        src: Val,
+        dst: Val,
+    },
+    IntToDouble {
+        src: Val,
+        dst: Val,
+    },
+    UintToDouble {
+        src: Val,
+        dst: Val,
+    },
     Truncate {
         src: Val,
         dst: Val,
@@ -120,7 +136,7 @@ impl Val {
                 ast::Const::Long(_) => ast::VarType::Long,
                 ast::Const::Uint(_) => ast::VarType::Uint,
                 ast::Const::Ulong(_) => ast::VarType::Ulong,
-                _ => todo!(),
+                ast::Const::Double(_) => ast::VarType::Double,
             },
             Val::Var(var) => symbol_table[var].ty(),
         }
@@ -485,6 +501,38 @@ impl<'a> InstructionGenerator<'a> {
                 let val = self.add_expression(exp);
                 match (exp.ty(), *target) {
                     (from, to) if from == to => val,
+                    (ast::VarType::Double, to @ (ast::VarType::Int | ast::VarType::Long)) => {
+                        let dst = self.make_tmp_local(to);
+                        self.instructions.push(Instruction::DoubleToInt {
+                            src: val,
+                            dst: dst.clone(),
+                        });
+                        dst
+                    }
+                    (ast::VarType::Double, to @ (ast::VarType::Uint | ast::VarType::Ulong)) => {
+                        let dst = self.make_tmp_local(to);
+                        self.instructions.push(Instruction::DoubleToUint {
+                            src: val,
+                            dst: dst.clone(),
+                        });
+                        dst
+                    }
+                    (ast::VarType::Int | ast::VarType::Long, ast::VarType::Double) => {
+                        let dst = self.make_tmp_local(ast::VarType::Double);
+                        self.instructions.push(Instruction::IntToDouble {
+                            src: val,
+                            dst: dst.clone(),
+                        });
+                        dst
+                    }
+                    (ast::VarType::Uint | ast::VarType::Ulong, ast::VarType::Double) => {
+                        let dst = self.make_tmp_local(ast::VarType::Double);
+                        self.instructions.push(Instruction::UintToDouble {
+                            src: val,
+                            dst: dst.clone(),
+                        });
+                        dst
+                    }
                     (from, to) if from.size() == to.size() => {
                         let dst = self.make_tmp_local(to);
                         self.instructions.push(Instruction::Copy {
@@ -539,7 +587,7 @@ pub fn gen_program(program: &ast::Program, symbol_table: &mut HashMap<EcoString,
                             ast::VarType::Long => StaticInit::Long(0),
                             ast::VarType::Uint => StaticInit::Uint(0),
                             ast::VarType::Ulong => StaticInit::Ulong(0),
-                            _ => todo!(),
+                            ast::VarType::Double => StaticInit::Double(0.0),
                         },
                         semantics::type_check::InitialValue::NoInitializer => return None,
                     };
