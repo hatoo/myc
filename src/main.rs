@@ -26,6 +26,8 @@ struct Opts {
     asm: bool,
     #[clap(short)]
     compile: bool,
+    #[clap(short)]
+    l: Vec<String>,
 }
 
 fn main() {
@@ -96,19 +98,25 @@ fn main() {
         .unwrap();
 
     if opts.compile {
-        process::Command::new("gcc")
+        let mut command = process::Command::new("gcc");
+        command
             .arg("-c")
             .arg(opts.input.with_extension("s"))
             .arg("-o")
-            .arg(opts.input.with_extension("o"))
-            .status()
-            .unwrap();
+            .arg(opts.input.with_extension("o"));
+        for lib in opts.l {
+            command.arg(format!("-l{}", lib));
+        }
+        command.status().unwrap();
     } else {
-        process::Command::new("gcc")
+        let mut command = process::Command::new("gcc");
+        command
             .arg(opts.input.with_extension("s"))
             .arg("-o")
-            .arg(opts.input.with_extension(""))
-            .status()
-            .unwrap();
+            .arg(opts.input.with_extension(""));
+        for lib in opts.l {
+            command.arg(format!("-l{}", lib));
+        }
+        command.status().unwrap();
     }
 }
