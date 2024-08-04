@@ -79,8 +79,8 @@ impl StaticInit {
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("Incompatible types: {0}")]
-    IncompatibleTypes(Spanned<EcoString>),
+    #[error("Incompatible types: {0:?}")]
+    IncompatibleTypes(std::ops::Range<usize>),
     #[error("Function redefined: {0}")]
     Redefined(Spanned<EcoString>),
     #[error("Static function declaration follows non-static : {0}")]
@@ -98,7 +98,7 @@ pub enum Error {
 impl HasSpan for Error {
     fn span(&self) -> std::ops::Range<usize> {
         match self {
-            Error::IncompatibleTypes(ident) => ident.span.clone(),
+            Error::IncompatibleTypes(span) => span.clone(),
             Error::Redefined(ident) => ident.span.clone(),
             Error::StaticFunAfterNonStatic(ident) => ident.span.clone(),
             Error::BadInitializer(ident) => ident.span.clone(),
@@ -170,7 +170,7 @@ impl TypeChecker {
             } = attr
             {
                 if ty0 != ty {
-                    return Err(Error::IncompatibleTypes(name.clone()));
+                    return Err(Error::IncompatibleTypes(name.span.clone()));
                 }
                 if *defined && body.is_some() {
                     return Err(Error::Redefined(name.clone()));
@@ -182,7 +182,7 @@ impl TypeChecker {
 
                 new_global = *global;
             } else {
-                return Err(Error::IncompatibleTypes(name.clone()));
+                return Err(Error::IncompatibleTypes(name.span.clone()));
             }
         }
 
@@ -261,7 +261,7 @@ impl TypeChecker {
 
         match self.sym_table.get(&ident.data) {
             Some(Attr::Fun { .. }) => {
-                return Err(Error::IncompatibleTypes(ident.clone()));
+                return Err(Error::IncompatibleTypes(ident.span.clone()));
             }
             Some(Attr::Static {
                 init: old_init,
@@ -275,7 +275,7 @@ impl TypeChecker {
                 }
 
                 if ty != old_ty {
-                    return Err(Error::IncompatibleTypes(ident.clone()));
+                    return Err(Error::IncompatibleTypes(ident.span.clone()));
                 }
 
                 if matches!(old_init, InitialValue::Initial(_)) {
@@ -321,11 +321,11 @@ impl TypeChecker {
                 }
                 match self.sym_table.get(&ident.data) {
                     Some(Attr::Fun { .. }) => {
-                        return Err(Error::IncompatibleTypes(ident.clone()));
+                        return Err(Error::IncompatibleTypes(ident.span.clone()));
                     }
                     Some(Attr::Local(ty0) | Attr::Static { ty: ty0, .. }) => {
                         if ty0 != ty {
-                            return Err(Error::IncompatibleTypes(ident.clone()));
+                            return Err(Error::IncompatibleTypes(ident.span.clone()));
                         }
                     }
                     None => {
@@ -395,12 +395,12 @@ impl TypeChecker {
     ) -> Result<ast::VarType, Error> {
         match exp {
             crate::ast::Expression::Var(name, ty) => match self.sym_table.get(&name.data) {
-                Some(Attr::Fun { .. }) => Err(Error::IncompatibleTypes(name.clone())),
-                Some(Attr::Static { ty: ty1, .. }) | Some(Attr::Local(ty1)) => {
-                    *ty = *ty1;
-                    Ok(*ty1)
+                Some(Attr::Fun { .. }) => Err(Error::IncompatibleTypes(name.span.clone())),
+                Some(Attr::Static { ty: target, .. }) | Some(Attr::Local(target)) => {
+                    *ty = *target;
+                    Ok(*target)
                 }
-                None => Err(Error::IncompatibleTypes(name.clone())),
+                None => Err(Error::IncompatibleTypes(name.span.clone())),
             },
             crate::ast::Expression::Constant(_) => Ok(exp.ty()),
             crate::ast::Expression::Unary { op, exp, ty } => {
@@ -412,11 +412,7 @@ impl TypeChecker {
                     ast::UnaryOp::Complement => {
                         *ty = self.check_expression(exp)?;
                         if *ty == ast::VarType::Double {
-                            // todo
-                            return Err(Error::IncompatibleTypes(Spanned {
-                                data: "".into(),
-                                span: exp.span(),
-                            }));
+                            return Err(Error::IncompatibleTypes(exp.span()));
                         }
                     }
                     _ => {
@@ -447,11 +443,7 @@ impl TypeChecker {
                             }
                             ast::BinaryOp::Remainder => {
                                 if cty == ast::VarType::Double {
-                                    // todo
-                                    return Err(Error::IncompatibleTypes(Spanned {
-                                        data: "".into(),
-                                        span: exp.span(),
-                                    }));
+                                    return Err(Error::IncompatibleTypes(exp.span()));
                                 }
                                 *ty = cty;
                             }
@@ -493,7 +485,7 @@ impl TypeChecker {
             } => {
                 if let Some(Attr::Fun { ty, .. }) = self.sym_table.get(&name.data) {
                     if ty.params.len() != args.len() {
-                        return Err(Error::IncompatibleTypes(name.clone()));
+                        return Err(Error::IncompatibleTypes(name.span.clone()));
                     }
                     let ret = ty.ret;
 
@@ -504,7 +496,7 @@ impl TypeChecker {
                     *fty = ret;
                     Ok(ret)
                 } else {
-                    Err(Error::IncompatibleTypes(name.clone()))
+                    Err(Error::IncompatibleTypes(name.span.clone()))
                 }
             }
             crate::ast::Expression::Cast { target, exp } => {
