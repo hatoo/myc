@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{hash_map::Entry, HashMap};
 
 use ecow::EcoString;
 
@@ -319,24 +319,23 @@ impl TypeChecker {
                 if init.is_some() {
                     return Err(Error::BadInitializer(ident.clone()));
                 }
-                match self.sym_table.get(&ident.data) {
-                    Some(Attr::Fun { .. }) => {
-                        return Err(Error::IncompatibleTypes(ident.span.clone()));
-                    }
-                    Some(Attr::Local(ty0) | Attr::Static { ty: ty0, .. }) => {
-                        if ty0 != ty {
+                match self.sym_table.entry(ident.data.clone()) {
+                    Entry::Occupied(o) => match o.get() {
+                        Attr::Fun { .. } => {
                             return Err(Error::IncompatibleTypes(ident.span.clone()));
                         }
-                    }
-                    None => {
-                        self.sym_table.insert(
-                            ident.data.clone(),
-                            Attr::Static {
-                                init: InitialValue::NoInitializer,
-                                global: true,
-                                ty: *ty,
-                            },
-                        );
+                        Attr::Local(ty0) | Attr::Static { ty: ty0, .. } => {
+                            if ty0 != ty {
+                                return Err(Error::IncompatibleTypes(ident.span.clone()));
+                            }
+                        }
+                    },
+                    Entry::Vacant(v) => {
+                        v.insert(Attr::Static {
+                            init: InitialValue::NoInitializer,
+                            global: true,
+                            ty: *ty,
+                        });
                     }
                 }
             }
