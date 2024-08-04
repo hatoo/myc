@@ -153,7 +153,7 @@ pub enum BinaryOp {
 pub enum Pseudo {
     Var(EcoString),
     // Must be placed in read only section
-    Double(f64),
+    Double { value: f64, alignment: usize },
 }
 
 #[derive(Debug, Clone)]
@@ -174,7 +174,10 @@ impl Operand {
 impl From<tacky::Val> for Operand {
     fn from(val: tacky::Val) -> Self {
         match val {
-            tacky::Val::Constant(Const::Double(d)) => Operand::Pseudo(Pseudo::Double(d)),
+            tacky::Val::Constant(Const::Double(d)) => Operand::Pseudo(Pseudo::Double {
+                value: d,
+                alignment: 8,
+            }),
             tacky::Val::Constant(imm) => Operand::Imm(imm.get_ulong()),
             tacky::Val::Var(var) => Operand::Pseudo(Pseudo::Var(var)),
         }
@@ -184,7 +187,10 @@ impl From<tacky::Val> for Operand {
 impl<'a> From<&'a tacky::Val> for Operand {
     fn from(val: &'a tacky::Val) -> Self {
         match val {
-            tacky::Val::Constant(Const::Double(d)) => Operand::Pseudo(Pseudo::Double(*d)),
+            tacky::Val::Constant(Const::Double(d)) => Operand::Pseudo(Pseudo::Double {
+                value: *d,
+                alignment: 8,
+            }),
             tacky::Val::Constant(imm) => Operand::Imm(imm.get_ulong()),
             tacky::Val::Var(var) => Operand::Pseudo(Pseudo::Var(var.clone())),
         }
@@ -235,12 +241,12 @@ pub enum AsmEntry {
 
 pub struct ConstTable {
     counter: usize,
-    table: HashMap<u64, EcoString>,
+    table: HashMap<(u64, usize), EcoString>,
 }
 
 impl ConstTable {
-    fn label(&mut self, double: f64) -> EcoString {
-        let key = double.to_bits();
+    fn label(&mut self, double: f64, alignment: usize) -> EcoString {
+        let key = (double.to_bits(), alignment);
 
         match self.table.entry(key) {
             std::collections::hash_map::Entry::Occupied(entry) => entry.get().clone(),
@@ -281,11 +287,11 @@ pub fn gen_program(program: &tacky::Program, symbol_table: &SymbolTable) -> Prog
         top_levels: const_table
             .table
             .into_iter()
-            .map(|(k, v)| {
+            .map(|((value, align), v)| {
                 TopLevel::StaticConstant(StaticConstant {
                     name: v,
-                    alignment: 8,
-                    init: semantics::type_check::StaticInit::Double(f64::from_bits(k)),
+                    alignment: align,
+                    init: semantics::type_check::StaticInit::Double(f64::from_bits(value)),
                 })
             })
             .chain(top_levels.into_iter())
@@ -372,15 +378,67 @@ fn gen_function(
     for inst in &function.body {
         match inst {
             tacky::Instruction::Return(val) => {
-                body.push(Instruction::Mov {
-                    ty: ty.ret.into(),
-                    src: val.into(),
-                    dst: Operand::Reg(Register::Ax),
-                });
-                body.push(Instruction::Ret);
+                if ty.ret == VarType::Double {
+                    body.push(Instruction::Mov {
+                        ty: AssemblyType::Double,
+                        src: val.into(),
+                        dst: Operand::Reg(Register::Xmm(0)),
+                    });
+                } else {
+                    body.push(Instruction::Mov {
+                        ty: ty.ret.into(),
+                        src: val.into(),
+                        dst: Operand::Reg(Register::Ax),
+                    });
+                    body.push(Instruction::Ret);
+                }
             }
             tacky::Instruction::Unary { op, src, dst } => {
+                let src_ty = src.ty(symbol_table);
                 let dst_ty = dst.ty(symbol_table);
+
+                if src_ty == VarType::Double {
+                    match op {
+                        tacky::UnaryOp::Not => {
+                            body.push(Instruction::Binary {
+                                op: BinaryOp::Xor,
+                                ty: AssemblyType::Double,
+                                lhs: Operand::Reg(Register::Xmm(0)),
+                                rhs: Operand::Reg(Register::Xmm(0)),
+                            });
+                            body.push(Instruction::Cmp(
+                                AssemblyType::Double,
+                                src.into(),
+                                Operand::Reg(Register::Xmm(0)),
+                            ));
+                            body.push(Instruction::Mov {
+                                ty: dst_ty.into(),
+                                src: Operand::Imm(0),
+                                dst: dst.into(),
+                            });
+                            body.push(Instruction::SetCc(CondCode::E, dst.into()));
+                            continue;
+                        }
+                        tacky::UnaryOp::Negate => {
+                            body.push(Instruction::Mov {
+                                ty: AssemblyType::Double,
+                                src: src.into(),
+                                dst: dst.into(),
+                            });
+                            body.push(Instruction::Binary {
+                                op: BinaryOp::Xor,
+                                ty: AssemblyType::Double,
+                                lhs: Operand::Pseudo(Pseudo::Double {
+                                    value: -0.0,
+                                    alignment: 16,
+                                }),
+                                rhs: dst.into(),
+                            });
+                            continue;
+                        }
+                        _ => {}
+                    }
+                }
 
                 enum Unary {
                     Simple(UnaryOp),
@@ -758,8 +816,11 @@ fn pseudo_to_stack(
                         }
                     }
                 },
-                Pseudo::Double(d) => {
-                    *operand = Operand::Data(const_table.label(*d));
+                Pseudo::Double {
+                    value: d,
+                    alignment,
+                } => {
+                    *operand = Operand::Data(const_table.label(*d, *alignment));
                 }
             }
         }
