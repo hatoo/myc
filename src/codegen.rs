@@ -37,7 +37,7 @@ impl<'a> From<&'a ast::VarType> for AssemblyType {
             ast::VarType::Uint => AssemblyType::LongWord,
             ast::VarType::Ulong => AssemblyType::QuadWord,
             ast::VarType::Long => AssemblyType::QuadWord,
-            _ => todo!(),
+            ast::VarType::Double => AssemblyType::Double,
         }
     }
 }
@@ -49,7 +49,7 @@ impl From<ast::VarType> for AssemblyType {
             ast::VarType::Uint => AssemblyType::LongWord,
             ast::VarType::Ulong => AssemblyType::QuadWord,
             ast::VarType::Long => AssemblyType::QuadWord,
-            _ => todo!(),
+            ast::VarType::Double => AssemblyType::Double,
         }
     }
 }
@@ -513,7 +513,14 @@ impl<'a> CodeGen<'a> {
                         }
                         Binary::Divide => {
                             let ty = lhs.ty(&self.symbol_table);
-                            if ty.is_signed() {
+                            if ty == VarType::Double {
+                                body.push(Instruction::Binary {
+                                    op: BinaryOp::DivDouble,
+                                    ty: AssemblyType::Double,
+                                    lhs: lhs.into(),
+                                    rhs: rhs.into(),
+                                });
+                            } else if ty.is_signed() {
                                 let ty = ty.into();
                                 body.push(Instruction::Mov {
                                     ty,
