@@ -148,6 +148,16 @@ impl Const {
             Self::Double(i) => *i,
         }
     }
+
+    pub fn get_static_init(&self, ty: VarType) -> StaticInit {
+        match ty {
+            VarType::Int => StaticInit::Int(self.get_int()),
+            VarType::Uint => StaticInit::Uint(self.get_uint()),
+            VarType::Long => StaticInit::Long(self.get_long()),
+            VarType::Ulong => StaticInit::Ulong(self.get_ulong()),
+            VarType::Double => StaticInit::Double(self.get_double()),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

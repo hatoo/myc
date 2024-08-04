@@ -240,13 +240,9 @@ impl TypeChecker {
         } = decl;
 
         let mut init = match init {
-            Some(Expression::Constant(Spanned { data: c, .. })) => match ty {
-                VarType::Int => InitialValue::Initial(StaticInit::Int(c.get_int())),
-                VarType::Uint => InitialValue::Initial(StaticInit::Uint(c.get_uint())),
-                VarType::Long => InitialValue::Initial(StaticInit::Long(c.get_long())),
-                VarType::Ulong => InitialValue::Initial(StaticInit::Ulong(c.get_ulong())),
-                VarType::Double => InitialValue::Initial(StaticInit::Double(c.get_double())),
-            },
+            Some(Expression::Constant(Spanned { data: c, .. })) => {
+                InitialValue::Initial(c.get_static_init(*ty))
+            }
             Some(_) => return Err(Error::BadInitializer(ident.clone())),
             None => {
                 if storage_class == &Some(crate::ast::StorageClass::Extern) {
@@ -341,23 +337,9 @@ impl TypeChecker {
             }
             Some(crate::ast::StorageClass::Static) => {
                 let init = match init {
-                    Some(Expression::Constant(val)) => match ty {
-                        ast::VarType::Int => {
-                            InitialValue::Initial(StaticInit::Int(val.data.get_int()))
-                        }
-                        ast::VarType::Uint => {
-                            InitialValue::Initial(StaticInit::Uint(val.data.get_uint()))
-                        }
-                        ast::VarType::Long => {
-                            InitialValue::Initial(StaticInit::Long(val.data.get_long()))
-                        }
-                        ast::VarType::Ulong => {
-                            InitialValue::Initial(StaticInit::Ulong(val.data.get_ulong()))
-                        }
-                        ast::VarType::Double => {
-                            InitialValue::Initial(StaticInit::Double(val.data.get_double()))
-                        }
-                    },
+                    Some(Expression::Constant(val)) => {
+                        InitialValue::Initial(val.data.get_static_init(*ty))
+                    }
                     None => InitialValue::Initial(ty.zero()),
                     _ => return Err(Error::BadInitializer(ident.clone())),
                 };
