@@ -516,11 +516,22 @@ impl<'a> CodeGen<'a> {
                         Binary::Divide => {
                             let ty = lhs.ty(&self.symbol_table);
                             if ty == VarType::Double {
+                                let (lhs, rhs) = (rhs, lhs);
+                                body.push(Instruction::Mov {
+                                    ty: AssemblyType::Double,
+                                    src: rhs.into(),
+                                    dst: Operand::Reg(Register::Xmm(14)),
+                                });
                                 body.push(Instruction::Binary {
                                     op: BinaryOp::DivDouble,
                                     ty: AssemblyType::Double,
                                     lhs: lhs.into(),
-                                    rhs: rhs.into(),
+                                    rhs: Operand::Reg(Register::Xmm(14)),
+                                });
+                                body.push(Instruction::Mov {
+                                    ty: AssemblyType::Double,
+                                    src: Operand::Reg(Register::Xmm(14)),
+                                    dst: dst.into(),
                                 });
                             } else if ty.is_signed() {
                                 let ty = ty.into();
@@ -1274,23 +1285,31 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
                 lhs,
                 rhs,
             } => {
-                let rhs = if !matches!(rhs, Operand::Reg(_)) {
+                if !matches!(rhs, Operand::Reg(_)) {
                     new_insts.push(Instruction::Mov {
                         ty: AssemblyType::Double,
-                        src: rhs,
+                        src: rhs.clone(),
                         dst: Operand::Reg(Register::Xmm(15)),
                     });
-                    Operand::Reg(Register::Xmm(15))
+                    new_insts.push(Instruction::Binary {
+                        op,
+                        ty: AssemblyType::Double,
+                        lhs,
+                        rhs: Operand::Reg(Register::Xmm(15)),
+                    });
+                    new_insts.push(Instruction::Mov {
+                        ty: AssemblyType::Double,
+                        src: Operand::Reg(Register::Xmm(15)),
+                        dst: rhs,
+                    });
                 } else {
-                    rhs
+                    new_insts.push(Instruction::Binary {
+                        op,
+                        ty: AssemblyType::Double,
+                        lhs,
+                        rhs,
+                    });
                 };
-
-                new_insts.push(Instruction::Binary {
-                    op,
-                    ty: AssemblyType::Double,
-                    lhs,
-                    rhs,
-                });
             }
             Instruction::Cmp(
                 ty,
