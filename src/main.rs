@@ -4,6 +4,7 @@ use clap::Parser;
 
 use myc::{
     ast::parse,
+    codegen::CodeGen,
     lexer::lexer,
     semantics::{LoopLabel, TypeChecker, VarResolver},
     span::SpannedError,
@@ -80,7 +81,8 @@ fn main() {
         return;
     }
 
-    let code = myc::codegen::gen_program(&tacky, &type_checker.sym_table);
+    let mut codegen = CodeGen::new(&type_checker.sym_table);
+    let code = codegen.gen_program(&tacky);
 
     if opts.codegen {
         dbg!(code);

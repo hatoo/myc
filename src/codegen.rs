@@ -26,6 +26,7 @@ impl AssemblyType {
         match self {
             AssemblyType::LongWord => "l",
             AssemblyType::QuadWord => "q",
+            _ => todo!(),
         }
     }
 }
@@ -717,24 +718,6 @@ impl<'a> CodeGen<'a> {
                         }
                     }
 
-                    if args.len() > 6 {
-                        for arg in args[6..].iter().rev() {
-                            match arg.ty(&self.symbol_table) {
-                                ast::VarType::Int | ast::VarType::Uint => {
-                                    body.push(Instruction::Mov {
-                                        ty: AssemblyType::LongWord,
-                                        src: arg.into(),
-                                        dst: Operand::Reg(Register::Ax),
-                                    });
-                                    body.push(Instruction::Push(Operand::Reg(Register::Ax)));
-                                }
-                                ast::VarType::Long | ast::VarType::Ulong => {
-                                    body.push(Instruction::Push(arg.into()));
-                                }
-                                _ => todo!(),
-                            }
-                        }
-                    }
                     body.push(Instruction::Call(name.clone()));
 
                     let bytes_to_remove = 8 * stack_len + stack_padding;
@@ -1271,6 +1254,30 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
                     rhs,
                 });
             }
+            Instruction::Binary {
+                op,
+                ty: AssemblyType::Double,
+                lhs,
+                rhs,
+            } => {
+                let rhs = if !matches!(rhs, Operand::Reg(_)) {
+                    new_insts.push(Instruction::Mov {
+                        ty: AssemblyType::Double,
+                        src: rhs,
+                        dst: Operand::Reg(Register::Xmm(15)),
+                    });
+                    Operand::Reg(Register::Xmm(15))
+                } else {
+                    rhs
+                };
+
+                new_insts.push(Instruction::Binary {
+                    op,
+                    ty: AssemblyType::Double,
+                    lhs,
+                    rhs,
+                });
+            }
             Instruction::Cmp(
                 ty,
                 lhs @ (Operand::Stack(_) | Operand::Data(_)),
@@ -1321,6 +1328,20 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
 
                     new_insts.push(Instruction::Cmp(ty, lhs, rhs));
                 }
+                AssemblyType::Double => {
+                    let rhs = if !matches!(rhs, Operand::Reg(_)) {
+                        new_insts.push(Instruction::Mov {
+                            ty,
+                            src: rhs,
+                            dst: Operand::Reg(Register::Xmm(15)),
+                        });
+                        Operand::Reg(Register::Xmm(15))
+                    } else {
+                        rhs
+                    };
+
+                    new_insts.push(Instruction::Cmp(ty, lhs, rhs));
+                }
             },
             Instruction::Push(op @ Operand::Imm(_)) => {
                 new_insts.push(Instruction::Mov {
@@ -1350,6 +1371,45 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
                     });
                 }
             }
+            Instruction::Cvttsd2si { ty, src, dst } if !matches!(dst, Operand::Reg(_)) => {
+                new_insts.push(Instruction::Cvttsd2si {
+                    ty,
+                    src,
+                    dst: Operand::Reg(Register::R11),
+                });
+                new_insts.push(Instruction::Mov {
+                    ty,
+                    src: Operand::Reg(Register::R11),
+                    dst,
+                });
+            }
+            Instruction::Cvtsi2sd { ty, src, dst } => {
+                let src = if matches!(src, Operand::Imm(_)) {
+                    new_insts.push(Instruction::Mov {
+                        ty,
+                        src,
+                        dst: Operand::Reg(Register::R10),
+                    });
+                    Operand::Reg(Register::R10)
+                } else {
+                    src
+                };
+
+                if !matches!(dst, Operand::Reg(_)) {
+                    new_insts.push(Instruction::Cvtsi2sd {
+                        ty,
+                        src,
+                        dst: Operand::Reg(Register::Xmm(15)),
+                    });
+                    new_insts.push(Instruction::Mov {
+                        ty: AssemblyType::Double,
+                        src: Operand::Reg(Register::Xmm(15)),
+                        dst,
+                    });
+                } else {
+                    new_insts.push(Instruction::Cvtsi2sd { ty, src, dst });
+                }
+            }
             _ => new_insts.push(inst),
         }
     }
@@ -1368,10 +1428,13 @@ impl<'a> Display for SizedOperand<'a> {
                 // trucated anyway
                 AssemblyType::LongWord => write!(f, "${}", *imm as i32)?,
                 AssemblyType::QuadWord => write!(f, "${}", imm)?,
+
+                _ => todo!(),
             },
             Operand::Reg(reg) => match self.ty {
                 AssemblyType::LongWord => write!(f, "{}", RegisterSize::Dword(reg))?,
                 AssemblyType::QuadWord => write!(f, "{}", RegisterSize::Qword(reg))?,
+                _ => todo!(),
             },
             Operand::Pseudo(_) => panic!("Pseudo operand should have been removed"),
             Operand::Stack(offset) => write!(f, "{}(%rbp)", offset)?,
@@ -1397,6 +1460,7 @@ impl Display for TopLevel {
         match self {
             TopLevel::StaticVariable(var) => write!(f, "{}", var)?,
             TopLevel::Function(func) => write!(f, "{}", func)?,
+            _ => todo!(),
         }
         Ok(())
     }
@@ -1504,6 +1568,7 @@ impl Display for Instruction {
                 AssemblyType::QuadWord => {
                     writeln!(f, "cqo")?;
                 }
+                _ => todo!(),
             },
             Instruction::Idiv(ty, op) => {
                 writeln!(f, "idiv{} {}", ty.suffix(), op.sized(*ty))?;
@@ -1550,6 +1615,7 @@ impl Display for Instruction {
             Instruction::Div(ty, op) => {
                 writeln!(f, "div{} {}", ty.suffix(), op.sized(*ty))?;
             }
+            _ => todo!(),
         }
         Ok(())
     }
@@ -1560,6 +1626,7 @@ impl Display for UnaryOp {
         match self {
             UnaryOp::Neg => write!(f, "neg")?,
             UnaryOp::Not => write!(f, "not")?,
+            _ => todo!(),
         }
         Ok(())
     }
@@ -1571,6 +1638,7 @@ impl Display for BinaryOp {
             BinaryOp::Add => write!(f, "add")?,
             BinaryOp::Sub => write!(f, "sub")?,
             BinaryOp::Mult => write!(f, "imul")?,
+            _ => todo!(),
         }
         Ok(())
     }
@@ -1590,6 +1658,7 @@ impl<'a> Display for RegisterSize<'a> {
                 Register::R8 => write!(f, "%r8b")?,
                 Register::R9 => write!(f, "%r9b")?,
                 Register::SP => write!(f, "%spl")?,
+                _ => todo!(),
             },
             RegisterSize::Dword(reg) => match reg {
                 Register::Ax => write!(f, "%eax")?,
@@ -1602,6 +1671,7 @@ impl<'a> Display for RegisterSize<'a> {
                 Register::R8 => write!(f, "%r8d")?,
                 Register::R9 => write!(f, "%r9d")?,
                 Register::SP => write!(f, "%esp")?,
+                _ => todo!(),
             },
             RegisterSize::Qword(reg) => match reg {
                 Register::Ax => write!(f, "%rax")?,
@@ -1614,6 +1684,7 @@ impl<'a> Display for RegisterSize<'a> {
                 Register::R8 => write!(f, "%r8")?,
                 Register::R9 => write!(f, "%r9")?,
                 Register::SP => write!(f, "%rsp")?,
+                _ => todo!(),
             },
         }
         Ok(())
