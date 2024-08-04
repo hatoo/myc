@@ -250,7 +250,7 @@ impl VarType {
             Self::Uint => false,
             Self::Long => true,
             Self::Ulong => false,
-            Self::Double => true,
+            Self::Double => false,
         }
     }
 }
