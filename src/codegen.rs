@@ -56,6 +56,7 @@ impl From<ast::VarType> for AssemblyType {
 
 #[derive(Debug)]
 pub enum TopLevel {
+    StaticConstant(StaticConstant),
     StaticVariable(StaticVariable),
     Function(Function),
 }
@@ -232,25 +233,62 @@ pub enum AsmEntry {
 }
 */
 
+pub struct ConstTable {
+    counter: usize,
+    table: HashMap<u64, EcoString>,
+}
+
+impl ConstTable {
+    fn label(&mut self, double: f64) -> EcoString {
+        let key = double.to_bits();
+
+        match self.table.entry(key) {
+            std::collections::hash_map::Entry::Occupied(entry) => entry.get().clone(),
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                let label = EcoString::from(format!("double{}", self.counter));
+                self.counter += 1;
+                entry.insert(label.clone());
+                label
+            }
+        }
+    }
+}
+
 pub fn gen_program(program: &tacky::Program, symbol_table: &SymbolTable) -> Program {
-    Program {
-        top_levels: program
-            .top_levels
-            .iter()
-            .map(|item| match item {
-                tacky::TopLevelItem::StaticVariable(tacky::StaticVariable {
-                    global,
-                    name,
-                    init,
-                }) => TopLevel::StaticVariable(StaticVariable {
+    let mut const_table = ConstTable {
+        counter: 0,
+        table: HashMap::new(),
+    };
+
+    let top_levels: Vec<_> = program
+        .top_levels
+        .iter()
+        .map(|item| match item {
+            tacky::TopLevelItem::StaticVariable(tacky::StaticVariable { global, name, init }) => {
+                TopLevel::StaticVariable(StaticVariable {
                     global: *global,
                     name: name.clone(),
                     init: *init,
-                }),
-                tacky::TopLevelItem::Function(function) => {
-                    TopLevel::Function(gen_function(function, symbol_table))
-                }
+                })
+            }
+            tacky::TopLevelItem::Function(function) => {
+                TopLevel::Function(gen_function(function, symbol_table, &mut const_table))
+            }
+        })
+        .collect();
+
+    Program {
+        top_levels: const_table
+            .table
+            .into_iter()
+            .map(|(k, v)| {
+                TopLevel::StaticConstant(StaticConstant {
+                    name: v,
+                    alignment: 8,
+                    init: semantics::type_check::StaticInit::Double(f64::from_bits(k)),
+                })
             })
+            .chain(top_levels.into_iter())
             .collect(),
     }
 }
@@ -293,7 +331,11 @@ const PARAM_REGISTERS: [Register; 6] = [
     Register::R9,
 ];
 
-fn gen_function(function: &tacky::Function, symbol_table: &SymbolTable) -> Function {
+fn gen_function(
+    function: &tacky::Function,
+    symbol_table: &SymbolTable,
+    const_table: &mut ConstTable,
+) -> Function {
     let mut body = Vec::new();
 
     let semantics::type_check::Attr::Fun { ty, .. } = &symbol_table[&function.name] else {
@@ -307,7 +349,7 @@ fn gen_function(function: &tacky::Function, symbol_table: &SymbolTable) -> Funct
         body.push(Instruction::Mov {
             ty: ty.into(),
             src: Operand::Reg(PARAM_REGISTERS[i]),
-            dst: Operand::Pseudo(param.clone()),
+            dst: Operand::Pseudo(Pseudo::Var(param.clone())),
         });
     }
 
@@ -315,7 +357,7 @@ fn gen_function(function: &tacky::Function, symbol_table: &SymbolTable) -> Funct
         body.push(Instruction::Mov {
             ty: ty.into(),
             src: Operand::Reg(Register::Xmm(i as _)),
-            dst: Operand::Pseudo(param.clone()),
+            dst: Operand::Pseudo(Pseudo::Var(param.clone())),
         });
     }
 
@@ -323,7 +365,7 @@ fn gen_function(function: &tacky::Function, symbol_table: &SymbolTable) -> Funct
         body.push(Instruction::Mov {
             ty: ty.into(),
             src: Operand::Stack((16 + i * 8) as i32),
-            dst: Operand::Pseudo(param.clone()),
+            dst: Operand::Pseudo(Pseudo::Var(param.clone())),
         });
     }
 
@@ -669,7 +711,7 @@ fn gen_function(function: &tacky::Function, symbol_table: &SymbolTable) -> Funct
         }
     }
 
-    let stack_size = pseudo_to_stack(&mut body, symbol_table);
+    let stack_size = pseudo_to_stack(&mut body, symbol_table, const_table);
     let stack_size = (stack_size + 15) / 16 * 16;
     body.insert(
         0,
@@ -689,26 +731,35 @@ fn gen_function(function: &tacky::Function, symbol_table: &SymbolTable) -> Funct
     }
 }
 
-fn pseudo_to_stack(insts: &mut [Instruction], symbol_table: &SymbolTable) -> usize {
+fn pseudo_to_stack(
+    insts: &mut [Instruction],
+    symbol_table: &SymbolTable,
+    const_table: &mut ConstTable,
+) -> usize {
     let mut total = 0;
     let mut known_vars = HashMap::new();
 
     let mut remove_pseudo = |operand: &mut Operand| {
         if let Operand::Pseudo(var) = operand {
-            match &symbol_table[var] {
-                semantics::type_check::Attr::Static { .. } => {
-                    *operand = Operand::Data(var.clone());
-                }
-                attr => {
-                    if let Some(addr) = known_vars.get(var) {
-                        *operand = Operand::Stack(*addr);
-                    } else {
-                        let size = attr.ty().size() as i32;
-                        total += size;
-                        total = (total + (size - 1)) / size * size;
-                        known_vars.insert(var.clone(), -total);
-                        *operand = Operand::Stack(-total);
+            match var {
+                Pseudo::Var(var) => match &symbol_table[var] {
+                    semantics::type_check::Attr::Static { .. } => {
+                        *operand = Operand::Data(var.clone());
                     }
+                    attr => {
+                        if let Some(addr) = known_vars.get(var) {
+                            *operand = Operand::Stack(*addr);
+                        } else {
+                            let size = attr.ty().size() as i32;
+                            total += size;
+                            total = (total + (size - 1)) / size * size;
+                            known_vars.insert(var.clone(), -total);
+                            *operand = Operand::Stack(-total);
+                        }
+                    }
+                },
+                Pseudo::Double(d) => {
+                    *operand = Operand::Data(const_table.label(*d));
                 }
             }
         }
@@ -756,6 +807,14 @@ fn pseudo_to_stack(insts: &mut [Instruction], symbol_table: &SymbolTable) -> usi
             }
             Instruction::Div(_, op) => {
                 remove_pseudo(op);
+            }
+            Instruction::Cvttsd2si { ty: _, src, dst } => {
+                remove_pseudo(src);
+                remove_pseudo(dst);
+            }
+            Instruction::Cvtsi2sd { ty: _, src, dst } => {
+                remove_pseudo(src);
+                remove_pseudo(dst);
             }
         }
     }
