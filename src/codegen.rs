@@ -26,7 +26,7 @@ impl AssemblyType {
         match self {
             AssemblyType::LongWord => "l",
             AssemblyType::QuadWord => "q",
-            _ => todo!(),
+            AssemblyType::Double => "sd",
         }
     }
 }
@@ -1427,14 +1427,13 @@ impl<'a> Display for SizedOperand<'a> {
             Operand::Imm(imm) => match self.ty {
                 // trucated anyway
                 AssemblyType::LongWord => write!(f, "${}", *imm as i32)?,
-                AssemblyType::QuadWord => write!(f, "${}", imm)?,
-
-                _ => todo!(),
+                AssemblyType::QuadWord | AssemblyType::Double => write!(f, "${}", imm)?,
             },
             Operand::Reg(reg) => match self.ty {
                 AssemblyType::LongWord => write!(f, "{}", RegisterSize::Dword(reg))?,
-                AssemblyType::QuadWord => write!(f, "{}", RegisterSize::Qword(reg))?,
-                _ => todo!(),
+                AssemblyType::QuadWord | AssemblyType::Double => {
+                    write!(f, "{}", RegisterSize::Qword(reg))?
+                }
             },
             Operand::Pseudo(_) => panic!("Pseudo operand should have been removed"),
             Operand::Stack(offset) => write!(f, "{}(%rbp)", offset)?,
@@ -1458,9 +1457,9 @@ impl Display for Program {
 impl Display for TopLevel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            TopLevel::StaticConstant(constant) => write!(f, "{}", constant)?,
             TopLevel::StaticVariable(var) => write!(f, "{}", var)?,
             TopLevel::Function(func) => write!(f, "{}", func)?,
-            _ => todo!(),
         }
         Ok(())
     }
@@ -1477,6 +1476,24 @@ impl Display for Function {
         writeln!(f, "movq %rsp, %rbp")?;
         for inst in &self.body {
             write!(f, "{inst}")?;
+        }
+        Ok(())
+    }
+}
+
+impl Display for StaticConstant {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, ".section .rodata")?;
+        writeln!(f, ".align {}", self.alignment)?;
+        writeln!(f, "{}:", self.name)?;
+        match self.init {
+            semantics::type_check::StaticInit::Int(x) => writeln!(f, ".long {}", x)?,
+            semantics::type_check::StaticInit::Uint(x) => writeln!(f, ".long {}", x)?,
+            semantics::type_check::StaticInit::Long(x) => writeln!(f, ".quad {}", x)?,
+            semantics::type_check::StaticInit::Ulong(x) => writeln!(f, ".quad {}", x)?,
+            semantics::type_check::StaticInit::Double(d) => {
+                writeln!(f, ".quad {} ; {}", d.to_bits(), d)?
+            }
         }
         Ok(())
     }
@@ -1526,7 +1543,12 @@ impl Display for StaticVariable {
                 writeln!(f, "{}:", self.name)?;
                 writeln!(f, ".quad {}", x)?;
             }
-            _ => todo!(),
+            semantics::type_check::StaticInit::Double(d) => {
+                writeln!(f, ".data")?;
+                writeln!(f, ".align {}", self.init.alignment())?;
+                writeln!(f, "{}:", self.name)?;
+                writeln!(f, ".quad {} ; {}", d.to_bits(), d)?;
+            }
         }
         Ok(())
     }
@@ -1553,6 +1575,29 @@ impl Display for Instruction {
                 writeln!(f, "ret")?;
             }
             Instruction::Binary { ty, op, lhs, rhs } => {
+                if *ty == AssemblyType::Double {
+                    match op {
+                        BinaryOp::Mult => {
+                            writeln!(
+                                f,
+                                "mulsd {}, {}",
+                                lhs.sized(AssemblyType::Double),
+                                rhs.sized(AssemblyType::Double)
+                            )?;
+                            return Ok(());
+                        }
+                        BinaryOp::Xor => {
+                            writeln!(
+                                f,
+                                "xorpd {}, {}",
+                                lhs.sized(AssemblyType::Double),
+                                rhs.sized(AssemblyType::Double)
+                            )?;
+                            return Ok(());
+                        }
+                        _ => {}
+                    }
+                }
                 writeln!(
                     f,
                     "{op}{} {}, {}",
@@ -1565,22 +1610,31 @@ impl Display for Instruction {
                 AssemblyType::LongWord => {
                     writeln!(f, "cdq")?;
                 }
-                AssemblyType::QuadWord => {
+                AssemblyType::QuadWord | AssemblyType::Double => {
                     writeln!(f, "cqo")?;
                 }
-                _ => todo!(),
             },
             Instruction::Idiv(ty, op) => {
                 writeln!(f, "idiv{} {}", ty.suffix(), op.sized(*ty))?;
             }
             Instruction::Cmp(ty, lhs, rhs) => {
-                writeln!(
-                    f,
-                    "cmp{} {}, {}",
-                    ty.suffix(),
-                    lhs.sized(*ty),
-                    rhs.sized(*ty)
-                )?;
+                if *ty == AssemblyType::Double {
+                    writeln!(
+                        f,
+                        "comisd {}, {}",
+                        lhs.sized(AssemblyType::Double),
+                        rhs.sized(AssemblyType::Double)
+                    )?;
+                    return Ok(());
+                } else {
+                    writeln!(
+                        f,
+                        "cmp{} {}, {}",
+                        ty.suffix(),
+                        lhs.sized(*ty),
+                        rhs.sized(*ty)
+                    )?;
+                }
             }
             Instruction::Jmp(l) => {
                 writeln!(f, "jmp .L{}", l)?;
@@ -1615,7 +1669,24 @@ impl Display for Instruction {
             Instruction::Div(ty, op) => {
                 writeln!(f, "div{} {}", ty.suffix(), op.sized(*ty))?;
             }
-            _ => todo!(),
+            Instruction::Cvttsd2si { ty, src, dst } => {
+                writeln!(
+                    f,
+                    "cvttsd2si{} {}, {}",
+                    ty.suffix(),
+                    src.sized(*ty),
+                    dst.sized(*ty)
+                )?;
+            }
+            Instruction::Cvtsi2sd { ty, src, dst } => {
+                writeln!(
+                    f,
+                    "cvtsi2sd{} {}, {}",
+                    ty.suffix(),
+                    src.sized(*ty),
+                    dst.sized(*ty)
+                )?;
+            }
         }
         Ok(())
     }
@@ -1626,7 +1697,7 @@ impl Display for UnaryOp {
         match self {
             UnaryOp::Neg => write!(f, "neg")?,
             UnaryOp::Not => write!(f, "not")?,
-            _ => todo!(),
+            UnaryOp::Shr => write!(f, "shr")?,
         }
         Ok(())
     }
@@ -1638,7 +1709,10 @@ impl Display for BinaryOp {
             BinaryOp::Add => write!(f, "add")?,
             BinaryOp::Sub => write!(f, "sub")?,
             BinaryOp::Mult => write!(f, "imul")?,
-            _ => todo!(),
+            BinaryOp::And => write!(f, "and")?,
+            BinaryOp::Or => write!(f, "or")?,
+            BinaryOp::DivDouble => write!(f, "div")?,
+            BinaryOp::Xor => write!(f, "xor")?,
         }
         Ok(())
     }
@@ -1684,7 +1758,7 @@ impl<'a> Display for RegisterSize<'a> {
                 Register::R8 => write!(f, "%r8")?,
                 Register::R9 => write!(f, "%r9")?,
                 Register::SP => write!(f, "%rsp")?,
-                _ => todo!(),
+                Register::Xmm(x) => write!(f, "%xmm{}", x)?,
             },
         }
         Ok(())
