@@ -631,20 +631,50 @@ fn gen_function(
                 body.push(Instruction::Jmp(label.clone()));
             }
             tacky::Instruction::JumpIfZero { src, dst } => {
-                body.push(Instruction::Cmp(
-                    src.ty(symbol_table).into(),
-                    Operand::Imm(0),
-                    src.into(),
-                ));
-                body.push(Instruction::JmpCc(CondCode::E, dst.clone()));
+                if src.ty(symbol_table) == VarType::Double {
+                    body.push(Instruction::Binary {
+                        op: BinaryOp::Xor,
+                        ty: AssemblyType::Double,
+                        lhs: Operand::Reg(Register::Xmm(0)),
+                        rhs: Operand::Reg(Register::Xmm(0)),
+                    });
+                    body.push(Instruction::Cmp(
+                        AssemblyType::Double,
+                        src.into(),
+                        Operand::Reg(Register::Xmm(0)),
+                    ));
+                    body.push(Instruction::JmpCc(CondCode::E, dst.clone()));
+                } else {
+                    body.push(Instruction::Cmp(
+                        src.ty(symbol_table).into(),
+                        Operand::Imm(0),
+                        src.into(),
+                    ));
+                    body.push(Instruction::JmpCc(CondCode::E, dst.clone()));
+                }
             }
             tacky::Instruction::JumpIfNotZero { src, dst } => {
-                body.push(Instruction::Cmp(
-                    src.ty(symbol_table).into(),
-                    Operand::Imm(0),
-                    src.into(),
-                ));
-                body.push(Instruction::JmpCc(CondCode::Ne, dst.clone()));
+                if src.ty(symbol_table) == VarType::Double {
+                    body.push(Instruction::Binary {
+                        op: BinaryOp::Xor,
+                        ty: AssemblyType::Double,
+                        lhs: Operand::Reg(Register::Xmm(0)),
+                        rhs: Operand::Reg(Register::Xmm(0)),
+                    });
+                    body.push(Instruction::Cmp(
+                        AssemblyType::Double,
+                        src.into(),
+                        Operand::Reg(Register::Xmm(0)),
+                    ));
+                    body.push(Instruction::JmpCc(CondCode::Ne, dst.clone()));
+                } else {
+                    body.push(Instruction::Cmp(
+                        src.ty(symbol_table).into(),
+                        Operand::Imm(0),
+                        src.into(),
+                    ));
+                    body.push(Instruction::JmpCc(CondCode::Ne, dst.clone()));
+                }
             }
             tacky::Instruction::Label(label) => {
                 body.push(Instruction::Label(label.clone()));
@@ -765,7 +795,43 @@ fn gen_function(
                     dst: dst.into(),
                 });
             }
-            _ => todo!(),
+            tacky::Instruction::DoubleToInt { src, dst } => {
+                body.push(Instruction::Cvttsd2si {
+                    ty: dst.ty(symbol_table).into(),
+                    src: src.into(),
+                    dst: dst.into(),
+                });
+            }
+            tacky::Instruction::DoubleToUint { src, dst } => todo!(),
+            tacky::Instruction::IntToDouble { src, dst } => {
+                body.push(Instruction::Cvtsi2sd {
+                    ty: src.ty(symbol_table).into(),
+                    src: src.into(),
+                    dst: dst.into(),
+                });
+            }
+            tacky::Instruction::UintToDouble { src, dst } => match src.ty(symbol_table) {
+                ast::VarType::Uint => {
+                    body.push(Instruction::MovZeroExtend {
+                        src: src.into(),
+                        dst: Operand::Reg(Register::R10),
+                    });
+                    body.push(Instruction::Cvtsi2sd {
+                        ty: AssemblyType::QuadWord,
+                        src: Operand::Reg(Register::R10),
+                        dst: dst.into(),
+                    });
+                }
+                ast::VarType::Ulong => {
+                    body.push(Instruction::Cmp(
+                        AssemblyType::QuadWord,
+                        Operand::Imm(0),
+                        src.into(),
+                    ));
+                    // body
+                }
+                _ => unimplemented!(),
+            },
         }
     }
 
