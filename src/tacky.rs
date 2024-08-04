@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use ecow::EcoString;
 
 use crate::{
-    ast::{self, Block},
+    ast::{self, Block, VarType},
     semantics::{
         self,
         type_check::{Attr, StaticInit, SymbolTable},
@@ -623,7 +623,11 @@ fn gen_function(generator: &mut InstructionGenerator, function: &ast::FunDecl) -
         }
         generator.add_statement(&ast::Statement::Return(ast::Expression::Constant(
             Spanned {
-                data: ast::Const::Int(0),
+                data: if function.ty.ret == VarType::Double {
+                    ast::Const::Double(0.0)
+                } else {
+                    ast::Const::Int(0)
+                },
                 span: 0..0,
             },
         )));

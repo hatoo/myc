@@ -363,6 +363,7 @@ impl<'a> CodeGen<'a> {
                             src: val.into(),
                             dst: Operand::Reg(Register::Xmm(0)),
                         });
+                        body.push(Instruction::Ret);
                     } else {
                         body.push(Instruction::Mov {
                             ty: ty.ret.into(),
@@ -1081,11 +1082,19 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
                 new_insts.push(Instruction::Mov {
                     ty,
                     src,
-                    dst: Operand::Reg(Register::R10),
+                    dst: Operand::Reg(if ty == AssemblyType::Double {
+                        Register::Xmm(14)
+                    } else {
+                        Register::R10
+                    }),
                 });
                 new_insts.push(Instruction::Mov {
                     ty,
-                    src: Operand::Reg(Register::R10),
+                    src: Operand::Reg(if ty == AssemblyType::Double {
+                        Register::Xmm(14)
+                    } else {
+                        Register::R10
+                    }),
                     dst,
                 });
             }
@@ -1202,20 +1211,25 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
                 } else {
                     lhs
                 };
+                let tmp = if ty == AssemblyType::Double {
+                    Operand::Reg(Register::Xmm(15))
+                } else {
+                    Operand::Reg(Register::R11)
+                };
                 new_insts.push(Instruction::Mov {
                     ty,
                     src: rhs.clone(),
-                    dst: Operand::Reg(Register::R11),
+                    dst: tmp.clone(),
                 });
                 new_insts.push(Instruction::Binary {
                     ty,
                     op: BinaryOp::Mult,
                     lhs,
-                    rhs: Operand::Reg(Register::R11),
+                    rhs: tmp.clone(),
                 });
                 new_insts.push(Instruction::Mov {
                     ty,
-                    src: Operand::Reg(Register::R11),
+                    src: tmp.clone(),
                     dst: rhs,
                 });
             }
@@ -1282,7 +1296,7 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
                 ty,
                 lhs @ (Operand::Stack(_) | Operand::Data(_)),
                 rhs @ (Operand::Stack(_) | Operand::Data(_)),
-            ) => {
+            ) if !matches!(ty, AssemblyType::Double) => {
                 new_insts.push(Instruction::Mov {
                     ty,
                     src: lhs,
@@ -1491,9 +1505,7 @@ impl Display for StaticConstant {
             semantics::type_check::StaticInit::Uint(x) => writeln!(f, ".long {}", x)?,
             semantics::type_check::StaticInit::Long(x) => writeln!(f, ".quad {}", x)?,
             semantics::type_check::StaticInit::Ulong(x) => writeln!(f, ".quad {}", x)?,
-            semantics::type_check::StaticInit::Double(d) => {
-                writeln!(f, ".quad {} ; {}", d.to_bits(), d)?
-            }
+            semantics::type_check::StaticInit::Double(d) => writeln!(f, ".quad {}", d.to_bits())?,
         }
         Ok(())
     }
@@ -1547,7 +1559,7 @@ impl Display for StaticVariable {
                 writeln!(f, ".data")?;
                 writeln!(f, ".align {}", self.init.alignment())?;
                 writeln!(f, "{}:", self.name)?;
-                writeln!(f, ".quad {} ; {}", d.to_bits(), d)?;
+                writeln!(f, ".quad {}", d.to_bits())?;
             }
         }
         Ok(())
@@ -1674,7 +1686,7 @@ impl Display for Instruction {
                     f,
                     "cvttsd2si{} {}, {}",
                     ty.suffix(),
-                    src.sized(*ty),
+                    src.sized(AssemblyType::Double),
                     dst.sized(*ty)
                 )?;
             }
@@ -1684,7 +1696,7 @@ impl Display for Instruction {
                     "cvtsi2sd{} {}, {}",
                     ty.suffix(),
                     src.sized(*ty),
-                    dst.sized(*ty)
+                    dst.sized(AssemblyType::Double)
                 )?;
             }
         }
@@ -1732,7 +1744,7 @@ impl<'a> Display for RegisterSize<'a> {
                 Register::R8 => write!(f, "%r8b")?,
                 Register::R9 => write!(f, "%r9b")?,
                 Register::SP => write!(f, "%spl")?,
-                _ => todo!(),
+                Register::Xmm(_) => todo!(),
             },
             RegisterSize::Dword(reg) => match reg {
                 Register::Ax => write!(f, "%eax")?,
@@ -1745,7 +1757,7 @@ impl<'a> Display for RegisterSize<'a> {
                 Register::R8 => write!(f, "%r8d")?,
                 Register::R9 => write!(f, "%r9d")?,
                 Register::SP => write!(f, "%esp")?,
-                _ => todo!(),
+                Register::Xmm(_) => todo!(),
             },
             RegisterSize::Qword(reg) => match reg {
                 Register::Ax => write!(f, "%rax")?,
