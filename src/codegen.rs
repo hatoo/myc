@@ -18,6 +18,7 @@ pub struct Program {
 pub enum AssemblyType {
     LongWord,
     QuadWord,
+    Double,
 }
 
 impl AssemblyType {
@@ -57,6 +58,13 @@ impl From<ast::VarType> for AssemblyType {
 pub enum TopLevel {
     StaticVariable(StaticVariable),
     Function(Function),
+}
+
+#[derive(Debug)]
+pub struct StaticConstant {
+    pub name: EcoString,
+    pub alignment: usize,
+    pub init: semantics::type_check::StaticInit,
 }
 
 #[derive(Debug)]
@@ -110,12 +118,23 @@ pub enum Instruction {
     Ret,
     Push(Operand),
     Call(EcoString),
+    Cvttsd2si {
+        ty: AssemblyType,
+        src: Operand,
+        dst: Operand,
+    },
+    Cvtsi2sd {
+        ty: AssemblyType,
+        src: Operand,
+        dst: Operand,
+    },
 }
 
 #[derive(Debug)]
 pub enum UnaryOp {
     Neg,
     Not,
+    Shr,
 }
 
 #[derive(Debug)]
@@ -123,6 +142,10 @@ pub enum BinaryOp {
     Add,
     Sub,
     Mult,
+    DivDouble,
+    And,
+    Or,
+    Xor,
 }
 
 #[derive(Debug, Clone)]
@@ -170,6 +193,7 @@ pub enum Register {
     R10,
     R11,
     SP,
+    Xmm(u8),
 }
 
 pub enum RegisterSize<'a> {
