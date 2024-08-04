@@ -786,7 +786,7 @@ impl<'a> CodeGen<'a> {
                 tacky::Instruction::DoubleToUint { src, dst } => {
                     if dst.ty(&self.symbol_table) == ast::VarType::Uint {
                         body.push(Instruction::Cvttsd2si {
-                            ty: AssemblyType::LongWord,
+                            ty: AssemblyType::QuadWord,
                             src: src.into(),
                             dst: Operand::Reg(Register::R10),
                         });
@@ -880,7 +880,7 @@ impl<'a> CodeGen<'a> {
                             src: src.into(),
                             dst: dst.into(),
                         });
-                        body.push(Instruction::Jmp(self.gen_label("end")));
+                        body.push(Instruction::Jmp(end.clone()));
                         body.push(Instruction::Label(l1));
                         body.push(Instruction::Mov {
                             ty: AssemblyType::QuadWord,
@@ -1190,10 +1190,10 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
             }
             Instruction::Binary {
                 ty,
-                op: op @ (BinaryOp::Add | BinaryOp::Sub),
+                op: op @ (BinaryOp::Add | BinaryOp::Sub | BinaryOp::And | BinaryOp::Or),
                 lhs: lhs @ (Operand::Stack(_) | Operand::Data(_)),
                 rhs: rhs @ (Operand::Stack(_) | Operand::Data(_)),
-            } => {
+            } if !matches!(ty, AssemblyType::Double) => {
                 new_insts.push(Instruction::Mov {
                     ty,
                     src: lhs,
@@ -1250,24 +1250,32 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
                 lhs,
                 rhs,
             } => {
-                let lhs = if matches!(lhs, Operand::Imm(_)) {
-                    new_insts.push(Instruction::Mov {
-                        ty: AssemblyType::QuadWord,
-                        src: lhs,
-                        dst: Operand::Reg(Register::R10),
-                    });
-                    Operand::Reg(Register::R10)
+                let lhs = if let Operand::Imm(x) = lhs {
+                    if i32::try_from(x).is_err() {
+                        new_insts.push(Instruction::Mov {
+                            ty: AssemblyType::QuadWord,
+                            src: lhs,
+                            dst: Operand::Reg(Register::R10),
+                        });
+                        Operand::Reg(Register::R10)
+                    } else {
+                        lhs
+                    }
                 } else {
                     lhs
                 };
 
-                let rhs = if matches!(rhs, Operand::Imm(_)) {
-                    new_insts.push(Instruction::Mov {
-                        ty: AssemblyType::QuadWord,
-                        src: rhs,
-                        dst: Operand::Reg(Register::R11),
-                    });
-                    Operand::Reg(Register::R11)
+                let rhs = if let Operand::Imm(x) = rhs {
+                    if i32::try_from(x).is_err() {
+                        new_insts.push(Instruction::Mov {
+                            ty: AssemblyType::QuadWord,
+                            src: rhs,
+                            dst: Operand::Reg(Register::R11),
+                        });
+                        Operand::Reg(Register::R11)
+                    } else {
+                        rhs
+                    }
                 } else {
                     rhs
                 };
