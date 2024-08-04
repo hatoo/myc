@@ -4,7 +4,7 @@ use std::{collections::HashMap, fmt::Display};
 use ecow::EcoString;
 
 use crate::{
-    ast::{self},
+    ast::{self, VarType},
     semantics::{self, type_check::SymbolTable},
     tacky,
 };
@@ -246,6 +246,44 @@ pub fn gen_program(program: &tacky::Program, symbol_table: &SymbolTable) -> Prog
     }
 }
 
+fn classify_parameters<'a, T>(
+    iter: impl Iterator<Item = (T, &'a VarType)>,
+) -> (Vec<(T, VarType)>, Vec<(T, VarType)>, Vec<(T, VarType)>) {
+    let mut int_reg_args = Vec::new();
+    let mut double_reg_args = Vec::new();
+    let mut stack_args = Vec::new();
+
+    for (param, ty) in iter {
+        match ty {
+            VarType::Double => {
+                if double_reg_args.len() < 8 {
+                    double_reg_args.push((param, *ty));
+                } else {
+                    stack_args.push((param, *ty));
+                }
+            }
+            _ => {
+                if int_reg_args.len() < 6 {
+                    int_reg_args.push((param, *ty));
+                } else {
+                    stack_args.push((param, *ty));
+                }
+            }
+        }
+    }
+
+    (int_reg_args, double_reg_args, stack_args)
+}
+
+const PARAM_REGISTERS: [Register; 6] = [
+    Register::Di,
+    Register::Si,
+    Register::Dx,
+    Register::Cx,
+    Register::R8,
+    Register::R9,
+];
+
 fn gen_function(function: &tacky::Function, symbol_table: &SymbolTable) -> Function {
     let mut body = Vec::new();
 
@@ -253,31 +291,31 @@ fn gen_function(function: &tacky::Function, symbol_table: &SymbolTable) -> Funct
         unreachable!()
     };
 
-    for (i, (param, ty)) in function.params.iter().zip(ty.params.iter()).enumerate() {
-        match i {
-            0..6 => {
-                const REGISTERS: [Register; 6] = [
-                    Register::Di,
-                    Register::Si,
-                    Register::Dx,
-                    Register::Cx,
-                    Register::R8,
-                    Register::R9,
-                ];
-                body.push(Instruction::Mov {
-                    ty: ty.into(),
-                    src: Operand::Reg(REGISTERS[i]),
-                    dst: Operand::Pseudo(param.clone()),
-                });
-            }
-            _ => {
-                body.push(Instruction::Mov {
-                    ty: ty.into(),
-                    src: Operand::Stack((16 + (i - 6) * 8) as i32),
-                    dst: Operand::Pseudo(param.clone()),
-                });
-            }
-        }
+    let (int_reg_args, double_reg_args, stack_args) =
+        classify_parameters(function.params.iter().zip(ty.params.iter()));
+
+    for (i, (param, ty)) in int_reg_args.into_iter().enumerate() {
+        body.push(Instruction::Mov {
+            ty: ty.into(),
+            src: Operand::Reg(PARAM_REGISTERS[i]),
+            dst: Operand::Pseudo(param.clone()),
+        });
+    }
+
+    for (i, (param, ty)) in double_reg_args.into_iter().enumerate() {
+        body.push(Instruction::Mov {
+            ty: ty.into(),
+            src: Operand::Reg(Register::Xmm(i as _)),
+            dst: Operand::Pseudo(param.clone()),
+        });
+    }
+
+    for (i, (param, ty)) in stack_args.into_iter().enumerate() {
+        body.push(Instruction::Mov {
+            ty: ty.into(),
+            src: Operand::Stack((16 + i * 8) as i32),
+            dst: Operand::Pseudo(param.clone()),
+        });
     }
 
     for inst in &function.body {
@@ -503,11 +541,14 @@ fn gen_function(function: &tacky::Function, symbol_table: &SymbolTable) -> Funct
                 body.push(Instruction::Label(label.clone()));
             }
             tacky::Instruction::FunCall { name, args, dst } => {
-                let stack_padding = if args.len() > 6 {
-                    8 * ((args.len() - 6) % 2)
-                } else {
-                    0
+                let semantics::type_check::Attr::Fun { ty, .. } = &symbol_table[name] else {
+                    unreachable!()
                 };
+
+                let (int_reg_args, double_reg_args, stack_args) =
+                    classify_parameters(args.iter().zip(ty.params.iter()));
+
+                let stack_padding = 8 * (stack_args.len() % 2);
 
                 if stack_padding > 0 {
                     body.push(Instruction::Binary {
@@ -518,48 +559,35 @@ fn gen_function(function: &tacky::Function, symbol_table: &SymbolTable) -> Funct
                     });
                 }
 
-                let semantics::type_check::Attr::Fun { ty, .. } = &symbol_table[name] else {
-                    unreachable!()
-                };
+                for (i, (arg, ty)) in int_reg_args.into_iter().enumerate() {
+                    body.push(Instruction::Mov {
+                        ty: ty.into(),
+                        src: arg.into(),
+                        dst: Operand::Reg(PARAM_REGISTERS[i]),
+                    });
+                }
 
-                for (i, (arg, ty)) in args[..std::cmp::min(args.len(), 6)]
-                    .iter()
-                    .zip(ty.params.iter())
-                    .enumerate()
-                {
-                    match i {
-                        0 => body.push(Instruction::Mov {
-                            ty: ty.into(),
-                            src: arg.into(),
-                            dst: Operand::Reg(Register::Di),
-                        }),
-                        1 => body.push(Instruction::Mov {
-                            ty: ty.into(),
-                            src: arg.into(),
-                            dst: Operand::Reg(Register::Si),
-                        }),
-                        2 => body.push(Instruction::Mov {
-                            ty: ty.into(),
-                            src: arg.into(),
-                            dst: Operand::Reg(Register::Dx),
-                        }),
-                        3 => body.push(Instruction::Mov {
-                            ty: ty.into(),
-                            src: arg.into(),
-                            dst: Operand::Reg(Register::Cx),
-                        }),
-                        4 => body.push(Instruction::Mov {
-                            ty: ty.into(),
-                            src: arg.into(),
-                            dst: Operand::Reg(Register::R8),
-                        }),
-                        5 => body.push(Instruction::Mov {
-                            ty: ty.into(),
-                            src: arg.into(),
-                            dst: Operand::Reg(Register::R9),
-                        }),
-                        _ => {
-                            unreachable!();
+                for (i, (arg, ty)) in double_reg_args.into_iter().enumerate() {
+                    body.push(Instruction::Mov {
+                        ty: ty.into(),
+                        src: arg.into(),
+                        dst: Operand::Reg(Register::Xmm(i as _)),
+                    });
+                }
+
+                let stack_len = stack_args.len();
+                for (arg, ty) in stack_args.into_iter().rev() {
+                    match ty {
+                        VarType::Int | VarType::Uint => {
+                            body.push(Instruction::Mov {
+                                ty: AssemblyType::LongWord,
+                                src: arg.into(),
+                                dst: Operand::Reg(Register::Ax),
+                            });
+                            body.push(Instruction::Push(Operand::Reg(Register::Ax)));
+                        }
+                        VarType::Long | VarType::Ulong | VarType::Double => {
+                            body.push(Instruction::Push(arg.into()));
                         }
                     }
                 }
@@ -584,8 +612,7 @@ fn gen_function(function: &tacky::Function, symbol_table: &SymbolTable) -> Funct
                 }
                 body.push(Instruction::Call(name.clone()));
 
-                let bytes_to_remove =
-                    8 * (if args.len() > 6 { args.len() - 6 } else { 0 }) + stack_padding;
+                let bytes_to_remove = 8 * stack_len + stack_padding;
 
                 if bytes_to_remove > 0 {
                     body.push(Instruction::Binary {
@@ -596,11 +623,19 @@ fn gen_function(function: &tacky::Function, symbol_table: &SymbolTable) -> Funct
                     });
                 }
 
-                body.push(Instruction::Mov {
-                    ty: dst.ty(symbol_table).into(),
-                    src: Operand::Reg(Register::Ax),
-                    dst: dst.into(),
-                });
+                if ty.ret == VarType::Double {
+                    body.push(Instruction::Mov {
+                        ty: AssemblyType::Double,
+                        src: Operand::Reg(Register::Xmm(0)),
+                        dst: dst.into(),
+                    });
+                } else {
+                    body.push(Instruction::Mov {
+                        ty: ty.ret.into(),
+                        src: Operand::Reg(Register::Ax),
+                        dst: dst.into(),
+                    });
+                }
             }
             tacky::Instruction::SignExtend { src, dst } => {
                 body.push(Instruction::Movsx {
