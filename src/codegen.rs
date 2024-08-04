@@ -4,7 +4,7 @@ use std::{collections::HashMap, fmt::Display};
 use ecow::EcoString;
 
 use crate::{
-    ast::{self, VarType},
+    ast::{self, Const, VarType},
     semantics::{self, type_check::SymbolTable},
     tacky,
 };
@@ -149,10 +149,17 @@ pub enum BinaryOp {
 }
 
 #[derive(Debug, Clone)]
+pub enum Pseudo {
+    Var(EcoString),
+    // Must be placed in read only section
+    Double(f64),
+}
+
+#[derive(Debug, Clone)]
 pub enum Operand {
     Imm(u64),
     Reg(Register),
-    Pseudo(EcoString),
+    Pseudo(Pseudo),
     Stack(i32),
     Data(EcoString),
 }
@@ -166,8 +173,9 @@ impl Operand {
 impl From<tacky::Val> for Operand {
     fn from(val: tacky::Val) -> Self {
         match val {
+            tacky::Val::Constant(Const::Double(d)) => Operand::Pseudo(Pseudo::Double(d)),
             tacky::Val::Constant(imm) => Operand::Imm(imm.get_ulong()),
-            tacky::Val::Var(var) => Operand::Pseudo(var),
+            tacky::Val::Var(var) => Operand::Pseudo(Pseudo::Var(var)),
         }
     }
 }
@@ -175,8 +183,9 @@ impl From<tacky::Val> for Operand {
 impl<'a> From<&'a tacky::Val> for Operand {
     fn from(val: &'a tacky::Val) -> Self {
         match val {
+            tacky::Val::Constant(Const::Double(d)) => Operand::Pseudo(Pseudo::Double(*d)),
             tacky::Val::Constant(imm) => Operand::Imm(imm.get_ulong()),
-            tacky::Val::Var(var) => Operand::Pseudo(var.clone()),
+            tacky::Val::Var(var) => Operand::Pseudo(Pseudo::Var(var.clone())),
         }
     }
 }
