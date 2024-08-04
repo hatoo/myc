@@ -2,6 +2,7 @@ use ecow::EcoString;
 
 use crate::{
     lexer::{Constant, Suffix, Token},
+    semantics::type_check::StaticInit,
     span::{HasSpan, MayHasSpan, Spanned},
 };
 
@@ -251,6 +252,16 @@ impl VarType {
             Self::Long => true,
             Self::Ulong => false,
             Self::Double => false,
+        }
+    }
+
+    pub fn zero(&self) -> StaticInit {
+        match self {
+            Self::Int => StaticInit::Int(0),
+            Self::Uint => StaticInit::Uint(0),
+            Self::Long => StaticInit::Long(0),
+            Self::Ulong => StaticInit::Ulong(0),
+            Self::Double => StaticInit::Double(0.0),
         }
     }
 }

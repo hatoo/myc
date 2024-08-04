@@ -6,7 +6,7 @@ use crate::{
     ast::{self, Block, VarType},
     semantics::{
         self,
-        type_check::{Attr, StaticInit, SymbolTable},
+        type_check::{Attr, SymbolTable},
     },
     span::Spanned,
 };
@@ -582,13 +582,7 @@ pub fn gen_program(program: &ast::Program, symbol_table: &mut HashMap<EcoString,
                 if let Attr::Static { init, global, ty } = value {
                     let init = match init {
                         semantics::type_check::InitialValue::Initial(i) => *i,
-                        semantics::type_check::InitialValue::Tentative => match ty {
-                            ast::VarType::Int => StaticInit::Int(0),
-                            ast::VarType::Long => StaticInit::Long(0),
-                            ast::VarType::Uint => StaticInit::Uint(0),
-                            ast::VarType::Ulong => StaticInit::Ulong(0),
-                            ast::VarType::Double => StaticInit::Double(0.0),
-                        },
+                        semantics::type_check::InitialValue::Tentative => ty.zero(),
                         semantics::type_check::InitialValue::NoInitializer => return None,
                     };
                     Some(TopLevelItem::StaticVariable(StaticVariable {

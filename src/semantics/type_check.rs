@@ -358,13 +358,7 @@ impl TypeChecker {
                             InitialValue::Initial(StaticInit::Double(val.data.get_double()))
                         }
                     },
-                    None => InitialValue::Initial(match ty {
-                        ast::VarType::Int => StaticInit::Int(0),
-                        ast::VarType::Long => StaticInit::Long(0),
-                        ast::VarType::Uint => StaticInit::Uint(0),
-                        ast::VarType::Ulong => StaticInit::Ulong(0),
-                        ast::VarType::Double => StaticInit::Double(0.0),
-                    }),
+                    None => InitialValue::Initial(ty.zero()),
                     _ => return Err(Error::BadInitializer(ident.clone())),
                 };
                 self.sym_table.insert(
