@@ -239,6 +239,7 @@ pub enum AsmEntry {
 }
 */
 
+#[derive(Debug, Default)]
 pub struct ConstTable {
     counter: usize,
     table: HashMap<(u64, usize), EcoString>,
@@ -260,42 +261,571 @@ impl ConstTable {
     }
 }
 
-pub fn gen_program(program: &tacky::Program, symbol_table: &SymbolTable) -> Program {
-    let mut const_table = ConstTable {
-        counter: 0,
-        table: HashMap::new(),
-    };
+#[derive(Debug)]
+pub struct CodeGen<'a> {
+    const_table: ConstTable,
+    label_counter: usize,
+    symbol_table: &'a SymbolTable,
+}
 
-    let top_levels: Vec<_> = program
-        .top_levels
-        .iter()
-        .map(|item| match item {
-            tacky::TopLevelItem::StaticVariable(tacky::StaticVariable { global, name, init }) => {
-                TopLevel::StaticVariable(StaticVariable {
+impl<'a> CodeGen<'a> {
+    pub fn new(symbol_table: &'a SymbolTable) -> Self {
+        Self {
+            const_table: ConstTable::default(),
+            label_counter: 0,
+            symbol_table,
+        }
+    }
+
+    pub fn gen_program(&mut self, program: &tacky::Program) -> Program {
+        let top_levels: Vec<_> = program
+            .top_levels
+            .iter()
+            .map(|item| match item {
+                tacky::TopLevelItem::StaticVariable(tacky::StaticVariable {
+                    global,
+                    name,
+                    init,
+                }) => TopLevel::StaticVariable(StaticVariable {
                     global: *global,
                     name: name.clone(),
                     init: *init,
-                })
-            }
-            tacky::TopLevelItem::Function(function) => {
-                TopLevel::Function(gen_function(function, symbol_table, &mut const_table))
-            }
-        })
-        .collect();
-
-    Program {
-        top_levels: const_table
-            .table
-            .into_iter()
-            .map(|((value, align), v)| {
-                TopLevel::StaticConstant(StaticConstant {
-                    name: v,
-                    alignment: align,
-                    init: semantics::type_check::StaticInit::Double(f64::from_bits(value)),
-                })
+                }),
+                tacky::TopLevelItem::Function(function) => {
+                    TopLevel::Function(self.gen_function(function))
+                }
             })
-            .chain(top_levels.into_iter())
-            .collect(),
+            .collect();
+
+        Program {
+            top_levels: self
+                .const_table
+                .table
+                .iter()
+                .map(|((value, align), v)| {
+                    TopLevel::StaticConstant(StaticConstant {
+                        name: v.clone(),
+                        alignment: *align,
+                        init: semantics::type_check::StaticInit::Double(f64::from_bits(*value)),
+                    })
+                })
+                .chain(top_levels.into_iter())
+                .collect(),
+        }
+    }
+    fn gen_function(&mut self, function: &tacky::Function) -> Function {
+        let mut body = Vec::new();
+
+        let semantics::type_check::Attr::Fun { ty, .. } = &self.symbol_table[&function.name] else {
+            unreachable!()
+        };
+
+        let (int_reg_args, double_reg_args, stack_args) =
+            classify_parameters(function.params.iter().zip(ty.params.iter()));
+
+        for (i, (param, ty)) in int_reg_args.into_iter().enumerate() {
+            body.push(Instruction::Mov {
+                ty: ty.into(),
+                src: Operand::Reg(PARAM_REGISTERS[i]),
+                dst: Operand::Pseudo(Pseudo::Var(param.clone())),
+            });
+        }
+
+        for (i, (param, ty)) in double_reg_args.into_iter().enumerate() {
+            body.push(Instruction::Mov {
+                ty: ty.into(),
+                src: Operand::Reg(Register::Xmm(i as _)),
+                dst: Operand::Pseudo(Pseudo::Var(param.clone())),
+            });
+        }
+
+        for (i, (param, ty)) in stack_args.into_iter().enumerate() {
+            body.push(Instruction::Mov {
+                ty: ty.into(),
+                src: Operand::Stack((16 + i * 8) as i32),
+                dst: Operand::Pseudo(Pseudo::Var(param.clone())),
+            });
+        }
+
+        for inst in &function.body {
+            match inst {
+                tacky::Instruction::Return(val) => {
+                    if ty.ret == VarType::Double {
+                        body.push(Instruction::Mov {
+                            ty: AssemblyType::Double,
+                            src: val.into(),
+                            dst: Operand::Reg(Register::Xmm(0)),
+                        });
+                    } else {
+                        body.push(Instruction::Mov {
+                            ty: ty.ret.into(),
+                            src: val.into(),
+                            dst: Operand::Reg(Register::Ax),
+                        });
+                        body.push(Instruction::Ret);
+                    }
+                }
+                tacky::Instruction::Unary { op, src, dst } => {
+                    let src_ty = src.ty(&self.symbol_table);
+                    let dst_ty = dst.ty(&self.symbol_table);
+
+                    if src_ty == VarType::Double {
+                        match op {
+                            tacky::UnaryOp::Not => {
+                                body.push(Instruction::Binary {
+                                    op: BinaryOp::Xor,
+                                    ty: AssemblyType::Double,
+                                    lhs: Operand::Reg(Register::Xmm(0)),
+                                    rhs: Operand::Reg(Register::Xmm(0)),
+                                });
+                                body.push(Instruction::Cmp(
+                                    AssemblyType::Double,
+                                    src.into(),
+                                    Operand::Reg(Register::Xmm(0)),
+                                ));
+                                body.push(Instruction::Mov {
+                                    ty: dst_ty.into(),
+                                    src: Operand::Imm(0),
+                                    dst: dst.into(),
+                                });
+                                body.push(Instruction::SetCc(CondCode::E, dst.into()));
+                                continue;
+                            }
+                            tacky::UnaryOp::Negate => {
+                                body.push(Instruction::Mov {
+                                    ty: AssemblyType::Double,
+                                    src: src.into(),
+                                    dst: dst.into(),
+                                });
+                                body.push(Instruction::Binary {
+                                    op: BinaryOp::Xor,
+                                    ty: AssemblyType::Double,
+                                    lhs: Operand::Pseudo(Pseudo::Double {
+                                        value: -0.0,
+                                        alignment: 16,
+                                    }),
+                                    rhs: dst.into(),
+                                });
+                                continue;
+                            }
+                            _ => {}
+                        }
+                    }
+
+                    enum Unary {
+                        Simple(UnaryOp),
+                        Not,
+                    }
+
+                    let op = match op {
+                        tacky::UnaryOp::Negate => Unary::Simple(UnaryOp::Neg),
+                        tacky::UnaryOp::Complement => Unary::Simple(UnaryOp::Not),
+                        tacky::UnaryOp::Not => Unary::Not,
+                    };
+
+                    match op {
+                        Unary::Simple(op) => {
+                            body.push(Instruction::Mov {
+                                ty: src.ty(&self.symbol_table).into(),
+                                src: src.into(),
+                                dst: dst.into(),
+                            });
+                            body.push(Instruction::Unary {
+                                ty: src.ty(&self.symbol_table).into(),
+                                op,
+                                src: dst.into(),
+                            });
+                        }
+                        Unary::Not => {
+                            body.push(Instruction::Cmp(
+                                src.ty(&self.symbol_table).into(),
+                                Operand::Imm(0),
+                                src.into(),
+                            ));
+                            body.push(Instruction::Mov {
+                                ty: dst_ty.into(),
+                                src: Operand::Imm(0),
+                                dst: dst.into(),
+                            });
+                            body.push(Instruction::SetCc(CondCode::E, dst.into()));
+                        }
+                    }
+                }
+                tacky::Instruction::Binary { op, lhs, rhs, dst } => {
+                    enum Binary {
+                        Simple(BinaryOp),
+                        Divide,
+                        Remainder,
+                        Compare(CondCode),
+                    }
+
+                    let ty = lhs.ty(&self.symbol_table);
+
+                    let op = match op {
+                        tacky::BinaryOp::Add => Binary::Simple(BinaryOp::Add),
+                        tacky::BinaryOp::Subtract => Binary::Simple(BinaryOp::Sub),
+                        tacky::BinaryOp::Multiply => Binary::Simple(BinaryOp::Mult),
+                        tacky::BinaryOp::Divide => Binary::Divide,
+                        tacky::BinaryOp::Remainder => Binary::Remainder,
+                        tacky::BinaryOp::Equal => Binary::Compare(CondCode::E),
+                        tacky::BinaryOp::NotEqual => Binary::Compare(CondCode::Ne),
+                        tacky::BinaryOp::LessThan => Binary::Compare(if ty.is_signed() {
+                            CondCode::L
+                        } else {
+                            CondCode::B
+                        }),
+                        tacky::BinaryOp::LessOrEqual => Binary::Compare(if ty.is_signed() {
+                            CondCode::Le
+                        } else {
+                            CondCode::Be
+                        }),
+                        tacky::BinaryOp::GreaterThan => Binary::Compare(if ty.is_signed() {
+                            CondCode::G
+                        } else {
+                            CondCode::A
+                        }),
+                        tacky::BinaryOp::GreaterOrEqual => Binary::Compare(if ty.is_signed() {
+                            CondCode::Ge
+                        } else {
+                            CondCode::Ae
+                        }),
+                    };
+
+                    match op {
+                        Binary::Simple(op) => {
+                            body.push(Instruction::Mov {
+                                ty: lhs.ty(&self.symbol_table).into(),
+                                src: lhs.into(),
+                                dst: dst.into(),
+                            });
+                            body.push(Instruction::Binary {
+                                ty: lhs.ty(&self.symbol_table).into(),
+                                op,
+                                lhs: rhs.into(),
+                                rhs: dst.into(),
+                            });
+                        }
+                        Binary::Divide => {
+                            let ty = lhs.ty(&self.symbol_table);
+                            if ty.is_signed() {
+                                let ty = ty.into();
+                                body.push(Instruction::Mov {
+                                    ty,
+                                    src: lhs.into(),
+                                    dst: Operand::Reg(Register::Ax),
+                                });
+                                body.push(Instruction::Cdq(ty));
+                                body.push(Instruction::Idiv(ty, rhs.into()));
+                                body.push(Instruction::Mov {
+                                    ty,
+                                    src: Operand::Reg(Register::Ax),
+                                    dst: dst.into(),
+                                });
+                            } else {
+                                let ty = ty.into();
+                                body.push(Instruction::Mov {
+                                    ty,
+                                    src: lhs.into(),
+                                    dst: Operand::Reg(Register::Ax),
+                                });
+                                body.push(Instruction::Mov {
+                                    ty,
+                                    src: Operand::Imm(0),
+                                    dst: Operand::Reg(Register::Dx),
+                                });
+                                body.push(Instruction::Div(ty, rhs.into()));
+                                body.push(Instruction::Mov {
+                                    ty,
+                                    src: Operand::Reg(Register::Ax),
+                                    dst: dst.into(),
+                                });
+                            }
+                        }
+                        Binary::Remainder => {
+                            let ty = lhs.ty(&self.symbol_table);
+                            if ty.is_signed() {
+                                let ty = ty.into();
+                                body.push(Instruction::Mov {
+                                    ty,
+                                    src: lhs.into(),
+                                    dst: Operand::Reg(Register::Ax),
+                                });
+                                body.push(Instruction::Cdq(ty));
+                                body.push(Instruction::Idiv(ty, rhs.into()));
+                                body.push(Instruction::Mov {
+                                    ty,
+                                    src: Operand::Reg(Register::Dx),
+                                    dst: dst.into(),
+                                });
+                            } else {
+                                let ty = ty.into();
+                                body.push(Instruction::Mov {
+                                    ty,
+                                    src: lhs.into(),
+                                    dst: Operand::Reg(Register::Ax),
+                                });
+                                body.push(Instruction::Mov {
+                                    ty,
+                                    src: Operand::Imm(0),
+                                    dst: Operand::Reg(Register::Dx),
+                                });
+                                body.push(Instruction::Div(ty, rhs.into()));
+                                body.push(Instruction::Mov {
+                                    ty,
+                                    src: Operand::Reg(Register::Dx),
+                                    dst: dst.into(),
+                                });
+                            }
+                        }
+                        Binary::Compare(cond) => {
+                            body.push(Instruction::Cmp(
+                                lhs.ty(&self.symbol_table).into(),
+                                rhs.into(),
+                                lhs.into(),
+                            ));
+                            body.push(Instruction::Mov {
+                                ty: dst.ty(&self.symbol_table).into(),
+                                src: Operand::Imm(0),
+                                dst: dst.into(),
+                            });
+                            body.push(Instruction::SetCc(cond, dst.into()));
+                        }
+                    }
+                }
+                tacky::Instruction::Copy { src, dst } => {
+                    body.push(Instruction::Mov {
+                        ty: src.ty(&self.symbol_table).into(),
+                        src: src.into(),
+                        dst: dst.into(),
+                    });
+                }
+                tacky::Instruction::Jump(label) => {
+                    body.push(Instruction::Jmp(label.clone()));
+                }
+                tacky::Instruction::JumpIfZero { src, dst } => {
+                    if src.ty(&self.symbol_table) == VarType::Double {
+                        body.push(Instruction::Binary {
+                            op: BinaryOp::Xor,
+                            ty: AssemblyType::Double,
+                            lhs: Operand::Reg(Register::Xmm(0)),
+                            rhs: Operand::Reg(Register::Xmm(0)),
+                        });
+                        body.push(Instruction::Cmp(
+                            AssemblyType::Double,
+                            src.into(),
+                            Operand::Reg(Register::Xmm(0)),
+                        ));
+                        body.push(Instruction::JmpCc(CondCode::E, dst.clone()));
+                    } else {
+                        body.push(Instruction::Cmp(
+                            src.ty(&self.symbol_table).into(),
+                            Operand::Imm(0),
+                            src.into(),
+                        ));
+                        body.push(Instruction::JmpCc(CondCode::E, dst.clone()));
+                    }
+                }
+                tacky::Instruction::JumpIfNotZero { src, dst } => {
+                    if src.ty(&self.symbol_table) == VarType::Double {
+                        body.push(Instruction::Binary {
+                            op: BinaryOp::Xor,
+                            ty: AssemblyType::Double,
+                            lhs: Operand::Reg(Register::Xmm(0)),
+                            rhs: Operand::Reg(Register::Xmm(0)),
+                        });
+                        body.push(Instruction::Cmp(
+                            AssemblyType::Double,
+                            src.into(),
+                            Operand::Reg(Register::Xmm(0)),
+                        ));
+                        body.push(Instruction::JmpCc(CondCode::Ne, dst.clone()));
+                    } else {
+                        body.push(Instruction::Cmp(
+                            src.ty(&self.symbol_table).into(),
+                            Operand::Imm(0),
+                            src.into(),
+                        ));
+                        body.push(Instruction::JmpCc(CondCode::Ne, dst.clone()));
+                    }
+                }
+                tacky::Instruction::Label(label) => {
+                    body.push(Instruction::Label(label.clone()));
+                }
+                tacky::Instruction::FunCall { name, args, dst } => {
+                    let semantics::type_check::Attr::Fun { ty, .. } = &self.symbol_table[name]
+                    else {
+                        unreachable!()
+                    };
+
+                    let (int_reg_args, double_reg_args, stack_args) =
+                        classify_parameters(args.iter().zip(ty.params.iter()));
+
+                    let stack_padding = 8 * (stack_args.len() % 2);
+
+                    if stack_padding > 0 {
+                        body.push(Instruction::Binary {
+                            op: BinaryOp::Sub,
+                            ty: AssemblyType::QuadWord,
+                            lhs: Operand::Imm(stack_padding as _),
+                            rhs: Operand::Reg(Register::SP),
+                        });
+                    }
+
+                    for (i, (arg, ty)) in int_reg_args.into_iter().enumerate() {
+                        body.push(Instruction::Mov {
+                            ty: ty.into(),
+                            src: arg.into(),
+                            dst: Operand::Reg(PARAM_REGISTERS[i]),
+                        });
+                    }
+
+                    for (i, (arg, ty)) in double_reg_args.into_iter().enumerate() {
+                        body.push(Instruction::Mov {
+                            ty: ty.into(),
+                            src: arg.into(),
+                            dst: Operand::Reg(Register::Xmm(i as _)),
+                        });
+                    }
+
+                    let stack_len = stack_args.len();
+                    for (arg, ty) in stack_args.into_iter().rev() {
+                        match ty {
+                            VarType::Int | VarType::Uint => {
+                                body.push(Instruction::Mov {
+                                    ty: AssemblyType::LongWord,
+                                    src: arg.into(),
+                                    dst: Operand::Reg(Register::Ax),
+                                });
+                                body.push(Instruction::Push(Operand::Reg(Register::Ax)));
+                            }
+                            VarType::Long | VarType::Ulong | VarType::Double => {
+                                body.push(Instruction::Push(arg.into()));
+                            }
+                        }
+                    }
+
+                    if args.len() > 6 {
+                        for arg in args[6..].iter().rev() {
+                            match arg.ty(&self.symbol_table) {
+                                ast::VarType::Int | ast::VarType::Uint => {
+                                    body.push(Instruction::Mov {
+                                        ty: AssemblyType::LongWord,
+                                        src: arg.into(),
+                                        dst: Operand::Reg(Register::Ax),
+                                    });
+                                    body.push(Instruction::Push(Operand::Reg(Register::Ax)));
+                                }
+                                ast::VarType::Long | ast::VarType::Ulong => {
+                                    body.push(Instruction::Push(arg.into()));
+                                }
+                                _ => todo!(),
+                            }
+                        }
+                    }
+                    body.push(Instruction::Call(name.clone()));
+
+                    let bytes_to_remove = 8 * stack_len + stack_padding;
+
+                    if bytes_to_remove > 0 {
+                        body.push(Instruction::Binary {
+                            op: BinaryOp::Add,
+                            ty: AssemblyType::QuadWord,
+                            lhs: Operand::Imm(bytes_to_remove as _),
+                            rhs: Operand::Reg(Register::SP),
+                        });
+                    }
+
+                    if ty.ret == VarType::Double {
+                        body.push(Instruction::Mov {
+                            ty: AssemblyType::Double,
+                            src: Operand::Reg(Register::Xmm(0)),
+                            dst: dst.into(),
+                        });
+                    } else {
+                        body.push(Instruction::Mov {
+                            ty: ty.ret.into(),
+                            src: Operand::Reg(Register::Ax),
+                            dst: dst.into(),
+                        });
+                    }
+                }
+                tacky::Instruction::SignExtend { src, dst } => {
+                    body.push(Instruction::Movsx {
+                        src: src.into(),
+                        dst: dst.into(),
+                    });
+                }
+                tacky::Instruction::Truncate { src, dst } => {
+                    body.push(Instruction::Mov {
+                        ty: AssemblyType::LongWord,
+                        src: src.into(),
+                        dst: dst.into(),
+                    });
+                }
+                tacky::Instruction::ZeroExtend { src, dst } => {
+                    body.push(Instruction::MovZeroExtend {
+                        src: src.into(),
+                        dst: dst.into(),
+                    });
+                }
+                tacky::Instruction::DoubleToInt { src, dst } => {
+                    body.push(Instruction::Cvttsd2si {
+                        ty: dst.ty(&self.symbol_table).into(),
+                        src: src.into(),
+                        dst: dst.into(),
+                    });
+                }
+                tacky::Instruction::DoubleToUint { src, dst } => todo!(),
+                tacky::Instruction::IntToDouble { src, dst } => {
+                    body.push(Instruction::Cvtsi2sd {
+                        ty: src.ty(&self.symbol_table).into(),
+                        src: src.into(),
+                        dst: dst.into(),
+                    });
+                }
+                tacky::Instruction::UintToDouble { src, dst } => match src.ty(&self.symbol_table) {
+                    ast::VarType::Uint => {
+                        body.push(Instruction::MovZeroExtend {
+                            src: src.into(),
+                            dst: Operand::Reg(Register::R10),
+                        });
+                        body.push(Instruction::Cvtsi2sd {
+                            ty: AssemblyType::QuadWord,
+                            src: Operand::Reg(Register::R10),
+                            dst: dst.into(),
+                        });
+                    }
+                    ast::VarType::Ulong => {
+                        body.push(Instruction::Cmp(
+                            AssemblyType::QuadWord,
+                            Operand::Imm(0),
+                            src.into(),
+                        ));
+                        // body
+                    }
+                    _ => unimplemented!(),
+                },
+            }
+        }
+
+        let stack_size = pseudo_to_stack(&mut body, &self.symbol_table, &mut self.const_table);
+        let stack_size = (stack_size + 15) / 16 * 16;
+        body.insert(
+            0,
+            Instruction::Binary {
+                op: BinaryOp::Sub,
+                ty: AssemblyType::QuadWord,
+                lhs: Operand::Imm(stack_size as _),
+                rhs: Operand::Reg(Register::SP),
+            },
+        );
+        body = avoid_mov_mem_mem(body);
+
+        Function {
+            global: function.global,
+            name: function.name.clone(),
+            body,
+        }
     }
 }
 
@@ -336,524 +866,6 @@ const PARAM_REGISTERS: [Register; 6] = [
     Register::R8,
     Register::R9,
 ];
-
-fn gen_function(
-    function: &tacky::Function,
-    symbol_table: &SymbolTable,
-    const_table: &mut ConstTable,
-) -> Function {
-    let mut body = Vec::new();
-
-    let semantics::type_check::Attr::Fun { ty, .. } = &symbol_table[&function.name] else {
-        unreachable!()
-    };
-
-    let (int_reg_args, double_reg_args, stack_args) =
-        classify_parameters(function.params.iter().zip(ty.params.iter()));
-
-    for (i, (param, ty)) in int_reg_args.into_iter().enumerate() {
-        body.push(Instruction::Mov {
-            ty: ty.into(),
-            src: Operand::Reg(PARAM_REGISTERS[i]),
-            dst: Operand::Pseudo(Pseudo::Var(param.clone())),
-        });
-    }
-
-    for (i, (param, ty)) in double_reg_args.into_iter().enumerate() {
-        body.push(Instruction::Mov {
-            ty: ty.into(),
-            src: Operand::Reg(Register::Xmm(i as _)),
-            dst: Operand::Pseudo(Pseudo::Var(param.clone())),
-        });
-    }
-
-    for (i, (param, ty)) in stack_args.into_iter().enumerate() {
-        body.push(Instruction::Mov {
-            ty: ty.into(),
-            src: Operand::Stack((16 + i * 8) as i32),
-            dst: Operand::Pseudo(Pseudo::Var(param.clone())),
-        });
-    }
-
-    for inst in &function.body {
-        match inst {
-            tacky::Instruction::Return(val) => {
-                if ty.ret == VarType::Double {
-                    body.push(Instruction::Mov {
-                        ty: AssemblyType::Double,
-                        src: val.into(),
-                        dst: Operand::Reg(Register::Xmm(0)),
-                    });
-                } else {
-                    body.push(Instruction::Mov {
-                        ty: ty.ret.into(),
-                        src: val.into(),
-                        dst: Operand::Reg(Register::Ax),
-                    });
-                    body.push(Instruction::Ret);
-                }
-            }
-            tacky::Instruction::Unary { op, src, dst } => {
-                let src_ty = src.ty(symbol_table);
-                let dst_ty = dst.ty(symbol_table);
-
-                if src_ty == VarType::Double {
-                    match op {
-                        tacky::UnaryOp::Not => {
-                            body.push(Instruction::Binary {
-                                op: BinaryOp::Xor,
-                                ty: AssemblyType::Double,
-                                lhs: Operand::Reg(Register::Xmm(0)),
-                                rhs: Operand::Reg(Register::Xmm(0)),
-                            });
-                            body.push(Instruction::Cmp(
-                                AssemblyType::Double,
-                                src.into(),
-                                Operand::Reg(Register::Xmm(0)),
-                            ));
-                            body.push(Instruction::Mov {
-                                ty: dst_ty.into(),
-                                src: Operand::Imm(0),
-                                dst: dst.into(),
-                            });
-                            body.push(Instruction::SetCc(CondCode::E, dst.into()));
-                            continue;
-                        }
-                        tacky::UnaryOp::Negate => {
-                            body.push(Instruction::Mov {
-                                ty: AssemblyType::Double,
-                                src: src.into(),
-                                dst: dst.into(),
-                            });
-                            body.push(Instruction::Binary {
-                                op: BinaryOp::Xor,
-                                ty: AssemblyType::Double,
-                                lhs: Operand::Pseudo(Pseudo::Double {
-                                    value: -0.0,
-                                    alignment: 16,
-                                }),
-                                rhs: dst.into(),
-                            });
-                            continue;
-                        }
-                        _ => {}
-                    }
-                }
-
-                enum Unary {
-                    Simple(UnaryOp),
-                    Not,
-                }
-
-                let op = match op {
-                    tacky::UnaryOp::Negate => Unary::Simple(UnaryOp::Neg),
-                    tacky::UnaryOp::Complement => Unary::Simple(UnaryOp::Not),
-                    tacky::UnaryOp::Not => Unary::Not,
-                };
-
-                match op {
-                    Unary::Simple(op) => {
-                        body.push(Instruction::Mov {
-                            ty: src.ty(symbol_table).into(),
-                            src: src.into(),
-                            dst: dst.into(),
-                        });
-                        body.push(Instruction::Unary {
-                            ty: src.ty(symbol_table).into(),
-                            op,
-                            src: dst.into(),
-                        });
-                    }
-                    Unary::Not => {
-                        body.push(Instruction::Cmp(
-                            src.ty(symbol_table).into(),
-                            Operand::Imm(0),
-                            src.into(),
-                        ));
-                        body.push(Instruction::Mov {
-                            ty: dst_ty.into(),
-                            src: Operand::Imm(0),
-                            dst: dst.into(),
-                        });
-                        body.push(Instruction::SetCc(CondCode::E, dst.into()));
-                    }
-                }
-            }
-            tacky::Instruction::Binary { op, lhs, rhs, dst } => {
-                enum Binary {
-                    Simple(BinaryOp),
-                    Divide,
-                    Remainder,
-                    Compare(CondCode),
-                }
-
-                let ty = lhs.ty(symbol_table);
-
-                let op = match op {
-                    tacky::BinaryOp::Add => Binary::Simple(BinaryOp::Add),
-                    tacky::BinaryOp::Subtract => Binary::Simple(BinaryOp::Sub),
-                    tacky::BinaryOp::Multiply => Binary::Simple(BinaryOp::Mult),
-                    tacky::BinaryOp::Divide => Binary::Divide,
-                    tacky::BinaryOp::Remainder => Binary::Remainder,
-                    tacky::BinaryOp::Equal => Binary::Compare(CondCode::E),
-                    tacky::BinaryOp::NotEqual => Binary::Compare(CondCode::Ne),
-                    tacky::BinaryOp::LessThan => Binary::Compare(if ty.is_signed() {
-                        CondCode::L
-                    } else {
-                        CondCode::B
-                    }),
-                    tacky::BinaryOp::LessOrEqual => Binary::Compare(if ty.is_signed() {
-                        CondCode::Le
-                    } else {
-                        CondCode::Be
-                    }),
-                    tacky::BinaryOp::GreaterThan => Binary::Compare(if ty.is_signed() {
-                        CondCode::G
-                    } else {
-                        CondCode::A
-                    }),
-                    tacky::BinaryOp::GreaterOrEqual => Binary::Compare(if ty.is_signed() {
-                        CondCode::Ge
-                    } else {
-                        CondCode::Ae
-                    }),
-                };
-
-                match op {
-                    Binary::Simple(op) => {
-                        body.push(Instruction::Mov {
-                            ty: lhs.ty(symbol_table).into(),
-                            src: lhs.into(),
-                            dst: dst.into(),
-                        });
-                        body.push(Instruction::Binary {
-                            ty: lhs.ty(symbol_table).into(),
-                            op,
-                            lhs: rhs.into(),
-                            rhs: dst.into(),
-                        });
-                    }
-                    Binary::Divide => {
-                        let ty = lhs.ty(symbol_table);
-                        if ty.is_signed() {
-                            let ty = ty.into();
-                            body.push(Instruction::Mov {
-                                ty,
-                                src: lhs.into(),
-                                dst: Operand::Reg(Register::Ax),
-                            });
-                            body.push(Instruction::Cdq(ty));
-                            body.push(Instruction::Idiv(ty, rhs.into()));
-                            body.push(Instruction::Mov {
-                                ty,
-                                src: Operand::Reg(Register::Ax),
-                                dst: dst.into(),
-                            });
-                        } else {
-                            let ty = ty.into();
-                            body.push(Instruction::Mov {
-                                ty,
-                                src: lhs.into(),
-                                dst: Operand::Reg(Register::Ax),
-                            });
-                            body.push(Instruction::Mov {
-                                ty,
-                                src: Operand::Imm(0),
-                                dst: Operand::Reg(Register::Dx),
-                            });
-                            body.push(Instruction::Div(ty, rhs.into()));
-                            body.push(Instruction::Mov {
-                                ty,
-                                src: Operand::Reg(Register::Ax),
-                                dst: dst.into(),
-                            });
-                        }
-                    }
-                    Binary::Remainder => {
-                        let ty = lhs.ty(symbol_table);
-                        if ty.is_signed() {
-                            let ty = ty.into();
-                            body.push(Instruction::Mov {
-                                ty,
-                                src: lhs.into(),
-                                dst: Operand::Reg(Register::Ax),
-                            });
-                            body.push(Instruction::Cdq(ty));
-                            body.push(Instruction::Idiv(ty, rhs.into()));
-                            body.push(Instruction::Mov {
-                                ty,
-                                src: Operand::Reg(Register::Dx),
-                                dst: dst.into(),
-                            });
-                        } else {
-                            let ty = ty.into();
-                            body.push(Instruction::Mov {
-                                ty,
-                                src: lhs.into(),
-                                dst: Operand::Reg(Register::Ax),
-                            });
-                            body.push(Instruction::Mov {
-                                ty,
-                                src: Operand::Imm(0),
-                                dst: Operand::Reg(Register::Dx),
-                            });
-                            body.push(Instruction::Div(ty, rhs.into()));
-                            body.push(Instruction::Mov {
-                                ty,
-                                src: Operand::Reg(Register::Dx),
-                                dst: dst.into(),
-                            });
-                        }
-                    }
-                    Binary::Compare(cond) => {
-                        body.push(Instruction::Cmp(
-                            lhs.ty(symbol_table).into(),
-                            rhs.into(),
-                            lhs.into(),
-                        ));
-                        body.push(Instruction::Mov {
-                            ty: dst.ty(symbol_table).into(),
-                            src: Operand::Imm(0),
-                            dst: dst.into(),
-                        });
-                        body.push(Instruction::SetCc(cond, dst.into()));
-                    }
-                }
-            }
-            tacky::Instruction::Copy { src, dst } => {
-                body.push(Instruction::Mov {
-                    ty: src.ty(symbol_table).into(),
-                    src: src.into(),
-                    dst: dst.into(),
-                });
-            }
-            tacky::Instruction::Jump(label) => {
-                body.push(Instruction::Jmp(label.clone()));
-            }
-            tacky::Instruction::JumpIfZero { src, dst } => {
-                if src.ty(symbol_table) == VarType::Double {
-                    body.push(Instruction::Binary {
-                        op: BinaryOp::Xor,
-                        ty: AssemblyType::Double,
-                        lhs: Operand::Reg(Register::Xmm(0)),
-                        rhs: Operand::Reg(Register::Xmm(0)),
-                    });
-                    body.push(Instruction::Cmp(
-                        AssemblyType::Double,
-                        src.into(),
-                        Operand::Reg(Register::Xmm(0)),
-                    ));
-                    body.push(Instruction::JmpCc(CondCode::E, dst.clone()));
-                } else {
-                    body.push(Instruction::Cmp(
-                        src.ty(symbol_table).into(),
-                        Operand::Imm(0),
-                        src.into(),
-                    ));
-                    body.push(Instruction::JmpCc(CondCode::E, dst.clone()));
-                }
-            }
-            tacky::Instruction::JumpIfNotZero { src, dst } => {
-                if src.ty(symbol_table) == VarType::Double {
-                    body.push(Instruction::Binary {
-                        op: BinaryOp::Xor,
-                        ty: AssemblyType::Double,
-                        lhs: Operand::Reg(Register::Xmm(0)),
-                        rhs: Operand::Reg(Register::Xmm(0)),
-                    });
-                    body.push(Instruction::Cmp(
-                        AssemblyType::Double,
-                        src.into(),
-                        Operand::Reg(Register::Xmm(0)),
-                    ));
-                    body.push(Instruction::JmpCc(CondCode::Ne, dst.clone()));
-                } else {
-                    body.push(Instruction::Cmp(
-                        src.ty(symbol_table).into(),
-                        Operand::Imm(0),
-                        src.into(),
-                    ));
-                    body.push(Instruction::JmpCc(CondCode::Ne, dst.clone()));
-                }
-            }
-            tacky::Instruction::Label(label) => {
-                body.push(Instruction::Label(label.clone()));
-            }
-            tacky::Instruction::FunCall { name, args, dst } => {
-                let semantics::type_check::Attr::Fun { ty, .. } = &symbol_table[name] else {
-                    unreachable!()
-                };
-
-                let (int_reg_args, double_reg_args, stack_args) =
-                    classify_parameters(args.iter().zip(ty.params.iter()));
-
-                let stack_padding = 8 * (stack_args.len() % 2);
-
-                if stack_padding > 0 {
-                    body.push(Instruction::Binary {
-                        op: BinaryOp::Sub,
-                        ty: AssemblyType::QuadWord,
-                        lhs: Operand::Imm(stack_padding as _),
-                        rhs: Operand::Reg(Register::SP),
-                    });
-                }
-
-                for (i, (arg, ty)) in int_reg_args.into_iter().enumerate() {
-                    body.push(Instruction::Mov {
-                        ty: ty.into(),
-                        src: arg.into(),
-                        dst: Operand::Reg(PARAM_REGISTERS[i]),
-                    });
-                }
-
-                for (i, (arg, ty)) in double_reg_args.into_iter().enumerate() {
-                    body.push(Instruction::Mov {
-                        ty: ty.into(),
-                        src: arg.into(),
-                        dst: Operand::Reg(Register::Xmm(i as _)),
-                    });
-                }
-
-                let stack_len = stack_args.len();
-                for (arg, ty) in stack_args.into_iter().rev() {
-                    match ty {
-                        VarType::Int | VarType::Uint => {
-                            body.push(Instruction::Mov {
-                                ty: AssemblyType::LongWord,
-                                src: arg.into(),
-                                dst: Operand::Reg(Register::Ax),
-                            });
-                            body.push(Instruction::Push(Operand::Reg(Register::Ax)));
-                        }
-                        VarType::Long | VarType::Ulong | VarType::Double => {
-                            body.push(Instruction::Push(arg.into()));
-                        }
-                    }
-                }
-
-                if args.len() > 6 {
-                    for arg in args[6..].iter().rev() {
-                        match arg.ty(symbol_table) {
-                            ast::VarType::Int | ast::VarType::Uint => {
-                                body.push(Instruction::Mov {
-                                    ty: AssemblyType::LongWord,
-                                    src: arg.into(),
-                                    dst: Operand::Reg(Register::Ax),
-                                });
-                                body.push(Instruction::Push(Operand::Reg(Register::Ax)));
-                            }
-                            ast::VarType::Long | ast::VarType::Ulong => {
-                                body.push(Instruction::Push(arg.into()));
-                            }
-                            _ => todo!(),
-                        }
-                    }
-                }
-                body.push(Instruction::Call(name.clone()));
-
-                let bytes_to_remove = 8 * stack_len + stack_padding;
-
-                if bytes_to_remove > 0 {
-                    body.push(Instruction::Binary {
-                        op: BinaryOp::Add,
-                        ty: AssemblyType::QuadWord,
-                        lhs: Operand::Imm(bytes_to_remove as _),
-                        rhs: Operand::Reg(Register::SP),
-                    });
-                }
-
-                if ty.ret == VarType::Double {
-                    body.push(Instruction::Mov {
-                        ty: AssemblyType::Double,
-                        src: Operand::Reg(Register::Xmm(0)),
-                        dst: dst.into(),
-                    });
-                } else {
-                    body.push(Instruction::Mov {
-                        ty: ty.ret.into(),
-                        src: Operand::Reg(Register::Ax),
-                        dst: dst.into(),
-                    });
-                }
-            }
-            tacky::Instruction::SignExtend { src, dst } => {
-                body.push(Instruction::Movsx {
-                    src: src.into(),
-                    dst: dst.into(),
-                });
-            }
-            tacky::Instruction::Truncate { src, dst } => {
-                body.push(Instruction::Mov {
-                    ty: AssemblyType::LongWord,
-                    src: src.into(),
-                    dst: dst.into(),
-                });
-            }
-            tacky::Instruction::ZeroExtend { src, dst } => {
-                body.push(Instruction::MovZeroExtend {
-                    src: src.into(),
-                    dst: dst.into(),
-                });
-            }
-            tacky::Instruction::DoubleToInt { src, dst } => {
-                body.push(Instruction::Cvttsd2si {
-                    ty: dst.ty(symbol_table).into(),
-                    src: src.into(),
-                    dst: dst.into(),
-                });
-            }
-            tacky::Instruction::DoubleToUint { src, dst } => todo!(),
-            tacky::Instruction::IntToDouble { src, dst } => {
-                body.push(Instruction::Cvtsi2sd {
-                    ty: src.ty(symbol_table).into(),
-                    src: src.into(),
-                    dst: dst.into(),
-                });
-            }
-            tacky::Instruction::UintToDouble { src, dst } => match src.ty(symbol_table) {
-                ast::VarType::Uint => {
-                    body.push(Instruction::MovZeroExtend {
-                        src: src.into(),
-                        dst: Operand::Reg(Register::R10),
-                    });
-                    body.push(Instruction::Cvtsi2sd {
-                        ty: AssemblyType::QuadWord,
-                        src: Operand::Reg(Register::R10),
-                        dst: dst.into(),
-                    });
-                }
-                ast::VarType::Ulong => {
-                    body.push(Instruction::Cmp(
-                        AssemblyType::QuadWord,
-                        Operand::Imm(0),
-                        src.into(),
-                    ));
-                    // body
-                }
-                _ => unimplemented!(),
-            },
-        }
-    }
-
-    let stack_size = pseudo_to_stack(&mut body, symbol_table, const_table);
-    let stack_size = (stack_size + 15) / 16 * 16;
-    body.insert(
-        0,
-        Instruction::Binary {
-            op: BinaryOp::Sub,
-            ty: AssemblyType::QuadWord,
-            lhs: Operand::Imm(stack_size as _),
-            rhs: Operand::Reg(Register::SP),
-        },
-    );
-    body = avoid_mov_mem_mem(body);
-
-    Function {
-        global: function.global,
-        name: function.name.clone(),
-        body,
-    }
-}
 
 fn pseudo_to_stack(
     insts: &mut [Instruction],
