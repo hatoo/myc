@@ -1771,7 +1771,7 @@ impl<'a> Display for RegisterSize<'a> {
                 Register::R8 => write!(f, "%r8b")?,
                 Register::R9 => write!(f, "%r9b")?,
                 Register::SP => write!(f, "%spl")?,
-                Register::Xmm(_) => todo!(),
+                Register::Xmm(_) => panic!("XMM registers are only used for QWord"),
             },
             RegisterSize::Dword(reg) => match reg {
                 Register::Ax => write!(f, "%eax")?,
@@ -1784,7 +1784,7 @@ impl<'a> Display for RegisterSize<'a> {
                 Register::R8 => write!(f, "%r8d")?,
                 Register::R9 => write!(f, "%r9d")?,
                 Register::SP => write!(f, "%esp")?,
-                Register::Xmm(_) => todo!(),
+                Register::Xmm(_) => panic!("XMM registers are only used for QWord"),
             },
             RegisterSize::Qword(reg) => match reg {
                 Register::Ax => write!(f, "%rax")?,
