@@ -944,6 +944,7 @@ impl<'a> CodeGen<'a> {
     }
 }
 
+#[allow(clippy::type_complexity)]
 fn classify_parameters<'a, T>(
     iter: impl Iterator<Item = (T, &'a VarType)>,
 ) -> (Vec<(T, VarType)>, Vec<(T, VarType)>, Vec<(T, VarType)>) {
