@@ -121,7 +121,13 @@ pub fn pretty_print<E: Display>(
         )
         .unwrap()
     )?;
-    for _ in 1..col {
+    let width: usize = src[last_line_start..]
+        .iter()
+        .copied()
+        .take(col - 1)
+        .map(|c| if c == b'\t' { 8 } else { 1 })
+        .sum();
+    for _ in 0..width {
         write!(f, " ")?;
     }
     for _ in span {
