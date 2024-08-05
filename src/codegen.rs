@@ -1086,22 +1086,19 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
                 src: src @ (Operand::Stack(_) | Operand::Data(_)),
                 dst: dst @ (Operand::Stack(_) | Operand::Data(_)),
             } => {
-                new_insts.push(Instruction::Mov {
-                    ty,
-                    src,
-                    dst: Operand::Reg(if ty == AssemblyType::Double {
-                        Register::Xmm(14)
-                    } else {
-                        Register::R10
-                    }),
+                let tmp_reg = Operand::Reg(if ty == AssemblyType::Double {
+                    Register::Xmm(14)
+                } else {
+                    Register::R10
                 });
                 new_insts.push(Instruction::Mov {
                     ty,
-                    src: Operand::Reg(if ty == AssemblyType::Double {
-                        Register::Xmm(14)
-                    } else {
-                        Register::R10
-                    }),
+                    src,
+                    dst: tmp_reg.clone(),
+                });
+                new_insts.push(Instruction::Mov {
+                    ty,
+                    src: tmp_reg.clone(),
                     dst,
                 });
             }
@@ -1530,7 +1527,7 @@ impl Display for StaticConstant {
             semantics::type_check::StaticInit::Ulong(x) => writeln!(f, ".quad {}", x)?,
             semantics::type_check::StaticInit::Double(d) => {
                 writeln!(f, ".quad {}", d.to_bits())?;
-                writeln!(f, "# {}", d)?;
+                writeln!(f, "# {:+e}", d)?;
             }
         }
         Ok(())
@@ -1586,7 +1583,7 @@ impl Display for StaticVariable {
                 writeln!(f, ".align {}", self.init.alignment())?;
                 writeln!(f, "{}:", self.name)?;
                 writeln!(f, ".quad {}", d.to_bits())?;
-                writeln!(f, "# {}", d)?;
+                writeln!(f, "# {:+e}", d)?;
             }
         }
         Ok(())
