@@ -435,7 +435,7 @@ impl<'a> InstructionGenerator<'a> {
                         ast::BinaryOp::LessOrEqual => BinaryOp::LessOrEqual,
                         ast::BinaryOp::GreaterThan => BinaryOp::GreaterThan,
                         ast::BinaryOp::GreaterOrEqual => BinaryOp::GreaterOrEqual,
-                        _ => unreachable!(),
+                        ast::BinaryOp::And | ast::BinaryOp::Or => unreachable!(),
                     },
                     lhs,
                     rhs,
