@@ -316,7 +316,7 @@ impl<'a> CodeGen<'a> {
                         init: semantics::type_check::StaticInit::Double(f64::from_bits(*value)),
                     })
                 })
-                .chain(top_levels.into_iter())
+                .chain(top_levels)
                 .collect(),
         }
     }
@@ -374,8 +374,8 @@ impl<'a> CodeGen<'a> {
                     }
                 }
                 tacky::Instruction::Unary { op, src, dst } => {
-                    let src_ty = src.ty(&self.symbol_table);
-                    let dst_ty = dst.ty(&self.symbol_table);
+                    let src_ty = src.ty(self.symbol_table);
+                    let dst_ty = dst.ty(self.symbol_table);
 
                     match (src_ty, op) {
                         (VarType::Double, tacky::UnaryOp::Not) => {
@@ -428,19 +428,19 @@ impl<'a> CodeGen<'a> {
                             match op {
                                 Unary::Simple(op) => {
                                     body.push(Instruction::Mov {
-                                        ty: src.ty(&self.symbol_table).into(),
+                                        ty: src.ty(self.symbol_table).into(),
                                         src: src.into(),
                                         dst: dst.into(),
                                     });
                                     body.push(Instruction::Unary {
-                                        ty: src.ty(&self.symbol_table).into(),
+                                        ty: src.ty(self.symbol_table).into(),
                                         op,
                                         src: dst.into(),
                                     });
                                 }
                                 Unary::Not => {
                                     body.push(Instruction::Cmp(
-                                        src.ty(&self.symbol_table).into(),
+                                        src.ty(self.symbol_table).into(),
                                         Operand::Imm(0),
                                         src.into(),
                                     ));
@@ -463,7 +463,7 @@ impl<'a> CodeGen<'a> {
                         Compare(CondCode),
                     }
 
-                    let ty = lhs.ty(&self.symbol_table);
+                    let ty = lhs.ty(self.symbol_table);
 
                     let op = match op {
                         tacky::BinaryOp::Add => Binary::Simple(BinaryOp::Add),
@@ -498,19 +498,19 @@ impl<'a> CodeGen<'a> {
                     match op {
                         Binary::Simple(op) => {
                             body.push(Instruction::Mov {
-                                ty: lhs.ty(&self.symbol_table).into(),
+                                ty: lhs.ty(self.symbol_table).into(),
                                 src: lhs.into(),
                                 dst: dst.into(),
                             });
                             body.push(Instruction::Binary {
-                                ty: lhs.ty(&self.symbol_table).into(),
+                                ty: lhs.ty(self.symbol_table).into(),
                                 op,
                                 lhs: rhs.into(),
                                 rhs: dst.into(),
                             });
                         }
                         Binary::Divide => {
-                            let ty = lhs.ty(&self.symbol_table);
+                            let ty = lhs.ty(self.symbol_table);
                             if ty == VarType::Double {
                                 let (lhs, rhs) = (rhs, lhs);
                                 body.push(Instruction::Mov {
@@ -564,7 +564,7 @@ impl<'a> CodeGen<'a> {
                             }
                         }
                         Binary::Remainder => {
-                            let ty = lhs.ty(&self.symbol_table);
+                            let ty = lhs.ty(self.symbol_table);
                             if ty.is_signed() {
                                 let ty = ty.into();
                                 body.push(Instruction::Mov {
@@ -601,12 +601,12 @@ impl<'a> CodeGen<'a> {
                         }
                         Binary::Compare(cond) => {
                             body.push(Instruction::Cmp(
-                                lhs.ty(&self.symbol_table).into(),
+                                lhs.ty(self.symbol_table).into(),
                                 rhs.into(),
                                 lhs.into(),
                             ));
                             body.push(Instruction::Mov {
-                                ty: dst.ty(&self.symbol_table).into(),
+                                ty: dst.ty(self.symbol_table).into(),
                                 src: Operand::Imm(0),
                                 dst: dst.into(),
                             });
@@ -616,7 +616,7 @@ impl<'a> CodeGen<'a> {
                 }
                 tacky::Instruction::Copy { src, dst } => {
                     body.push(Instruction::Mov {
-                        ty: src.ty(&self.symbol_table).into(),
+                        ty: src.ty(self.symbol_table).into(),
                         src: src.into(),
                         dst: dst.into(),
                     });
@@ -625,7 +625,7 @@ impl<'a> CodeGen<'a> {
                     body.push(Instruction::Jmp(label.clone()));
                 }
                 tacky::Instruction::JumpIfZero { src, dst } => {
-                    if src.ty(&self.symbol_table) == VarType::Double {
+                    if src.ty(self.symbol_table) == VarType::Double {
                         body.push(Instruction::Binary {
                             op: BinaryOp::Xor,
                             ty: AssemblyType::Double,
@@ -640,7 +640,7 @@ impl<'a> CodeGen<'a> {
                         body.push(Instruction::JmpCc(CondCode::E, dst.clone()));
                     } else {
                         body.push(Instruction::Cmp(
-                            src.ty(&self.symbol_table).into(),
+                            src.ty(self.symbol_table).into(),
                             Operand::Imm(0),
                             src.into(),
                         ));
@@ -648,7 +648,7 @@ impl<'a> CodeGen<'a> {
                     }
                 }
                 tacky::Instruction::JumpIfNotZero { src, dst } => {
-                    if src.ty(&self.symbol_table) == VarType::Double {
+                    if src.ty(self.symbol_table) == VarType::Double {
                         body.push(Instruction::Binary {
                             op: BinaryOp::Xor,
                             ty: AssemblyType::Double,
@@ -663,7 +663,7 @@ impl<'a> CodeGen<'a> {
                         body.push(Instruction::JmpCc(CondCode::Ne, dst.clone()));
                     } else {
                         body.push(Instruction::Cmp(
-                            src.ty(&self.symbol_table).into(),
+                            src.ty(self.symbol_table).into(),
                             Operand::Imm(0),
                             src.into(),
                         ));
@@ -774,13 +774,13 @@ impl<'a> CodeGen<'a> {
                 }
                 tacky::Instruction::DoubleToInt { src, dst } => {
                     body.push(Instruction::Cvttsd2si {
-                        ty: dst.ty(&self.symbol_table).into(),
+                        ty: dst.ty(self.symbol_table).into(),
                         src: src.into(),
                         dst: dst.into(),
                     });
                 }
                 tacky::Instruction::DoubleToUint { src, dst } => {
-                    if dst.ty(&self.symbol_table) == ast::VarType::Uint {
+                    if dst.ty(self.symbol_table) == ast::VarType::Uint {
                         body.push(Instruction::Cvttsd2si {
                             ty: AssemblyType::QuadWord,
                             src: src.into(),
@@ -845,12 +845,12 @@ impl<'a> CodeGen<'a> {
                 }
                 tacky::Instruction::IntToDouble { src, dst } => {
                     body.push(Instruction::Cvtsi2sd {
-                        ty: src.ty(&self.symbol_table).into(),
+                        ty: src.ty(self.symbol_table).into(),
                         src: src.into(),
                         dst: dst.into(),
                     });
                 }
-                tacky::Instruction::UintToDouble { src, dst } => match src.ty(&self.symbol_table) {
+                tacky::Instruction::UintToDouble { src, dst } => match src.ty(self.symbol_table) {
                     ast::VarType::Uint => {
                         body.push(Instruction::MovZeroExtend {
                             src: src.into(),
@@ -923,7 +923,7 @@ impl<'a> CodeGen<'a> {
             }
         }
 
-        let stack_size = pseudo_to_stack(&mut body, &self.symbol_table, &mut self.const_table);
+        let stack_size = pseudo_to_stack(&mut body, self.symbol_table, &mut self.const_table);
         let stack_size = (stack_size + 15) / 16 * 16;
         body.insert(
             0,
