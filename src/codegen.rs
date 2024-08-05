@@ -1528,7 +1528,10 @@ impl Display for StaticConstant {
             semantics::type_check::StaticInit::Uint(x) => writeln!(f, ".long {}", x)?,
             semantics::type_check::StaticInit::Long(x) => writeln!(f, ".quad {}", x)?,
             semantics::type_check::StaticInit::Ulong(x) => writeln!(f, ".quad {}", x)?,
-            semantics::type_check::StaticInit::Double(d) => writeln!(f, ".quad {}", d.to_bits())?,
+            semantics::type_check::StaticInit::Double(d) => {
+                writeln!(f, ".quad {}", d.to_bits())?;
+                writeln!(f, "# {}", d)?;
+            }
         }
         Ok(())
     }
@@ -1583,6 +1586,7 @@ impl Display for StaticVariable {
                 writeln!(f, ".align {}", self.init.alignment())?;
                 writeln!(f, "{}:", self.name)?;
                 writeln!(f, ".quad {}", d.to_bits())?;
+                writeln!(f, "# {}", d)?;
             }
         }
         Ok(())
