@@ -377,78 +377,18 @@ impl<'a> CodeGen<'a> {
                     let src_ty = src.ty(&self.symbol_table);
                     let dst_ty = dst.ty(&self.symbol_table);
 
-                    if src_ty == VarType::Double {
-                        match op {
-                            tacky::UnaryOp::Not => {
-                                body.push(Instruction::Binary {
-                                    op: BinaryOp::Xor,
-                                    ty: AssemblyType::Double,
-                                    lhs: Operand::Reg(Register::Xmm(0)),
-                                    rhs: Operand::Reg(Register::Xmm(0)),
-                                });
-                                body.push(Instruction::Cmp(
-                                    AssemblyType::Double,
-                                    src.into(),
-                                    Operand::Reg(Register::Xmm(0)),
-                                ));
-                                body.push(Instruction::Mov {
-                                    ty: dst_ty.into(),
-                                    src: Operand::Imm(0),
-                                    dst: dst.into(),
-                                });
-                                body.push(Instruction::SetCc(CondCode::E, dst.into()));
-                                continue;
-                            }
-                            tacky::UnaryOp::Negate => {
-                                body.push(Instruction::Mov {
-                                    ty: AssemblyType::Double,
-                                    src: src.into(),
-                                    dst: dst.into(),
-                                });
-                                body.push(Instruction::Binary {
-                                    op: BinaryOp::Xor,
-                                    ty: AssemblyType::Double,
-                                    lhs: Operand::Pseudo(Pseudo::Double {
-                                        value: -0.0,
-                                        alignment: 16,
-                                    }),
-                                    rhs: dst.into(),
-                                });
-                                continue;
-                            }
-                            _ => {}
-                        }
-                    }
-
-                    enum Unary {
-                        Simple(UnaryOp),
-                        Not,
-                    }
-
-                    let op = match op {
-                        tacky::UnaryOp::Negate => Unary::Simple(UnaryOp::Neg),
-                        tacky::UnaryOp::Complement => Unary::Simple(UnaryOp::Not),
-                        tacky::UnaryOp::Not => Unary::Not,
-                    };
-
-                    match op {
-                        Unary::Simple(op) => {
-                            body.push(Instruction::Mov {
-                                ty: src.ty(&self.symbol_table).into(),
-                                src: src.into(),
-                                dst: dst.into(),
+                    match (src_ty, op) {
+                        (VarType::Double, tacky::UnaryOp::Not) => {
+                            body.push(Instruction::Binary {
+                                op: BinaryOp::Xor,
+                                ty: AssemblyType::Double,
+                                lhs: Operand::Reg(Register::Xmm(0)),
+                                rhs: Operand::Reg(Register::Xmm(0)),
                             });
-                            body.push(Instruction::Unary {
-                                ty: src.ty(&self.symbol_table).into(),
-                                op,
-                                src: dst.into(),
-                            });
-                        }
-                        Unary::Not => {
                             body.push(Instruction::Cmp(
-                                src.ty(&self.symbol_table).into(),
-                                Operand::Imm(0),
+                                AssemblyType::Double,
                                 src.into(),
+                                Operand::Reg(Register::Xmm(0)),
                             ));
                             body.push(Instruction::Mov {
                                 ty: dst_ty.into(),
@@ -456,6 +396,62 @@ impl<'a> CodeGen<'a> {
                                 dst: dst.into(),
                             });
                             body.push(Instruction::SetCc(CondCode::E, dst.into()));
+                        }
+                        (VarType::Double, tacky::UnaryOp::Negate) => {
+                            body.push(Instruction::Mov {
+                                ty: AssemblyType::Double,
+                                src: src.into(),
+                                dst: dst.into(),
+                            });
+                            body.push(Instruction::Binary {
+                                op: BinaryOp::Xor,
+                                ty: AssemblyType::Double,
+                                lhs: Operand::Pseudo(Pseudo::Double {
+                                    value: -0.0,
+                                    alignment: 16,
+                                }),
+                                rhs: dst.into(),
+                            });
+                        }
+                        _ => {
+                            enum Unary {
+                                Simple(UnaryOp),
+                                Not,
+                            }
+
+                            let op = match op {
+                                tacky::UnaryOp::Negate => Unary::Simple(UnaryOp::Neg),
+                                tacky::UnaryOp::Complement => Unary::Simple(UnaryOp::Not),
+                                tacky::UnaryOp::Not => Unary::Not,
+                            };
+
+                            match op {
+                                Unary::Simple(op) => {
+                                    body.push(Instruction::Mov {
+                                        ty: src.ty(&self.symbol_table).into(),
+                                        src: src.into(),
+                                        dst: dst.into(),
+                                    });
+                                    body.push(Instruction::Unary {
+                                        ty: src.ty(&self.symbol_table).into(),
+                                        op,
+                                        src: dst.into(),
+                                    });
+                                }
+                                Unary::Not => {
+                                    body.push(Instruction::Cmp(
+                                        src.ty(&self.symbol_table).into(),
+                                        Operand::Imm(0),
+                                        src.into(),
+                                    ));
+                                    body.push(Instruction::Mov {
+                                        ty: dst_ty.into(),
+                                        src: Operand::Imm(0),
+                                        dst: dst.into(),
+                                    });
+                                    body.push(Instruction::SetCc(CondCode::E, dst.into()));
+                                }
+                            }
                         }
                     }
                 }
