@@ -289,8 +289,8 @@ impl VarType {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FunType {
-    pub params: Vec<VarType>,
-    pub ret: VarType,
+    pub params: Vec<Ty>,
+    pub ret: Box<Ty>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -414,6 +414,10 @@ pub enum Error {
     BadTypeSpecifier(std::ops::Range<usize>),
     #[error("Unexpected specifier")]
     UnexpectedSpecifier(Spanned<Token>),
+    #[error("Function Pointer in parameter is not supported")]
+    FunPtrInParam(std::ops::Range<usize>),
+    #[error("Can't apply additional type derivation to a function type")]
+    ComplexFunType(std::ops::Range<usize>),
 }
 
 impl MayHasSpan for Error {
@@ -507,6 +511,50 @@ enum Declarator {
 struct ParamInfo {
     ty: Ty,
     decl: Declarator,
+}
+
+fn process_declarator(
+    decl: Declarator,
+    base_type: Ty,
+) -> Result<(Spanned<EcoString>, Ty, Vec<EcoString>), Error> {
+    match decl {
+        Declarator::Ident(name) => Ok((name, base_type, Vec::new())),
+        Declarator::PointerDeclarator(d) => {
+            let derived_type = Ty::Var(VarType::Pointer(Box::new(base_type)));
+            process_declarator(*d, derived_type)
+        }
+        Declarator::FunDeclarator { params, decl } => {
+            let mut param_names = Vec::new();
+            let mut param_types = Vec::new();
+
+            for ParamInfo { ty, decl } in params {
+                let (name, ty, _) = process_declarator(decl, ty)?;
+
+                /*
+                if matches!(ty, Ty::Fun(_)) {
+                    return Err(Error::FunPtrInParam(name.span.clone()));
+                }
+                */
+
+                param_types.push(ty);
+                param_names.push(name.data.clone());
+            }
+            match *decl {
+                Declarator::Ident(name) => {
+                    let derived_type = Ty::Fun(FunType {
+                        params: param_types,
+                        ret: Box::new(base_type),
+                    });
+
+                    Ok((name, derived_type, param_names))
+                }
+                Declarator::PointerDeclarator(decl) => {
+                    let (name, ty, _) = process_declarator(*decl, base_type)?;
+                    Ok((name, Ty::Var(VarType::Pointer(Box::new(ty))), param_names))
+                }
+            }
+        }
+    }
 }
 
 impl<'a> Parser<'a> {
@@ -823,15 +871,17 @@ impl<'a> Parser<'a> {
 
     fn parse_simple_declarator(&mut self) -> Result<Declarator, Error> {
         match self.peek() {
-            Some(
-                s @ Spanned {
-                    data: Token::Ident(ident),
-                    ..
-                },
-            ) => {
-                let ident = s.clone().map(|_| ident.clone());
+            Some(Spanned {
+                data: Token::Ident(ident),
+                span,
+            }) => {
+                let ident = ident.clone();
+                let decl = Declarator::Ident(Spanned {
+                    data: ident,
+                    span: span.clone(),
+                });
                 self.advance();
-                Ok(Declarator::Ident(ident))
+                Ok(decl)
             }
             Some(Spanned {
                 data: Token::OpenParen,
@@ -975,24 +1025,6 @@ impl<'a> Parser<'a> {
         }
 
         solve_type_specifier(&ty)
-    }
-
-    fn parse_param_list(&mut self) -> Result<Vec<(VarType, Spanned<EcoString>)>, Error> {
-        if self.expect(Token::Void).is_ok() {
-            return Ok(Vec::new());
-        }
-
-        let mut params = Vec::new();
-        loop {
-            let param_type = self.expect_param_type()?;
-            let ident = self.expect_ident()?;
-            params.push((param_type, ident));
-            if self.expect(Token::Comma).is_err() {
-                break;
-            }
-        }
-
-        Ok(params)
     }
 
     fn parse_fun_decl(&mut self) -> Result<FunDecl, Error> {
