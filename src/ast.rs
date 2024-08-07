@@ -561,9 +561,7 @@ fn process_declarator(
                     });
                     Ok((name, derived_type, param_names))
                 }
-                Declarator::FunDeclarator { .. } => {
-                    return Err(Error::NotVarType(decl.span.clone()));
-                }
+                Declarator::FunDeclarator { .. } => Err(Error::NotVarType(decl.span.clone())),
             }
         }
     }
@@ -857,7 +855,7 @@ impl<'a> Parser<'a> {
             Ok(Spanned {
                 data: Declarator::FunDeclarator {
                     params,
-                    decl: decl.map(|d| Box::new(d)),
+                    decl: decl.map(Box::new),
                 },
                 span,
             })
