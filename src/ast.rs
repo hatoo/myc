@@ -289,8 +289,8 @@ impl VarType {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FunType {
-    pub params: Vec<Ty>,
-    pub ret: Box<Ty>,
+    pub params: Vec<VarType>,
+    pub ret: VarType,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -414,10 +414,6 @@ pub enum Error {
     BadTypeSpecifier(std::ops::Range<usize>),
     #[error("Unexpected specifier")]
     UnexpectedSpecifier(Spanned<Token>),
-    #[error("Function Pointer in parameter is not supported")]
-    FunPtrInParam(std::ops::Range<usize>),
-    #[error("Can't apply additional type derivation to a function type")]
-    ComplexFunType(std::ops::Range<usize>),
 }
 
 impl MayHasSpan for Error {
@@ -500,7 +496,7 @@ fn solve_type_specifier(ty: &[Spanned<TypeSpecifier>]) -> Result<VarType, Error>
 }
 
 enum Declarator {
-    Ident(Spanned<EcoString>),
+    Ident(EcoString),
     PointerDeclarator(Box<Declarator>),
     FunDeclarator {
         params: Vec<ParamInfo>,
@@ -509,18 +505,18 @@ enum Declarator {
 }
 
 struct ParamInfo {
-    ty: Ty,
+    ty: VarType,
     decl: Declarator,
 }
 
 fn process_declarator(
     decl: Declarator,
-    base_type: Ty,
-) -> Result<(Spanned<EcoString>, Ty, Vec<EcoString>), Error> {
+    base_type: VarType,
+) -> Result<(EcoString, Ty, Vec<EcoString>), Error> {
     match decl {
-        Declarator::Ident(name) => Ok((name, base_type, Vec::new())),
+        Declarator::Ident(name) => Ok((name, Ty::Var(base_type), Vec::new())),
         Declarator::PointerDeclarator(d) => {
-            let derived_type = Ty::Var(VarType::Pointer(Box::new(base_type)));
+            let derived_type = VarType::Pointer(Box::new(Ty::Var(base_type)));
             process_declarator(*d, derived_type)
         }
         Declarator::FunDeclarator { params, decl } => {
@@ -530,27 +526,33 @@ fn process_declarator(
             for ParamInfo { ty, decl } in params {
                 let (name, ty, _) = process_declarator(decl, ty)?;
 
-                /*
-                if matches!(ty, Ty::Fun(_)) {
-                    return Err(Error::FunPtrInParam(name.span.clone()));
+                match ty {
+                    Ty::Fun(_) => panic!("Function type in param"),
+                    Ty::Var(var_ty) => {
+                        param_types.push(var_ty);
+                    }
                 }
-                */
-
-                param_types.push(ty);
-                param_names.push(name.data.clone());
+                param_names.push(name);
             }
             match *decl {
                 Declarator::Ident(name) => {
                     let derived_type = Ty::Fun(FunType {
                         params: param_types,
-                        ret: Box::new(base_type),
+                        ret: base_type,
                     });
 
                     Ok((name, derived_type, param_names))
                 }
                 Declarator::PointerDeclarator(decl) => {
                     let (name, ty, _) = process_declarator(*decl, base_type)?;
-                    Ok((name, Ty::Var(VarType::Pointer(Box::new(ty))), param_names))
+                    let derived_type = Ty::Fun(FunType {
+                        params: param_types,
+                        ret: VarType::Pointer(Box::new(ty)),
+                    });
+                    Ok((name, derived_type, param_names))
+                }
+                Declarator::FunDeclarator { .. } => {
+                    panic!("Function returns function")
                 }
             }
         }
@@ -861,25 +863,19 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_param(&mut self) -> Result<ParamInfo, Error> {
-        let (ty, _) = self.parse_specifiers()?;
+        let ty = self.parse_type_specifiers()?;
         let decl = self.parse_declarator()?;
-        Ok(ParamInfo {
-            ty: Ty::Var(ty),
-            decl,
-        })
+        Ok(ParamInfo { ty, decl })
     }
 
     fn parse_simple_declarator(&mut self) -> Result<Declarator, Error> {
         match self.peek() {
             Some(Spanned {
                 data: Token::Ident(ident),
-                span,
+                ..
             }) => {
                 let ident = ident.clone();
-                let decl = Declarator::Ident(Spanned {
-                    data: ident,
-                    span: span.clone(),
-                });
+                let decl = Declarator::Ident(ident);
                 self.advance();
                 Ok(decl)
             }
@@ -894,6 +890,53 @@ impl<'a> Parser<'a> {
             }
             Some(s) => Err(Error::Unexpected(s.clone(), ExpectedToken::Declarator)),
             _ => Err(Error::UnexpectedEof),
+        }
+    }
+
+    fn parse_type_specifiers(&mut self) -> Result<VarType, Error> {
+        let mut ty = Vec::new();
+        let start = if let Some(spanned) = self.peek() {
+            spanned.span.start
+        } else {
+            return Err(Error::UnexpectedEof);
+        };
+
+        let mut end = start;
+
+        while let Some(s) = self.peek() {
+            match &s.data {
+                Token::Int => {
+                    ty.push(s.clone().map(|_| TypeSpecifier::Int));
+                    end = s.span.end;
+                    self.advance();
+                }
+                Token::Long => {
+                    ty.push(s.clone().map(|_| TypeSpecifier::Long));
+                    end = s.span.end;
+                    self.advance();
+                }
+                Token::Signed => {
+                    ty.push(s.clone().map(|_| TypeSpecifier::Signed));
+                    end = s.span.end;
+                    self.advance();
+                }
+                Token::Unsigned => {
+                    ty.push(s.clone().map(|_| TypeSpecifier::Unsigned));
+                    end = s.span.end;
+                    self.advance();
+                }
+                Token::Double => {
+                    ty.push(s.clone().map(|_| TypeSpecifier::Double));
+                    end = s.span.end;
+                    self.advance();
+                }
+                _ => break,
+            }
+        }
+
+        match ty.len() {
+            0 => Err(Error::NoTypeSpecifier(start..end)),
+            _ => Ok(solve_type_specifier(&ty)?),
         }
     }
 
