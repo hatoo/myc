@@ -414,6 +414,8 @@ pub enum Error {
     BadTypeSpecifier(std::ops::Range<usize>),
     #[error("Unexpected specifier")]
     UnexpectedSpecifier(Spanned<Token>),
+    #[error("Function type isn't allowed")]
+    NotVarType(std::ops::Range<usize>),
 }
 
 impl MayHasSpan for Error {
@@ -428,6 +430,7 @@ impl MayHasSpan for Error {
             Error::NoTypeSpecifier(span) => Some(span.clone()),
             Error::BadTypeSpecifier(span) => Some(span.clone()),
             Error::UnexpectedSpecifier(spanned) => Some(spanned.span.clone()),
+            Error::NotVarType(span) => Some(span.clone()),
         }
     }
 }
@@ -530,7 +533,7 @@ fn process_declarator(
                 let (name, ty, _) = process_declarator(decl, ty)?;
 
                 match ty {
-                    Ty::Fun(_) => panic!("Function type in param"),
+                    Ty::Fun(_) => return Err(Error::NotVarType(name.span.clone())),
                     Ty::Var(var_ty) => {
                         param_types.push(var_ty);
                     }
@@ -555,7 +558,7 @@ fn process_declarator(
                     Ok((name, derived_type, param_names))
                 }
                 Declarator::FunDeclarator { .. } => {
-                    panic!("Function returns function")
+                    return Err(Error::NotVarType(decl.span.clone()));
                 }
             }
         }
