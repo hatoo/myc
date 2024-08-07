@@ -149,13 +149,14 @@ impl Const {
         }
     }
 
-    pub fn get_static_init(&self, ty: VarType) -> StaticInit {
+    pub fn get_static_init(&self, ty: &VarType) -> StaticInit {
         match ty {
             VarType::Int => StaticInit::Int(self.get_int()),
             VarType::Uint => StaticInit::Uint(self.get_uint()),
             VarType::Long => StaticInit::Long(self.get_long()),
             VarType::Ulong => StaticInit::Ulong(self.get_ulong()),
             VarType::Double => StaticInit::Double(self.get_double()),
+            _ => todo!(),
         }
     }
 }
@@ -198,22 +199,23 @@ pub enum Expression {
 }
 
 impl Expression {
-    pub fn ty(&self) -> VarType {
+    pub fn ty(&self) -> &VarType {
         match self {
-            Self::Var(_, ty) => *ty,
-            Self::Cast { target, .. } => *target,
+            Self::Var(_, ty) => ty,
+            Self::Cast { target, .. } => target,
             Self::Constant(Spanned { data, .. }) => match data {
-                Const::Int(_) => VarType::Int,
-                Const::Long(_) => VarType::Long,
-                Const::Uint(_) => VarType::Uint,
-                Const::Ulong(_) => VarType::Ulong,
-                Const::Double(_) => VarType::Double,
+                Const::Int(_) => &VarType::Int,
+                Const::Long(_) => &VarType::Long,
+                Const::Uint(_) => &VarType::Uint,
+                Const::Ulong(_) => &VarType::Ulong,
+                Const::Double(_) => &VarType::Double,
             },
-            Self::Unary { ty, .. } => *ty,
-            Self::Binary { ty, .. } => *ty,
+            Self::Unary { ty, .. } => ty,
+            Self::Binary { ty, .. } => ty,
             Self::Assignment { lhs, .. } => lhs.ty(),
             Self::Conditional { then_branch, .. } => then_branch.ty(),
-            Self::FunctionCall { ty, .. } => *ty,
+            Self::FunctionCall { ty, .. } => ty,
+            _ => todo!(),
         }
     }
 }
@@ -233,6 +235,7 @@ impl HasSpan for Expression {
             } => condition.span().start..else_branch.span().end,
             Self::FunctionCall { name, .. } => name.span.clone(),
             Self::Cast { exp, .. } => exp.span(),
+            _ => todo!(),
         }
     }
 }
@@ -283,6 +286,7 @@ impl VarType {
             Self::Long => StaticInit::Long(0),
             Self::Ulong => StaticInit::Ulong(0),
             Self::Double => StaticInit::Double(0.0),
+            _ => todo!(),
         }
     }
 }

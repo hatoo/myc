@@ -39,6 +39,7 @@ impl<'a> From<&'a ast::VarType> for AssemblyType {
             ast::VarType::Ulong => AssemblyType::QuadWord,
             ast::VarType::Long => AssemblyType::QuadWord,
             ast::VarType::Double => AssemblyType::Double,
+            _ => todo!(),
         }
     }
 }
@@ -51,6 +52,7 @@ impl From<ast::VarType> for AssemblyType {
             ast::VarType::Ulong => AssemblyType::QuadWord,
             ast::VarType::Long => AssemblyType::QuadWord,
             ast::VarType::Double => AssemblyType::Double,
+            _ => todo!(),
         }
     }
 }
@@ -366,7 +368,7 @@ impl<'a> CodeGen<'a> {
                         body.push(Instruction::Ret);
                     } else {
                         body.push(Instruction::Mov {
-                            ty: ty.ret.into(),
+                            ty: ty.ret.clone().into(),
                             src: val.into(),
                             dst: Operand::Reg(Register::Ax),
                         });
@@ -723,6 +725,7 @@ impl<'a> CodeGen<'a> {
                             VarType::Long | VarType::Ulong | VarType::Double => {
                                 body.push(Instruction::Push(arg.into()));
                             }
+                            _ => todo!(),
                         }
                     }
 
@@ -747,7 +750,7 @@ impl<'a> CodeGen<'a> {
                         });
                     } else {
                         body.push(Instruction::Mov {
-                            ty: ty.ret.into(),
+                            ty: ty.ret.clone().into(),
                             src: Operand::Reg(Register::Ax),
                             dst: dst.into(),
                         });
@@ -956,16 +959,16 @@ fn classify_parameters<'a, T>(
         match ty {
             VarType::Double => {
                 if double_reg_args.len() < 8 {
-                    double_reg_args.push((param, *ty));
+                    double_reg_args.push((param, ty.clone()));
                 } else {
-                    stack_args.push((param, *ty));
+                    stack_args.push((param, ty.clone()));
                 }
             }
             _ => {
                 if int_reg_args.len() < 6 {
-                    int_reg_args.push((param, *ty));
+                    int_reg_args.push((param, ty.clone()));
                 } else {
-                    stack_args.push((param, *ty));
+                    stack_args.push((param, ty.clone()));
                 }
             }
         }

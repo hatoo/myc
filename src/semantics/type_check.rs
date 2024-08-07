@@ -30,11 +30,11 @@ pub enum Attr {
 }
 
 impl Attr {
-    pub fn ty(&self) -> ast::VarType {
+    pub fn ty(&self) -> &ast::VarType {
         match self {
-            Attr::Fun { ty, .. } => ty.ret,
-            Attr::Static { ty, .. } => *ty,
-            Attr::Local(ty) => *ty,
+            Attr::Fun { ty, .. } => &ty.ret,
+            Attr::Static { ty, .. } => ty,
+            Attr::Local(ty) => ty,
         }
     }
 }
@@ -129,11 +129,11 @@ fn common_type(ty0: ast::VarType, ty1: ast::VarType) -> ast::VarType {
     }
 }
 
-fn convert_to(exp: &mut ast::Expression, ty: ast::VarType) {
+fn convert_to(exp: &mut ast::Expression, ty: &ast::VarType) {
     if exp.ty() != ty {
         *exp = ast::Expression::Cast {
             exp: Box::new(exp.clone()),
-            target: ty,
+            target: ty.clone(),
         };
     }
 }
@@ -197,9 +197,10 @@ impl TypeChecker {
 
         if let Some(body) = body {
             for (param, ty) in params.iter().zip(ty.params.iter()) {
-                self.sym_table.insert(param.data.clone(), Attr::Local(*ty));
+                self.sym_table
+                    .insert(param.data.clone(), Attr::Local(ty.clone()));
             }
-            self.check_block_local(body, ty.ret)?;
+            self.check_block_local(body, &ty.ret)?;
         }
 
         Ok(())
@@ -208,7 +209,7 @@ impl TypeChecker {
     fn check_block_local(
         &mut self,
         block: &mut crate::ast::Block,
-        ret_type: VarType,
+        ret_type: &VarType,
     ) -> Result<(), Error> {
         for block_item in &mut block.0 {
             match block_item {
@@ -241,7 +242,7 @@ impl TypeChecker {
 
         let mut init = match init {
             Some(Expression::Constant(Spanned { data: c, .. })) => {
-                InitialValue::Initial(c.get_static_init(*ty))
+                InitialValue::Initial(c.get_static_init(ty))
             }
             Some(_) => return Err(Error::BadInitializer(ident.clone())),
             None => {
@@ -296,7 +297,7 @@ impl TypeChecker {
             Attr::Static {
                 init,
                 global,
-                ty: *ty,
+                ty: ty.clone(),
             },
         );
         Ok(())
@@ -330,7 +331,7 @@ impl TypeChecker {
                         v.insert(Attr::Static {
                             init: InitialValue::NoInitializer,
                             global: true,
-                            ty: *ty,
+                            ty: ty.clone(),
                         });
                     }
                 }
@@ -338,7 +339,7 @@ impl TypeChecker {
             Some(crate::ast::StorageClass::Static) => {
                 let init = match init {
                     Some(Expression::Constant(val)) => {
-                        InitialValue::Initial(val.data.get_static_init(*ty))
+                        InitialValue::Initial(val.data.get_static_init(ty))
                     }
                     None => InitialValue::Initial(ty.zero()),
                     _ => return Err(Error::BadInitializer(ident.clone())),
@@ -348,15 +349,16 @@ impl TypeChecker {
                     Attr::Static {
                         init,
                         global: false,
-                        ty: *ty,
+                        ty: ty.clone(),
                     },
                 );
             }
             _ => {
-                self.sym_table.insert(ident.data.clone(), Attr::Local(*ty));
+                self.sym_table
+                    .insert(ident.data.clone(), Attr::Local(ty.clone()));
                 if let Some(exp) = init {
                     self.check_expression(exp)?;
-                    convert_to(exp, *ty);
+                    convert_to(exp, ty);
                 }
             }
         }
@@ -372,12 +374,12 @@ impl TypeChecker {
             crate::ast::Expression::Var(name, ty) => match self.sym_table.get(&name.data) {
                 Some(Attr::Fun { .. }) => Err(Error::IncompatibleTypes(name.span.clone())),
                 Some(Attr::Static { ty: target, .. }) | Some(Attr::Local(target)) => {
-                    *ty = *target;
-                    Ok(*target)
+                    *ty = target.clone();
+                    Ok(target.clone())
                 }
                 None => Err(Error::IncompatibleTypes(name.span.clone())),
             },
-            crate::ast::Expression::Constant(_) => Ok(exp.ty()),
+            crate::ast::Expression::Constant(_) => Ok(exp.ty().clone()),
             crate::ast::Expression::Unary { op, exp, ty } => {
                 match op.data {
                     ast::UnaryOp::Not => {
@@ -394,7 +396,7 @@ impl TypeChecker {
                         *ty = self.check_expression(exp)?;
                     }
                 }
-                Ok(*ty)
+                Ok(ty.clone())
             }
             crate::ast::Expression::Binary { op, lhs, rhs, ty } => {
                 let tyl = self.check_expression(lhs)?;
@@ -406,8 +408,8 @@ impl TypeChecker {
                     }
                     _ => {
                         let cty = common_type(tyl, tyr);
-                        convert_to(lhs, cty);
-                        convert_to(rhs, cty);
+                        convert_to(lhs, &cty);
+                        convert_to(rhs, &cty);
 
                         match op {
                             ast::BinaryOp::Add
@@ -429,12 +431,12 @@ impl TypeChecker {
                     }
                 }
 
-                Ok(*ty)
+                Ok(ty.clone())
             }
             crate::ast::Expression::Assignment { lhs, rhs } => {
                 let tyl = self.check_expression(lhs)?;
                 self.check_expression(rhs)?;
-                convert_to(rhs, tyl);
+                convert_to(rhs, &tyl);
                 Ok(tyl)
             }
             crate::ast::Expression::Conditional {
@@ -448,8 +450,8 @@ impl TypeChecker {
 
                 let cty = common_type(tyl, tyr);
 
-                convert_to(then_branch, cty);
-                convert_to(else_branch, cty);
+                convert_to(then_branch, &cty);
+                convert_to(else_branch, &cty);
 
                 Ok(cty)
             }
@@ -462,29 +464,30 @@ impl TypeChecker {
                     if ty.params.len() != args.len() {
                         return Err(Error::IncompatibleTypes(name.span.clone()));
                     }
-                    let ret = ty.ret;
+                    let ret = ty.ret.clone();
 
                     for (arg, ty) in args.iter_mut().zip(ty.params.clone().into_iter()) {
                         self.check_expression(arg)?;
-                        convert_to(arg, ty);
+                        convert_to(arg, &ty);
                     }
-                    *fty = ret;
-                    Ok(ret)
+                    *fty = ret.clone();
+                    Ok(ret.clone())
                 } else {
                     Err(Error::IncompatibleTypes(name.span.clone()))
                 }
             }
             crate::ast::Expression::Cast { target, exp } => {
                 self.check_expression(exp)?;
-                Ok(*target)
+                Ok(target.clone())
             }
+            _ => todo!(),
         }
     }
 
     fn check_statement(
         &mut self,
         stmt: &mut crate::ast::Statement,
-        ret_type: ast::VarType,
+        ret_type: &ast::VarType,
     ) -> Result<(), Error> {
         match stmt {
             crate::ast::Statement::Return(exp) => {

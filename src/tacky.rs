@@ -138,7 +138,7 @@ impl Val {
                 ast::Const::Ulong(_) => ast::VarType::Ulong,
                 ast::Const::Double(_) => ast::VarType::Double,
             },
-            Val::Var(var) => symbol_table[var].ty(),
+            Val::Var(var) => symbol_table[var].ty().clone(),
         }
     }
 }
@@ -341,7 +341,7 @@ impl<'a> InstructionGenerator<'a> {
                 ty,
             } => {
                 let src = self.add_expression(exp);
-                let dst = self.make_tmp_local(*ty);
+                let dst = self.make_tmp_local(ty.clone());
                 self.instructions.push(Instruction::Unary {
                     op: match op {
                         ast::UnaryOp::Negate => UnaryOp::Negate,
@@ -360,7 +360,7 @@ impl<'a> InstructionGenerator<'a> {
                 ty,
             } => {
                 let lhs = self.add_expression(lhs);
-                let dst = self.make_tmp_local(*ty);
+                let dst = self.make_tmp_local(ty.clone());
                 let and_false = self.new_label("and_false");
                 self.instructions.push(Instruction::JumpIfZero {
                     src: lhs.clone(),
@@ -393,7 +393,7 @@ impl<'a> InstructionGenerator<'a> {
                 ty,
             } => {
                 let lhs = self.add_expression(lhs);
-                let dst = self.make_tmp_local(*ty);
+                let dst = self.make_tmp_local(ty.clone());
                 let or_true = self.new_label("or_true");
                 self.instructions.push(Instruction::JumpIfNotZero {
                     src: lhs.clone(),
@@ -421,7 +421,7 @@ impl<'a> InstructionGenerator<'a> {
             ast::Expression::Binary { op, lhs, rhs, ty } => {
                 let lhs = self.add_expression(lhs);
                 let rhs = self.add_expression(rhs);
-                let dst = self.make_tmp_local(*ty);
+                let dst = self.make_tmp_local(ty.clone());
                 self.instructions.push(Instruction::Binary {
                     op: match op {
                         ast::BinaryOp::Add => BinaryOp::Add,
@@ -461,7 +461,7 @@ impl<'a> InstructionGenerator<'a> {
                 then_branch,
                 else_branch,
             } => {
-                let dst = self.make_tmp_local(then_branch.ty());
+                let dst = self.make_tmp_local(then_branch.ty().clone());
                 let else_label = self.new_label("cond_else");
                 let end_label = self.new_label("cond_end");
                 let cond = self.add_expression(condition);
@@ -485,7 +485,7 @@ impl<'a> InstructionGenerator<'a> {
                 dst
             }
             ast::Expression::FunctionCall { name, args, ty } => {
-                let dst = self.make_tmp_local(*ty);
+                let dst = self.make_tmp_local(ty.clone());
                 let args = args
                     .iter()
                     .map(|arg| self.add_expression(arg))
@@ -499,10 +499,10 @@ impl<'a> InstructionGenerator<'a> {
             }
             ast::Expression::Cast { target, exp } => {
                 let val = self.add_expression(exp);
-                match (exp.ty(), *target) {
+                match (exp.ty(), target) {
                     (from, to) if from == to => val,
                     (ast::VarType::Double, to @ (ast::VarType::Int | ast::VarType::Long)) => {
-                        let dst = self.make_tmp_local(to);
+                        let dst = self.make_tmp_local(to.clone());
                         self.instructions.push(Instruction::DoubleToInt {
                             src: val,
                             dst: dst.clone(),
@@ -510,7 +510,7 @@ impl<'a> InstructionGenerator<'a> {
                         dst
                     }
                     (ast::VarType::Double, to @ (ast::VarType::Uint | ast::VarType::Ulong)) => {
-                        let dst = self.make_tmp_local(to);
+                        let dst = self.make_tmp_local(to.clone());
                         self.instructions.push(Instruction::DoubleToUint {
                             src: val,
                             dst: dst.clone(),
@@ -534,7 +534,7 @@ impl<'a> InstructionGenerator<'a> {
                         dst
                     }
                     (from, to) if from.size() == to.size() => {
-                        let dst = self.make_tmp_local(to);
+                        let dst = self.make_tmp_local(to.clone());
                         self.instructions.push(Instruction::Copy {
                             src: val,
                             dst: dst.clone(),
@@ -542,7 +542,7 @@ impl<'a> InstructionGenerator<'a> {
                         dst
                     }
                     (from, to) if from.size() > to.size() => {
-                        let dst = self.make_tmp_local(to);
+                        let dst = self.make_tmp_local(to.clone());
                         self.instructions.push(Instruction::Truncate {
                             src: val,
                             dst: dst.clone(),
@@ -550,7 +550,7 @@ impl<'a> InstructionGenerator<'a> {
                         dst
                     }
                     (from, to) if from.is_signed() => {
-                        let dst = self.make_tmp_local(to);
+                        let dst = self.make_tmp_local(to.clone());
                         self.instructions.push(Instruction::SignExtend {
                             src: val,
                             dst: dst.clone(),
@@ -558,7 +558,7 @@ impl<'a> InstructionGenerator<'a> {
                         dst
                     }
                     (_, to) => {
-                        let dst = self.make_tmp_local(to);
+                        let dst = self.make_tmp_local(to.clone());
                         self.instructions.push(Instruction::ZeroExtend {
                             src: val,
                             dst: dst.clone(),
@@ -568,6 +568,7 @@ impl<'a> InstructionGenerator<'a> {
                 }
             }
             ast::Expression::Constant(c) => Val::Constant(c.data),
+            _ => todo!(),
         }
     }
 }

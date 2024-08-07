@@ -327,6 +327,7 @@ impl VarResolver {
                 self.resolve_expression(exp)?;
                 Ok(())
             }
+            _ => todo!(),
         }
     }
 }
