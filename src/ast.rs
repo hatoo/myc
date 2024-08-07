@@ -586,6 +586,7 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /*
     fn expect_ident(&mut self) -> Result<Spanned<EcoString>, Error> {
         if let Some(spanned) = self.tokens.get(self.index) {
             if let Token::Ident(t) = &spanned.data {
@@ -601,6 +602,7 @@ impl<'a> Parser<'a> {
             Err(Error::UnexpectedEof)
         }
     }
+    */
 
     fn expect_eof(&mut self) -> Result<(), Error> {
         if let Some(spanned) = self.tokens.get(self.index) {
