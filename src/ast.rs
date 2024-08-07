@@ -921,53 +921,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_type_specifiers(&mut self) -> Result<VarType, Error> {
-        let mut ty = Vec::new();
-        let start = if let Some(spanned) = self.peek() {
-            spanned.span.start
-        } else {
-            return Err(Error::UnexpectedEof);
-        };
-
-        let mut end = start;
-
-        while let Some(s) = self.peek() {
-            match &s.data {
-                Token::Int => {
-                    ty.push(s.clone().map(|_| TypeSpecifier::Int));
-                    end = s.span.end;
-                    self.advance();
-                }
-                Token::Long => {
-                    ty.push(s.clone().map(|_| TypeSpecifier::Long));
-                    end = s.span.end;
-                    self.advance();
-                }
-                Token::Signed => {
-                    ty.push(s.clone().map(|_| TypeSpecifier::Signed));
-                    end = s.span.end;
-                    self.advance();
-                }
-                Token::Unsigned => {
-                    ty.push(s.clone().map(|_| TypeSpecifier::Unsigned));
-                    end = s.span.end;
-                    self.advance();
-                }
-                Token::Double => {
-                    ty.push(s.clone().map(|_| TypeSpecifier::Double));
-                    end = s.span.end;
-                    self.advance();
-                }
-                _ => break,
-            }
-        }
-
-        match ty.len() {
-            0 => Err(Error::NoTypeSpecifier(start..end)),
-            _ => Ok(solve_type_specifier(&ty)?),
-        }
-    }
-
     fn parse_specifiers(&mut self) -> Result<(VarType, Option<StorageClass>), Error> {
         let mut ty = Vec::new();
         let mut storage_class = None;
@@ -1039,7 +992,7 @@ impl<'a> Parser<'a> {
 
         let ty = match ty {
             Ty::Var(ty) => ty,
-            Ty::Fun(_) => todo!(),
+            Ty::Fun(_) => return Err(Error::NotVarType(ident.span.clone())),
         };
 
         if self.expect(Token::Equal).is_ok() {
@@ -1062,7 +1015,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn expect_param_type(&mut self) -> Result<VarType, Error> {
+    fn parse_type_specifiers(&mut self) -> Result<VarType, Error> {
         let mut ty = Vec::new();
         loop {
             if let Some(s) = self.peek() {
@@ -1198,10 +1151,20 @@ impl<'a> Parser<'a> {
                         ty: VarType::Int,
                     })
                 }
+                Token::Ampersands => {
+                    self.advance();
+                    let exp = self.parse_factor()?;
+                    Ok(Expression::AddrOf(Box::new(exp)))
+                }
+                Token::Asterisk => {
+                    self.advance();
+                    let exp = self.parse_factor()?;
+                    Ok(Expression::Dereference(Box::new(exp)))
+                }
                 Token::OpenParen => {
                     self.advance();
                     let index = self.index;
-                    if let Ok(ty) = self.expect_param_type() {
+                    if let Ok(ty) = self.parse_cast_target() {
                         if self.expect(Token::CloseParen).is_ok() {
                             let exp = self.parse_factor()?;
                             return Ok(Expression::Cast {
@@ -1257,6 +1220,59 @@ impl<'a> Parser<'a> {
             }
         } else {
             Err(Error::UnexpectedEof)
+        }
+    }
+
+    fn parse_abstract_declarator(&mut self) -> Result<Spanned<Declarator>, Error> {
+        if let Ok(Spanned { span: aspan, .. }) = self.expect(Token::Asterisk) {
+            let aspan = aspan.clone();
+            let index = self.index;
+            if let Ok(Spanned { data, span }) = self.parse_abstract_declarator() {
+                Ok(Spanned {
+                    data: Declarator::PointerDeclarator(Spanned {
+                        data: Box::new(data),
+                        span: span.clone(),
+                    }),
+                    span: aspan.start..span.end,
+                })
+            } else {
+                self.index = index;
+                Ok(Spanned {
+                    data: Declarator::PointerDeclarator(Spanned {
+                        data: Box::new(Declarator::Ident("".into())),
+                        span: aspan.clone(),
+                    }),
+                    span: aspan.clone(),
+                })
+            }
+        } else {
+            self.parse_direct_abstract_declarator()
+        }
+    }
+
+    fn parse_direct_abstract_declarator(&mut self) -> Result<Spanned<Declarator>, Error> {
+        self.expect(Token::OpenParen)?;
+        let decl = self.parse_abstract_declarator()?;
+        self.expect(Token::CloseParen)?;
+
+        Ok(decl)
+    }
+
+    fn parse_cast_target(&mut self) -> Result<VarType, Error> {
+        let base_type = self.parse_type_specifiers()?;
+        let start = self.index;
+        if let Ok(decl) = self.parse_abstract_declarator() {
+            let span = decl.span.clone();
+
+            let (_, ty, _) = process_declarator(decl, base_type)?;
+
+            match ty {
+                Ty::Var(ty) => Ok(ty),
+                Ty::Fun(_) => Err(Error::NotVarType(span)),
+            }
+        } else {
+            self.index = start;
+            Ok(base_type)
         }
     }
 
