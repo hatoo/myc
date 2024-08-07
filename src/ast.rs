@@ -193,6 +193,8 @@ pub enum Expression {
         args: Vec<Expression>,
         ty: VarType,
     },
+    Dereference(Box<Expression>),
+    AddrOf(Box<Expression>),
 }
 
 impl Expression {
@@ -235,13 +237,20 @@ impl HasSpan for Expression {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Ty {
+    Var(VarType),
+    Fun(FunType),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VarType {
     Int,
     Long,
     Uint,
     Ulong,
     Double,
+    Pointer(Box<Ty>),
 }
 
 impl VarType {
@@ -252,6 +261,7 @@ impl VarType {
             Self::Long => 8,
             Self::Ulong => 8,
             Self::Double => 8,
+            Self::Pointer(_) => 8,
         }
     }
 
@@ -262,6 +272,7 @@ impl VarType {
             Self::Long => true,
             Self::Ulong => false,
             Self::Double => false,
+            Self::Pointer(_) => false,
         }
     }
 
@@ -372,6 +383,7 @@ pub enum ExpectedToken {
     Constant,
     Eof,
     Specifier,
+    Declarator,
 }
 
 enum TypeSpecifier {
@@ -481,6 +493,20 @@ fn solve_type_specifier(ty: &[Spanned<TypeSpecifier>]) -> Result<VarType, Error>
     } else {
         Ok(VarType::Int)
     }
+}
+
+enum Declarator {
+    Ident(Spanned<EcoString>),
+    PointerDeclarator(Box<Declarator>),
+    FunDeclarator {
+        params: Vec<ParamInfo>,
+        decl: Box<Declarator>,
+    },
+}
+
+struct ParamInfo {
+    ty: Ty,
+    decl: Declarator,
 }
 
 impl<'a> Parser<'a> {
@@ -741,6 +767,83 @@ impl<'a> Parser<'a> {
                 Ok(Statement::Expression(exp))
             }
             None => Err(Error::UnexpectedEof),
+        }
+    }
+
+    fn parse_declarator(&mut self) -> Result<Declarator, Error> {
+        if self.expect(Token::Asterisk).is_ok() {
+            Ok(Declarator::PointerDeclarator(Box::new(
+                self.parse_declarator()?,
+            )))
+        } else {
+            self.parse_direct_declarator()
+        }
+    }
+
+    fn parse_direct_declarator(&mut self) -> Result<Declarator, Error> {
+        let decl = self.parse_simple_declarator()?;
+        let index = self.index;
+
+        if let Ok(params) = self.parse_param_list() {
+            Ok(Declarator::FunDeclarator {
+                params,
+                decl: Box::new(decl),
+            })
+        } else {
+            self.index = index;
+            Ok(decl)
+        }
+    }
+
+    fn parse_param_list(&mut self) -> Result<Vec<ParamInfo>, Error> {
+        let mut params = Vec::new();
+        self.expect(Token::OpenParen)?;
+        loop {
+            if self.expect(Token::Void).is_ok() {
+                self.expect(Token::CloseParen)?;
+                break;
+            }
+            params.push(self.parse_param()?);
+            if self.expect(Token::Comma).is_err() {
+                self.expect(Token::CloseParen)?;
+                break;
+            }
+        }
+        Ok(params)
+    }
+
+    fn parse_param(&mut self) -> Result<ParamInfo, Error> {
+        let (ty, _) = self.parse_specifiers()?;
+        let decl = self.parse_declarator()?;
+        Ok(ParamInfo {
+            ty: Ty::Var(ty),
+            decl,
+        })
+    }
+
+    fn parse_simple_declarator(&mut self) -> Result<Declarator, Error> {
+        match self.peek() {
+            Some(
+                s @ Spanned {
+                    data: Token::Ident(ident),
+                    ..
+                },
+            ) => {
+                let ident = s.clone().map(|_| ident.clone());
+                self.advance();
+                Ok(Declarator::Ident(ident))
+            }
+            Some(Spanned {
+                data: Token::OpenParen,
+                ..
+            }) => {
+                self.advance();
+                let decl = self.parse_declarator()?;
+                self.expect(Token::CloseParen)?;
+                Ok(decl)
+            }
+            Some(s) => Err(Error::Unexpected(s.clone(), ExpectedToken::Declarator)),
+            _ => Err(Error::UnexpectedEof),
         }
     }
 
