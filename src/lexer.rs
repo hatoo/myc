@@ -32,6 +32,7 @@ pub enum Token {
     Slash,
     Percent,
     Exclamation,
+    Ampersands,
     TwoAmpersands,
     TwoPipes,
     Equal,
@@ -373,10 +374,10 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
                         span: index - 2..index,
                     });
                 } else {
-                    return Err(Error::Unexpected(Spanned {
-                        data: src[index] as char,
-                        span: index..index + 1,
-                    }));
+                    tokens.push(Spanned {
+                        data: Token::Ampersands,
+                        span: index - 1..index,
+                    });
                 }
             }
             b'|' => {
