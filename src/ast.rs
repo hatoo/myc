@@ -418,8 +418,10 @@ pub enum Error {
     BadTypeSpecifier(std::ops::Range<usize>),
     #[error("Unexpected specifier")]
     UnexpectedSpecifier(Spanned<Token>),
-    #[error("Function type isn't allowed")]
+    #[error("Function type isn't allowed here")]
     NotVarType(std::ops::Range<usize>),
+    #[error("Variable type isn't allowed here")]
+    NotFunType(std::ops::Range<usize>),
 }
 
 impl MayHasSpan for Error {
@@ -435,6 +437,7 @@ impl MayHasSpan for Error {
             Error::BadTypeSpecifier(span) => Some(span.clone()),
             Error::UnexpectedSpecifier(spanned) => Some(spanned.span.clone()),
             Error::NotVarType(span) => Some(span.clone()),
+            Error::NotFunType(span) => Some(span.clone()),
         }
     }
 }
@@ -1062,11 +1065,12 @@ impl<'a> Parser<'a> {
     fn parse_fun_decl(&mut self) -> Result<FunDecl, Error> {
         let (return_type, storage_class) = self.parse_specifiers()?;
         let decl = self.parse_declarator()?;
+        let span = decl.span.clone();
 
         let (name, ty, params) = process_declarator(decl, return_type)?;
 
         let ty = match ty {
-            Ty::Var(_) => todo!(),
+            Ty::Var(_) => return Err(Error::NotFunType(span.clone())),
             Ty::Fun(ft) => ft,
         };
 
