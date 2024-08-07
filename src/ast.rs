@@ -504,8 +504,8 @@ fn solve_type_specifier(ty: &[Spanned<TypeSpecifier>]) -> Result<VarType, Error>
 
 enum Declarator {
     Ident(EcoString),
-    PointerDeclarator(Spanned<Box<Declarator>>),
-    FunDeclarator {
+    Pointer(Spanned<Box<Declarator>>),
+    Fun {
         params: Vec<ParamInfo>,
         decl: Spanned<Box<Declarator>>,
     },
@@ -516,6 +516,7 @@ struct ParamInfo {
     decl: Spanned<Declarator>,
 }
 
+#[allow(clippy::type_complexity)]
 fn process_declarator(
     decl: Spanned<Declarator>,
     base_type: VarType,
@@ -525,11 +526,11 @@ fn process_declarator(
         Declarator::Ident(name) => {
             Ok((Spanned { data: name, span }, Ty::Var(base_type), Vec::new()))
         }
-        Declarator::PointerDeclarator(d) => {
+        Declarator::Pointer(d) => {
             let derived_type = VarType::Pointer(Box::new(Ty::Var(base_type)));
             process_declarator(d.map(|d| *d), derived_type)
         }
-        Declarator::FunDeclarator { params, decl } => {
+        Declarator::Fun { params, decl } => {
             let mut param_names = Vec::new();
             let mut param_types = Vec::new();
 
@@ -553,7 +554,7 @@ fn process_declarator(
 
                     Ok((Spanned { data: name, span }, derived_type, param_names))
                 }
-                Declarator::PointerDeclarator(decl) => {
+                Declarator::Pointer(decl) => {
                     let (name, ty, _) = process_declarator(decl.map(|d| *d), base_type)?;
                     let derived_type = Ty::Fun(FunType {
                         params: param_types,
@@ -561,7 +562,7 @@ fn process_declarator(
                     });
                     Ok((name, derived_type, param_names))
                 }
-                Declarator::FunDeclarator { .. } => Err(Error::NotVarType(decl.span.clone())),
+                Declarator::Fun { .. } => Err(Error::NotVarType(decl.span.clone())),
             }
         }
     }
@@ -835,7 +836,7 @@ impl<'a> Parser<'a> {
             let aspan = aspan.clone();
             let Spanned { data, span } = self.parse_declarator()?;
             Ok(Spanned {
-                data: Declarator::PointerDeclarator(Spanned {
+                data: Declarator::Pointer(Spanned {
                     data: Box::new(data),
                     span: span.clone(),
                 }),
@@ -853,7 +854,7 @@ impl<'a> Parser<'a> {
         if let Ok(params) = self.parse_param_list() {
             let span = decl.span.start..self.tokens[self.index - 1].span.end;
             Ok(Spanned {
-                data: Declarator::FunDeclarator {
+                data: Declarator::Fun {
                     params,
                     decl: decl.map(Box::new),
                 },
@@ -1229,7 +1230,7 @@ impl<'a> Parser<'a> {
             let index = self.index;
             if let Ok(Spanned { data, span }) = self.parse_abstract_declarator() {
                 Ok(Spanned {
-                    data: Declarator::PointerDeclarator(Spanned {
+                    data: Declarator::Pointer(Spanned {
                         data: Box::new(data),
                         span: span.clone(),
                     }),
@@ -1238,7 +1239,7 @@ impl<'a> Parser<'a> {
             } else {
                 self.index = index;
                 Ok(Spanned {
-                    data: Declarator::PointerDeclarator(Spanned {
+                    data: Declarator::Pointer(Spanned {
                         data: Box::new(Declarator::Ident("".into())),
                         span: aspan.clone(),
                     }),
