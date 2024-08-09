@@ -1541,9 +1541,8 @@ impl<'a> Display for SizedOperand<'a> {
                 }
             },
             Operand::Pseudo(_) => panic!("Pseudo operand should have been removed"),
-            // Operand::Stack(offset) => write!(f, "{}(%rbp)", offset)?,
             Operand::Data(name) => write!(f, "{}(%rip)", name)?,
-            _ => todo!(),
+            Operand::Memory(reg, offset) => write!(f, "{}({})", offset, RegisterSize::Qword(reg))?,
         }
 
         Ok(())
@@ -1795,7 +1794,14 @@ impl Display for Instruction {
                     dst.sized(AssemblyType::Double)
                 )?;
             }
-            _ => todo!(),
+            Instruction::Lea { src, dst } => {
+                writeln!(
+                    f,
+                    "leaq {}, {}",
+                    src.sized(AssemblyType::QuadWord),
+                    dst.sized(AssemblyType::QuadWord)
+                )?;
+            }
         }
         Ok(())
     }
