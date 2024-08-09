@@ -83,6 +83,18 @@ pub enum Instruction {
         src: Val,
         dst: Val,
     },
+    GetAddress {
+        src: Val,
+        dst: Val,
+    },
+    Load {
+        src: Val,
+        dst: Val,
+    },
+    Store {
+        src: Val,
+        dst: Val,
+    },
     Jump(EcoString),
     JumpIfZero {
         src: Val,
@@ -147,6 +159,11 @@ struct InstructionGenerator<'a> {
     var_counter: usize,
     instructions: Vec<Instruction>,
     symbol_table: &'a mut SymbolTable,
+}
+
+enum ExpResult {
+    PlainOperand(Val),
+    DereferencedPointer(Val),
 }
 
 impl<'a> InstructionGenerator<'a> {
@@ -333,7 +350,7 @@ impl<'a> InstructionGenerator<'a> {
         }
     }
 
-    fn add_expression(&mut self, expression: &ast::Expression) -> Val {
+    fn add_expression(&mut self, expression: &ast::Expression) -> ExpResult {
         match expression {
             ast::Expression::Unary {
                 op: Spanned { data: op, .. },
@@ -569,6 +586,20 @@ impl<'a> InstructionGenerator<'a> {
             }
             ast::Expression::Constant(c) => Val::Constant(c.data),
             _ => todo!(),
+        }
+    }
+
+    fn add_expression_and_convert(&mut self, expression: &ast::Expression) -> Val {
+        match self.add_expression(expression) {
+            ExpResult::PlainOperand(val) => val,
+            ExpResult::DereferencedPointer(ptr) => {
+                let dst = self.make_tmp_local(ptr.ty(self.symbol_table));
+                self.instructions.push(Instruction::Load {
+                    src: ptr,
+                    dst: dst.clone(),
+                });
+                dst
+            }
         }
     }
 }
