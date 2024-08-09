@@ -237,33 +237,26 @@ impl Expression {
 
     pub fn is_null_pointer_constant(&self) -> bool {
         // TODO: const expr
-        match self {
+        matches!(
+            self,
             Self::Constant(Spanned {
                 data: Const::Int(0),
                 ..
-            }) => true,
-            Self::Constant(Spanned {
+            }) | Self::Constant(Spanned {
                 data: Const::Uint(0),
                 ..
-            }) => true,
-            Self::Constant(Spanned {
+            }) | Self::Constant(Spanned {
                 data: Const::Long(0),
                 ..
-            }) => true,
-            Self::Constant(Spanned {
+            }) | Self::Constant(Spanned {
                 data: Const::Ulong(0),
                 ..
-            }) => true,
-            _ => false,
-        }
+            })
+        )
     }
 
     pub fn is_lvalue(&self) -> bool {
-        match self {
-            Self::Var(_, _) => true,
-            Self::Dereference(_) => true,
-            _ => false,
-        }
+        matches!(self, Self::Var(_, _) | Self::Dereference(_))
     }
 }
 
