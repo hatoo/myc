@@ -413,7 +413,12 @@ impl TypeChecker {
     ) -> Result<ast::VarType, Error> {
         match exp {
             crate::ast::Expression::Var(name, ty) => match self.sym_table.get(&name.data) {
-                Some(Attr::Fun { .. }) => Err(Error::IncompatibleTypes(name.span.clone())),
+                Some(Attr::Fun { ty: fty, .. }) => {
+                    // extra credit
+                    let t = ast::VarType::Pointer(Box::new(ast::Ty::Fun(fty.clone())));
+                    *ty = t.clone();
+                    Ok(t)
+                }
                 Some(Attr::Static { ty: target, .. }) | Some(Attr::Local(target)) => {
                     *ty = target.clone();
                     Ok(target.clone())
@@ -533,8 +538,8 @@ impl TypeChecker {
                 name,
                 args,
                 ty: fty,
-            } => {
-                if let Some(Attr::Fun { ty, .. }) = self.sym_table.get(&name.data) {
+            } => match self.sym_table.get(&name.data) {
+                Some(Attr::Fun { ty, .. }) => {
                     if ty.params.len() != args.len() {
                         return Err(Error::IncompatibleTypes(name.span.clone()));
                     }
@@ -546,10 +551,26 @@ impl TypeChecker {
                     }
                     *fty = ret.clone();
                     Ok(ret.clone())
-                } else {
-                    Err(Error::IncompatibleTypes(name.span.clone()))
                 }
-            }
+                Some(Attr::Local(ast::VarType::Pointer(pty))) => {
+                    if let ast::Ty::Fun(ty) = pty.as_ref() {
+                        if ty.params.len() != args.len() {
+                            return Err(Error::IncompatibleTypes(name.span.clone()));
+                        }
+                        let ret = ty.ret.clone();
+
+                        for (arg, ty) in args.iter_mut().zip(ty.params.clone().into_iter()) {
+                            self.check_expression(arg)?;
+                            convert_by_assignment(arg, &ty)?;
+                        }
+                        *fty = ret.clone();
+                        Ok(ret.clone())
+                    } else {
+                        Err(Error::IncompatibleTypes(name.span.clone()))
+                    }
+                }
+                _ => Err(Error::IncompatibleTypes(name.span.clone())),
+            },
             crate::ast::Expression::Cast { target, exp } => {
                 let ty = self.check_expression(exp)?;
 
