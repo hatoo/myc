@@ -207,7 +207,7 @@ impl<'a> InstructionGenerator<'a> {
             return;
         }
         if let Some(exp) = &decl.init {
-            let val = self.add_expression(exp);
+            let val = self.add_expression_and_convert(exp);
             self.instructions.push(Instruction::Copy {
                 src: val,
                 dst: Val::Var(decl.ident.data.clone()),
@@ -227,7 +227,7 @@ impl<'a> InstructionGenerator<'a> {
     fn add_statement(&mut self, statement: &ast::Statement) {
         match statement {
             ast::Statement::Return(expression) => {
-                let val = self.add_expression(expression);
+                let val = self.add_expression_and_convert(expression);
                 self.instructions.push(Instruction::Return(val));
             }
             ast::Statement::Expression(exp) => {
@@ -242,7 +242,7 @@ impl<'a> InstructionGenerator<'a> {
                 if let Some(else_branch) = else_branch {
                     let else_label = self.new_label("if_else");
                     let end_label = self.new_label("if_end");
-                    let cond = self.add_expression(condition);
+                    let cond = self.add_expression_and_convert(condition);
                     self.instructions.push(Instruction::JumpIfZero {
                         src: cond,
                         dst: else_label.clone(),
@@ -254,7 +254,7 @@ impl<'a> InstructionGenerator<'a> {
                     self.instructions.push(Instruction::Label(end_label));
                 } else {
                     let end_label = self.new_label("if_end");
-                    let cond = self.add_expression(condition);
+                    let cond = self.add_expression_and_convert(condition);
                     self.instructions.push(Instruction::JumpIfZero {
                         src: cond,
                         dst: end_label.clone(),
@@ -288,7 +288,7 @@ impl<'a> InstructionGenerator<'a> {
                 self.instructions
                     .push(Instruction::Label(format!("continue_{}", label).into()));
 
-                let cond = self.add_expression(condition);
+                let cond = self.add_expression_and_convert(condition);
                 self.instructions.push(Instruction::JumpIfNotZero {
                     src: cond,
                     dst: start_label,
@@ -303,7 +303,7 @@ impl<'a> InstructionGenerator<'a> {
             } => {
                 self.instructions
                     .push(Instruction::Label(format!("continue_{}", label).into()));
-                let cond = self.add_expression(condition);
+                let cond = self.add_expression_and_convert(condition);
                 self.instructions.push(Instruction::JumpIfZero {
                     src: cond,
                     dst: format!("break_{}", label).into(),
@@ -328,7 +328,7 @@ impl<'a> InstructionGenerator<'a> {
                     .push(Instruction::Label(format!("start_{}", label).into()));
 
                 if let Some(condition) = condition {
-                    let cond = self.add_expression(condition);
+                    let cond = self.add_expression_and_convert(condition);
                     self.instructions.push(Instruction::JumpIfZero {
                         src: cond,
                         dst: format!("break_{}", label).into(),
@@ -357,7 +357,7 @@ impl<'a> InstructionGenerator<'a> {
                 exp,
                 ty,
             } => {
-                let src = self.add_expression(exp);
+                let src = self.add_expression_and_convert(exp);
                 let dst = self.make_tmp_local(ty.clone());
                 self.instructions.push(Instruction::Unary {
                     op: match op {
@@ -368,7 +368,7 @@ impl<'a> InstructionGenerator<'a> {
                     src,
                     dst: dst.clone(),
                 });
-                dst
+                ExpResult::PlainOperand(dst)
             }
             ast::Expression::Binary {
                 op: ast::BinaryOp::And,
@@ -376,14 +376,14 @@ impl<'a> InstructionGenerator<'a> {
                 rhs,
                 ty,
             } => {
-                let lhs = self.add_expression(lhs);
+                let lhs = self.add_expression_and_convert(lhs);
                 let dst = self.make_tmp_local(ty.clone());
                 let and_false = self.new_label("and_false");
                 self.instructions.push(Instruction::JumpIfZero {
                     src: lhs.clone(),
                     dst: and_false.clone(),
                 });
-                let rhs = self.add_expression(rhs);
+                let rhs = self.add_expression_and_convert(rhs);
                 self.instructions.push(Instruction::JumpIfZero {
                     src: rhs.clone(),
                     dst: and_false.clone(),
@@ -401,7 +401,7 @@ impl<'a> InstructionGenerator<'a> {
                     dst: dst.clone(),
                 });
                 self.instructions.push(Instruction::Label(end));
-                dst
+                ExpResult::PlainOperand(dst)
             }
             ast::Expression::Binary {
                 op: ast::BinaryOp::Or,
@@ -409,14 +409,14 @@ impl<'a> InstructionGenerator<'a> {
                 rhs,
                 ty,
             } => {
-                let lhs = self.add_expression(lhs);
+                let lhs = self.add_expression_and_convert(lhs);
                 let dst = self.make_tmp_local(ty.clone());
                 let or_true = self.new_label("or_true");
                 self.instructions.push(Instruction::JumpIfNotZero {
                     src: lhs.clone(),
                     dst: or_true.clone(),
                 });
-                let rhs = self.add_expression(rhs);
+                let rhs = self.add_expression_and_convert(rhs);
                 self.instructions.push(Instruction::JumpIfNotZero {
                     src: rhs.clone(),
                     dst: or_true.clone(),
@@ -433,11 +433,11 @@ impl<'a> InstructionGenerator<'a> {
                     dst: dst.clone(),
                 });
                 self.instructions.push(Instruction::Label(end));
-                dst
+                ExpResult::PlainOperand(dst)
             }
             ast::Expression::Binary { op, lhs, rhs, ty } => {
-                let lhs = self.add_expression(lhs);
-                let rhs = self.add_expression(rhs);
+                let lhs = self.add_expression_and_convert(lhs);
+                let rhs = self.add_expression_and_convert(rhs);
                 let dst = self.make_tmp_local(ty.clone());
                 self.instructions.push(Instruction::Binary {
                     op: match op {
@@ -458,19 +458,30 @@ impl<'a> InstructionGenerator<'a> {
                     rhs,
                     dst: dst.clone(),
                 });
-                dst
+                ExpResult::PlainOperand(dst)
             }
-            ast::Expression::Var(Spanned { data: var, .. }, _) => Val::Var(var.clone()),
+            ast::Expression::Var(Spanned { data: var, .. }, _) => {
+                ExpResult::PlainOperand(Val::Var(var.clone()))
+            }
             ast::Expression::Assignment { lhs, rhs } => {
-                if let ast::Expression::Var(Spanned { data: var, .. }, _) = lhs.as_ref() {
-                    let rhs = self.add_expression(rhs);
-                    self.instructions.push(Instruction::Copy {
-                        src: rhs,
-                        dst: Val::Var(var.clone()),
-                    });
-                    Val::Var(var.clone())
-                } else {
-                    unreachable!("invalid lvalue");
+                let lhs = self.add_expression(lhs);
+                let rhs = self.add_expression_and_convert(rhs);
+
+                match &lhs {
+                    ExpResult::PlainOperand(dst) => {
+                        self.instructions.push(Instruction::Copy {
+                            src: rhs,
+                            dst: dst.clone(),
+                        });
+                        lhs
+                    }
+                    ExpResult::DereferencedPointer(ptr) => {
+                        self.instructions.push(Instruction::Store {
+                            src: rhs.clone(),
+                            dst: ptr.clone(),
+                        });
+                        ExpResult::PlainOperand(rhs)
+                    }
                 }
             }
             ast::Expression::Conditional {
@@ -481,50 +492,50 @@ impl<'a> InstructionGenerator<'a> {
                 let dst = self.make_tmp_local(then_branch.ty().clone());
                 let else_label = self.new_label("cond_else");
                 let end_label = self.new_label("cond_end");
-                let cond = self.add_expression(condition);
+                let cond = self.add_expression_and_convert(condition);
                 self.instructions.push(Instruction::JumpIfZero {
                     src: cond,
                     dst: else_label.clone(),
                 });
-                let v1 = self.add_expression(then_branch);
+                let v1 = self.add_expression_and_convert(then_branch);
                 self.instructions.push(Instruction::Copy {
                     src: v1,
                     dst: dst.clone(),
                 });
                 self.instructions.push(Instruction::Jump(end_label.clone()));
                 self.instructions.push(Instruction::Label(else_label));
-                let v2 = self.add_expression(else_branch);
+                let v2 = self.add_expression_and_convert(else_branch);
                 self.instructions.push(Instruction::Copy {
                     src: v2,
                     dst: dst.clone(),
                 });
                 self.instructions.push(Instruction::Label(end_label));
-                dst
+                ExpResult::PlainOperand(dst)
             }
             ast::Expression::FunctionCall { name, args, ty } => {
                 let dst = self.make_tmp_local(ty.clone());
                 let args = args
                     .iter()
-                    .map(|arg| self.add_expression(arg))
+                    .map(|arg| self.add_expression_and_convert(arg))
                     .collect::<Vec<_>>();
                 self.instructions.push(Instruction::FunCall {
                     name: name.data.clone(),
                     args,
                     dst: dst.clone(),
                 });
-                dst
+                ExpResult::PlainOperand(dst)
             }
             ast::Expression::Cast { target, exp } => {
-                let val = self.add_expression(exp);
+                let val = self.add_expression_and_convert(exp);
                 match (exp.ty(), target) {
-                    (from, to) if from == to => val,
+                    (from, to) if from == to => ExpResult::PlainOperand(val),
                     (ast::VarType::Double, to @ (ast::VarType::Int | ast::VarType::Long)) => {
                         let dst = self.make_tmp_local(to.clone());
                         self.instructions.push(Instruction::DoubleToInt {
                             src: val,
                             dst: dst.clone(),
                         });
-                        dst
+                        ExpResult::PlainOperand(dst)
                     }
                     (ast::VarType::Double, to @ (ast::VarType::Uint | ast::VarType::Ulong)) => {
                         let dst = self.make_tmp_local(to.clone());
@@ -532,7 +543,7 @@ impl<'a> InstructionGenerator<'a> {
                             src: val,
                             dst: dst.clone(),
                         });
-                        dst
+                        ExpResult::PlainOperand(dst)
                     }
                     (ast::VarType::Int | ast::VarType::Long, ast::VarType::Double) => {
                         let dst = self.make_tmp_local(ast::VarType::Double);
@@ -540,7 +551,7 @@ impl<'a> InstructionGenerator<'a> {
                             src: val,
                             dst: dst.clone(),
                         });
-                        dst
+                        ExpResult::PlainOperand(dst)
                     }
                     (ast::VarType::Uint | ast::VarType::Ulong, ast::VarType::Double) => {
                         let dst = self.make_tmp_local(ast::VarType::Double);
@@ -548,7 +559,7 @@ impl<'a> InstructionGenerator<'a> {
                             src: val,
                             dst: dst.clone(),
                         });
-                        dst
+                        ExpResult::PlainOperand(dst)
                     }
                     (from, to) if from.size() == to.size() => {
                         let dst = self.make_tmp_local(to.clone());
@@ -556,7 +567,7 @@ impl<'a> InstructionGenerator<'a> {
                             src: val,
                             dst: dst.clone(),
                         });
-                        dst
+                        ExpResult::PlainOperand(dst)
                     }
                     (from, to) if from.size() > to.size() => {
                         let dst = self.make_tmp_local(to.clone());
@@ -564,7 +575,7 @@ impl<'a> InstructionGenerator<'a> {
                             src: val,
                             dst: dst.clone(),
                         });
-                        dst
+                        ExpResult::PlainOperand(dst)
                     }
                     (from, to) if from.is_signed() => {
                         let dst = self.make_tmp_local(to.clone());
@@ -572,7 +583,7 @@ impl<'a> InstructionGenerator<'a> {
                             src: val,
                             dst: dst.clone(),
                         });
-                        dst
+                        ExpResult::PlainOperand(dst)
                     }
                     (_, to) => {
                         let dst = self.make_tmp_local(to.clone());
@@ -580,12 +591,29 @@ impl<'a> InstructionGenerator<'a> {
                             src: val,
                             dst: dst.clone(),
                         });
-                        dst
+                        ExpResult::PlainOperand(dst)
                     }
                 }
             }
-            ast::Expression::Constant(c) => Val::Constant(c.data),
-            _ => todo!(),
+            ast::Expression::Constant(c) => ExpResult::PlainOperand(Val::Constant(c.data)),
+            ast::Expression::Dereference(exp) => {
+                let val = self.add_expression_and_convert(exp);
+                ExpResult::DereferencedPointer(val)
+            }
+            ast::Expression::AddrOf { exp, ty } => {
+                let val = self.add_expression(exp);
+                match val {
+                    ExpResult::PlainOperand(val) => {
+                        let dst = self.make_tmp_local(ty.clone());
+                        self.instructions.push(Instruction::GetAddress {
+                            src: val,
+                            dst: dst.clone(),
+                        });
+                        ExpResult::PlainOperand(dst)
+                    }
+                    ExpResult::DereferencedPointer(ptr) => ExpResult::PlainOperand(ptr),
+                }
+            }
         }
     }
 

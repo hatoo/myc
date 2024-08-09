@@ -923,6 +923,9 @@ impl<'a> CodeGen<'a> {
                     }
                     _ => unreachable!(),
                 },
+                _ => {
+                    todo!()
+                }
             }
         }
 
