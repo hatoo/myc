@@ -552,7 +552,13 @@ impl TypeChecker {
                     *fty = ret.clone();
                     Ok(ret.clone())
                 }
-                Some(Attr::Local(ast::VarType::Pointer(pty))) => {
+                Some(
+                    Attr::Local(ast::VarType::Pointer(pty))
+                    | Attr::Static {
+                        ty: ast::VarType::Pointer(pty),
+                        ..
+                    },
+                ) => {
                     if let ast::Ty::Fun(ty) = pty.as_ref() {
                         if ty.params.len() != args.len() {
                             return Err(Error::IncompatibleTypes(name.span.clone()));
