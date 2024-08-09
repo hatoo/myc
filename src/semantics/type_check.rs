@@ -480,7 +480,22 @@ impl TypeChecker {
                 self.check_expression(exp)?;
                 Ok(target.clone())
             }
-            _ => todo!(),
+            crate::ast::Expression::Dereference(exp) => {
+                let ty = self.check_expression(exp)?;
+                if let ast::VarType::Pointer(ty) = ty {
+                    match ty.as_ref() {
+                        ast::Ty::Fun(_) => Err(Error::IncompatibleTypes(exp.span())),
+                        ast::Ty::Var(ty) => Ok(ty.clone()),
+                    }
+                } else {
+                    Err(Error::IncompatibleTypes(exp.span()))
+                }
+            }
+            ast::Expression::AddrOf { exp, ty } => {
+                let exp_ty = self.check_expression(exp)?;
+                *ty = ast::VarType::Pointer(Box::new(ast::Ty::Var(exp_ty.clone())));
+                Ok(ty.clone())
+            }
         }
     }
 

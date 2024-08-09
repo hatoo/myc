@@ -195,7 +195,10 @@ pub enum Expression {
         ty: VarType,
     },
     Dereference(Box<Expression>),
-    AddrOf(Box<Expression>),
+    AddrOf {
+        exp: Box<Expression>,
+        ty: VarType,
+    },
 }
 
 impl Expression {
@@ -215,7 +218,14 @@ impl Expression {
             Self::Assignment { lhs, .. } => lhs.ty(),
             Self::Conditional { then_branch, .. } => then_branch.ty(),
             Self::FunctionCall { ty, .. } => ty,
-            _ => todo!(),
+            Self::Dereference(exp) => match exp.ty() {
+                VarType::Pointer(ty) => match ty.as_ref() {
+                    Ty::Var(ty) => ty,
+                    Ty::Fun(_) => todo!(),
+                },
+                _ => todo!(),
+            },
+            Self::AddrOf { ty, .. } => ty,
         }
     }
 }
@@ -1159,7 +1169,11 @@ impl<'a> Parser<'a> {
                 Token::Ampersands => {
                     self.advance();
                     let exp = self.parse_factor()?;
-                    Ok(Expression::AddrOf(Box::new(exp)))
+                    Ok(Expression::AddrOf {
+                        exp: Box::new(exp),
+                        // Fixed in type check pass
+                        ty: VarType::Int,
+                    })
                 }
                 Token::Asterisk => {
                     self.advance();
