@@ -156,6 +156,26 @@ fn convert_to(exp: &mut ast::Expression, ty: &ast::VarType) {
     }
 }
 
+fn convert_by_assignment(exp: &mut ast::Expression, ty: &ast::VarType) -> Result<(), Error> {
+    let ety = exp.ty();
+
+    if ety == ty {
+        return Ok(());
+    }
+
+    if !ety.is_pointer() && !ty.is_pointer() {
+        convert_to(exp, ty);
+        return Ok(());
+    }
+
+    if exp.is_null_pointer_constant() && ty.is_pointer() {
+        convert_to(exp, ty);
+        return Ok(());
+    }
+
+    Err(Error::IncompatibleTypes(exp.span()))
+}
+
 impl TypeChecker {
     pub fn check_program(&mut self, program: &mut crate::ast::Program) -> Result<(), Error> {
         for decl in &mut program.decls {
@@ -376,7 +396,7 @@ impl TypeChecker {
                     .insert(ident.data.clone(), Attr::Local(ty.clone()));
                 if let Some(exp) = init {
                     self.check_expression(exp)?;
-                    convert_to(exp, ty);
+                    convert_by_assignment(exp, ty)?;
                 }
             }
         }
@@ -406,12 +426,15 @@ impl TypeChecker {
                     }
                     ast::UnaryOp::Complement => {
                         *ty = self.check_expression(exp)?;
-                        if *ty == ast::VarType::Double {
+                        if *ty == ast::VarType::Double || ty.is_pointer() {
                             return Err(Error::IncompatibleTypes(exp.span()));
                         }
                     }
-                    _ => {
+                    ast::UnaryOp::Negate => {
                         *ty = self.check_expression(exp)?;
+                        if ty.is_pointer() {
+                            return Err(Error::IncompatibleTypes(exp.span()));
+                        }
                     }
                 }
                 Ok(ty.clone())
@@ -446,14 +469,17 @@ impl TypeChecker {
                         convert_to(rhs, &cty);
 
                         match op {
-                            ast::BinaryOp::Add
-                            | ast::BinaryOp::Subtract
-                            | ast::BinaryOp::Multiply
-                            | ast::BinaryOp::Divide => {
+                            ast::BinaryOp::Add | ast::BinaryOp::Subtract => {
+                                *ty = cty;
+                            }
+                            ast::BinaryOp::Multiply | ast::BinaryOp::Divide => {
+                                if cty.is_pointer() {
+                                    return Err(Error::IncompatibleTypes(exp.span()));
+                                }
                                 *ty = cty;
                             }
                             ast::BinaryOp::Remainder => {
-                                if cty == ast::VarType::Double {
+                                if cty == ast::VarType::Double || cty.is_pointer() {
                                     return Err(Error::IncompatibleTypes(exp.span()));
                                 }
                                 *ty = cty;
@@ -470,7 +496,7 @@ impl TypeChecker {
             crate::ast::Expression::Assignment { lhs, rhs } => {
                 let tyl = self.check_expression(lhs)?;
                 self.check_expression(rhs)?;
-                convert_to(rhs, &tyl);
+                convert_by_assignment(rhs, &tyl)?;
                 Ok(tyl)
             }
             crate::ast::Expression::Conditional {
@@ -510,7 +536,7 @@ impl TypeChecker {
 
                     for (arg, ty) in args.iter_mut().zip(ty.params.clone().into_iter()) {
                         self.check_expression(arg)?;
-                        convert_to(arg, &ty);
+                        convert_by_assignment(arg, &ty)?;
                     }
                     *fty = ret.clone();
                     Ok(ret.clone())
@@ -519,7 +545,14 @@ impl TypeChecker {
                 }
             }
             crate::ast::Expression::Cast { target, exp } => {
-                self.check_expression(exp)?;
+                let ty = self.check_expression(exp)?;
+
+                if (target.is_pointer() && ty == VarType::Double)
+                    || (ty.is_pointer() && target == &VarType::Double)
+                {
+                    return Err(Error::IncompatibleTypes(exp.span()));
+                }
+
                 Ok(target.clone())
             }
             crate::ast::Expression::Dereference(exp) => {
@@ -549,7 +582,7 @@ impl TypeChecker {
         match stmt {
             crate::ast::Statement::Return(exp) => {
                 self.check_expression(exp)?;
-                convert_to(exp, ret_type);
+                convert_by_assignment(exp, ret_type)?;
                 Ok(())
             }
             crate::ast::Statement::Expression(exp) => {
