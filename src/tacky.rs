@@ -621,7 +621,7 @@ impl<'a> InstructionGenerator<'a> {
         match self.add_expression(expression) {
             ExpResult::PlainOperand(val) => val,
             ExpResult::DereferencedPointer(ptr) => {
-                let dst = self.make_tmp_local(ptr.ty(self.symbol_table));
+                let dst = self.make_tmp_local(expression.ty().clone());
                 self.instructions.push(Instruction::Load {
                     src: ptr,
                     dst: dst.clone(),
