@@ -228,6 +228,29 @@ impl Expression {
             Self::AddrOf { ty, .. } => ty,
         }
     }
+
+    pub fn is_null_pointer_constant(&self) -> bool {
+        // TODO: const expr
+        match self {
+            Self::Constant(Spanned {
+                data: Const::Int(0),
+                ..
+            }) => true,
+            Self::Constant(Spanned {
+                data: Const::Uint(0),
+                ..
+            }) => true,
+            Self::Constant(Spanned {
+                data: Const::Long(0),
+                ..
+            }) => true,
+            Self::Constant(Spanned {
+                data: Const::Ulong(0),
+                ..
+            }) => true,
+            _ => false,
+        }
+    }
 }
 
 impl HasSpan for Expression {
@@ -298,6 +321,10 @@ impl VarType {
             Self::Double => StaticInit::Double(0.0),
             _ => todo!(),
         }
+    }
+
+    pub fn is_pointer(&self) -> bool {
+        matches!(self, Self::Pointer(_))
     }
 }
 

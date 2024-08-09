@@ -109,6 +109,24 @@ impl HasSpan for Error {
     }
 }
 
+fn common_pointer_type<'a>(
+    e0: &'a ast::Expression,
+    e1: &'a ast::Expression,
+) -> Option<&'a ast::VarType> {
+    let ty0 = e0.ty();
+    let ty1 = e1.ty();
+
+    if ty0 == ty1 {
+        Some(ty0)
+    } else if e0.is_null_pointer_constant() {
+        Some(ty1)
+    } else if e1.is_null_pointer_constant() {
+        Some(ty0)
+    } else {
+        None
+    }
+}
+
 fn common_type(ty0: ast::VarType, ty1: ast::VarType) -> ast::VarType {
     if ty0 == ast::VarType::Double || ty1 == ast::VarType::Double {
         return ast::VarType::Double;
