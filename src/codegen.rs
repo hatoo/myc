@@ -100,6 +100,10 @@ pub enum Instruction {
         src: Operand,
         dst: Operand,
     },
+    Lea {
+        src: Operand,
+        dst: Operand,
+    },
     Unary {
         op: UnaryOp,
         ty: AssemblyType,
@@ -164,11 +168,15 @@ pub enum Operand {
     Imm(u64),
     Reg(Register),
     Pseudo(Pseudo),
-    Stack(i32),
+    Memory(Register, i32),
     Data(EcoString),
 }
 
 impl Operand {
+    fn stack(offset: i32) -> Self {
+        Operand::Memory(Register::BP, offset)
+    }
+
     fn sized(&self, size: AssemblyType) -> SizedOperand {
         SizedOperand { ty: size, op: self }
     }
@@ -212,6 +220,7 @@ pub enum Register {
     R10,
     R11,
     SP,
+    BP,
     Xmm(u8),
 }
 
@@ -351,7 +360,7 @@ impl<'a> CodeGen<'a> {
         for (i, (param, ty)) in stack_args.into_iter().enumerate() {
             body.push(Instruction::Mov {
                 ty: ty.into(),
-                src: Operand::Stack((16 + i * 8) as i32),
+                src: Operand::stack((16 + i * 8) as i32),
                 dst: Operand::Pseudo(Pseudo::Var(param.clone())),
             });
         }
@@ -1006,13 +1015,13 @@ fn pseudo_to_stack(
                     }
                     attr => {
                         if let Some(addr) = known_vars.get(var) {
-                            *operand = Operand::Stack(*addr);
+                            *operand = Operand::stack(*addr);
                         } else {
                             let size = attr.ty().size() as i32;
                             total += size;
                             total = (total + (size - 1)) / size * size;
                             known_vars.insert(var.clone(), -total);
-                            *operand = Operand::Stack(-total);
+                            *operand = Operand::stack(-total);
                         }
                     }
                 },
@@ -1077,6 +1086,9 @@ fn pseudo_to_stack(
                 remove_pseudo(src);
                 remove_pseudo(dst);
             }
+            _ => {
+                todo!()
+            }
         }
     }
 
@@ -1090,8 +1102,8 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
         match inst {
             Instruction::Mov {
                 ty,
-                src: src @ (Operand::Stack(_) | Operand::Data(_)),
-                dst: dst @ (Operand::Stack(_) | Operand::Data(_)),
+                src: src @ (Operand::Memory(..) | Operand::Data(_)),
+                dst: dst @ (Operand::Memory(..) | Operand::Data(_)),
             } => {
                 let tmp_reg = Operand::Reg(if ty == AssemblyType::Double {
                     Register::Xmm(14)
@@ -1112,7 +1124,7 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
             Instruction::Mov {
                 ty: AssemblyType::QuadWord,
                 src: src @ Operand::Imm(_),
-                dst: dst @ (Operand::Stack(_) | Operand::Data(_)),
+                dst: dst @ (Operand::Memory(..) | Operand::Data(_)),
             } => {
                 new_insts.push(Instruction::Mov {
                     ty: AssemblyType::QuadWord,
@@ -1127,7 +1139,7 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
             }
             Instruction::Movsx {
                 src: src @ Operand::Imm(_),
-                dst: dst @ (Operand::Stack(_) | Operand::Data(_)),
+                dst: dst @ (Operand::Memory(..) | Operand::Data(_)),
             } => {
                 new_insts.push(Instruction::Mov {
                     ty: AssemblyType::LongWord,
@@ -1160,7 +1172,7 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
             }
             Instruction::Movsx {
                 src,
-                dst: dst @ (Operand::Stack(_) | Operand::Data(_)),
+                dst: dst @ (Operand::Memory(..) | Operand::Data(_)),
             } => {
                 new_insts.push(Instruction::Movsx {
                     src,
@@ -1191,8 +1203,8 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
             Instruction::Binary {
                 ty,
                 op: op @ (BinaryOp::Add | BinaryOp::Sub | BinaryOp::And | BinaryOp::Or),
-                lhs: lhs @ (Operand::Stack(_) | Operand::Data(_)),
-                rhs: rhs @ (Operand::Stack(_) | Operand::Data(_)),
+                lhs: lhs @ (Operand::Memory(..) | Operand::Data(_)),
+                rhs: rhs @ (Operand::Memory(..) | Operand::Data(_)),
             } if !matches!(ty, AssemblyType::Double) => {
                 new_insts.push(Instruction::Mov {
                     ty,
@@ -1210,7 +1222,7 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
                 ty,
                 op: BinaryOp::Mult,
                 lhs,
-                rhs: rhs @ (Operand::Stack(_) | Operand::Data(_)),
+                rhs: rhs @ (Operand::Memory(..) | Operand::Data(_)),
             } => {
                 let lhs = if ty == AssemblyType::QuadWord && matches!(lhs, Operand::Imm(_)) {
                     new_insts.push(Instruction::Mov {
@@ -1321,8 +1333,8 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
             }
             Instruction::Cmp(
                 ty,
-                lhs @ (Operand::Stack(_) | Operand::Data(_)),
-                rhs @ (Operand::Stack(_) | Operand::Data(_)),
+                lhs @ (Operand::Memory(..) | Operand::Data(_)),
+                rhs @ (Operand::Memory(..) | Operand::Data(_)),
             ) if !matches!(ty, AssemblyType::Double) => {
                 new_insts.push(Instruction::Mov {
                     ty,
@@ -1477,8 +1489,9 @@ impl<'a> Display for SizedOperand<'a> {
                 }
             },
             Operand::Pseudo(_) => panic!("Pseudo operand should have been removed"),
-            Operand::Stack(offset) => write!(f, "{}(%rbp)", offset)?,
+            // Operand::Stack(offset) => write!(f, "{}(%rbp)", offset)?,
             Operand::Data(name) => write!(f, "{}(%rip)", name)?,
+            _ => todo!(),
         }
 
         Ok(())
@@ -1730,6 +1743,7 @@ impl Display for Instruction {
                     dst.sized(AssemblyType::Double)
                 )?;
             }
+            _ => todo!(),
         }
         Ok(())
     }
@@ -1775,6 +1789,7 @@ impl<'a> Display for RegisterSize<'a> {
                 Register::R8 => write!(f, "%r8b")?,
                 Register::R9 => write!(f, "%r9b")?,
                 Register::SP => write!(f, "%spl")?,
+                Register::BP => write!(f, "%bpl")?,
                 Register::Xmm(_) => panic!("XMM registers are only used for QWord"),
             },
             RegisterSize::Dword(reg) => match reg {
@@ -1788,6 +1803,7 @@ impl<'a> Display for RegisterSize<'a> {
                 Register::R8 => write!(f, "%r8d")?,
                 Register::R9 => write!(f, "%r9d")?,
                 Register::SP => write!(f, "%esp")?,
+                Register::BP => write!(f, "%ebp")?,
                 Register::Xmm(_) => panic!("XMM registers are only used for QWord"),
             },
             RegisterSize::Qword(reg) => match reg {
@@ -1801,6 +1817,7 @@ impl<'a> Display for RegisterSize<'a> {
                 Register::R8 => write!(f, "%r8")?,
                 Register::R9 => write!(f, "%r9")?,
                 Register::SP => write!(f, "%rsp")?,
+                Register::BP => write!(f, "%rbp")?,
                 Register::Xmm(x) => write!(f, "%xmm{}", x)?,
             },
         }
