@@ -522,7 +522,7 @@ impl<'a> CodeGen<'a> {
                         }
                         Binary::Divide => {
                             let ty = lhs.ty(self.symbol_table);
-                            if ty == VarType::Double {
+                            if ty == &VarType::Double {
                                 let (lhs, rhs) = (rhs, lhs);
                                 body.push(Instruction::Mov {
                                     ty: AssemblyType::Double,
@@ -636,7 +636,7 @@ impl<'a> CodeGen<'a> {
                     body.push(Instruction::Jmp(label.clone()));
                 }
                 tacky::Instruction::JumpIfZero { src, dst } => {
-                    if src.ty(self.symbol_table) == VarType::Double {
+                    if src.ty(self.symbol_table) == &VarType::Double {
                         body.push(Instruction::Binary {
                             op: BinaryOp::Xor,
                             ty: AssemblyType::Double,
@@ -659,7 +659,7 @@ impl<'a> CodeGen<'a> {
                     }
                 }
                 tacky::Instruction::JumpIfNotZero { src, dst } => {
-                    if src.ty(self.symbol_table) == VarType::Double {
+                    if src.ty(self.symbol_table) == &VarType::Double {
                         body.push(Instruction::Binary {
                             op: BinaryOp::Xor,
                             ty: AssemblyType::Double,
@@ -792,7 +792,7 @@ impl<'a> CodeGen<'a> {
                     });
                 }
                 tacky::Instruction::DoubleToUint { src, dst } => {
-                    if dst.ty(self.symbol_table) == ast::VarType::Uint {
+                    if dst.ty(self.symbol_table) == &ast::VarType::Uint {
                         body.push(Instruction::Cvttsd2si {
                             ty: AssemblyType::QuadWord,
                             src: src.into(),

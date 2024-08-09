@@ -141,16 +141,16 @@ pub enum Val {
 }
 
 impl Val {
-    pub fn ty(&self, symbol_table: &SymbolTable) -> ast::VarType {
+    pub fn ty<'a>(&self, symbol_table: &'a SymbolTable) -> &'a ast::VarType {
         match self {
             Val::Constant(c) => match c {
-                ast::Const::Int(_) => ast::VarType::Int,
-                ast::Const::Long(_) => ast::VarType::Long,
-                ast::Const::Uint(_) => ast::VarType::Uint,
-                ast::Const::Ulong(_) => ast::VarType::Ulong,
-                ast::Const::Double(_) => ast::VarType::Double,
+                ast::Const::Int(_) => &ast::VarType::Int,
+                ast::Const::Long(_) => &ast::VarType::Long,
+                ast::Const::Uint(_) => &ast::VarType::Uint,
+                ast::Const::Ulong(_) => &ast::VarType::Ulong,
+                ast::Const::Double(_) => &ast::VarType::Double,
             },
-            Val::Var(var) => symbol_table[var].ty().clone(),
+            Val::Var(var) => symbol_table[var].ty(),
         }
     }
 }
