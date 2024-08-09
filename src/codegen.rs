@@ -125,7 +125,7 @@ pub enum Instruction {
     Label(EcoString),
     Ret,
     Push(Operand),
-    Call(Callee),
+    Call(Operand),
     Cvttsd2si {
         ty: AssemblyType,
         src: Operand,
@@ -136,12 +136,6 @@ pub enum Instruction {
         src: Operand,
         dst: Operand,
     },
-}
-
-#[derive(Debug)]
-pub enum Callee {
-    Global(EcoString),
-    Pointer(Operand),
 }
 
 #[derive(Debug)]
@@ -176,6 +170,7 @@ pub enum Operand {
     Pseudo(Pseudo),
     Memory(Register, i32),
     Data(EcoString),
+    Plt(EcoString),
 }
 
 impl Operand {
@@ -693,17 +688,14 @@ impl<'a> CodeGen<'a> {
                 tacky::Instruction::FunCall { name, args, dst } => {
                     let (callee, ty) = match &self.symbol_table[name] {
                         semantics::type_check::Attr::Fun { ty, .. } => {
-                            (Callee::Global(name.clone()), ty)
+                            (Operand::Plt(name.clone()), ty)
                         }
                         semantics::type_check::Attr::Local(ast::VarType::Pointer(ty))
                         | semantics::type_check::Attr::Static {
                             ty: ast::VarType::Pointer(ty),
                             ..
                         } => match ty.as_ref() {
-                            ast::Ty::Fun(ty) => (
-                                Callee::Pointer(Operand::Pseudo(Pseudo::Var(name.clone()))),
-                                ty,
-                            ),
+                            ast::Ty::Fun(ty) => (Operand::Pseudo(Pseudo::Var(name.clone())), ty),
                             _ => unreachable!(),
                         },
                         _ => unreachable!(),
@@ -1113,10 +1105,9 @@ fn pseudo_to_stack(
             Instruction::Push(op) => {
                 remove_pseudo(op);
             }
-            Instruction::Call(Callee::Pointer(op)) => {
+            Instruction::Call(op) => {
                 remove_pseudo(op);
             }
-            Instruction::Call(_) => {}
             Instruction::Movsx { src, dst } => {
                 remove_pseudo(src);
                 remove_pseudo(dst);
@@ -1566,6 +1557,7 @@ impl<'a> Display for SizedOperand<'a> {
             Operand::Pseudo(_) => panic!("Pseudo operand should have been removed"),
             Operand::Data(name) => write!(f, "{}(%rip)", name)?,
             Operand::Memory(reg, offset) => write!(f, "{}({})", offset, RegisterSize::Qword(reg))?,
+            Operand::Plt(name) => write!(f, "{}@PLT", name)?,
         }
 
         Ok(())
@@ -1784,10 +1776,13 @@ impl Display for Instruction {
             Instruction::Push(op) => {
                 writeln!(f, "pushq {}", op.sized(AssemblyType::QuadWord))?;
             }
-            Instruction::Call(callee) => match callee {
-                Callee::Global(name) => writeln!(f, "call {}@PLT", name)?,
-                Callee::Pointer(op) => writeln!(f, "call *{}", op.sized(AssemblyType::QuadWord))?,
-            },
+            Instruction::Call(op) => {
+                if let Operand::Plt(_) = op {
+                    writeln!(f, "call {}", op.sized(AssemblyType::QuadWord))?;
+                } else {
+                    writeln!(f, "call *{}", op.sized(AssemblyType::QuadWord))?;
+                }
+            }
             Instruction::Movsx { src, dst } => {
                 writeln!(
                     f,
