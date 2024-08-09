@@ -552,6 +552,7 @@ fn solve_type_specifier(ty: &[Spanned<TypeSpecifier>]) -> Result<VarType, Error>
     }
 }
 
+#[derive(Debug)]
 enum Declarator {
     Ident(EcoString),
     Pointer(Spanned<Box<Declarator>>),
@@ -561,6 +562,7 @@ enum Declarator {
     },
 }
 
+#[derive(Debug)]
 struct ParamInfo {
     ty: VarType,
     decl: Spanned<Declarator>,
@@ -605,12 +607,13 @@ fn process_declarator(
                     Ok((Spanned { data: name, span }, derived_type, param_names))
                 }
                 Declarator::Pointer(decl) => {
-                    let (name, ty, _) = process_declarator(decl.map(|d| *d), base_type)?;
-                    let derived_type = Ty::Fun(FunType {
+                    let fun_ptr = VarType::Pointer(Box::new(Ty::Fun(FunType {
                         params: param_types,
-                        ret: VarType::Pointer(Box::new(ty)),
-                    });
-                    Ok((name, derived_type, param_names))
+                        ret: base_type,
+                    })));
+
+                    let (name, ty, _) = process_declarator(decl.map(|d| *d), fun_ptr)?;
+                    Ok((name, ty, param_names))
                 }
                 Declarator::Fun { .. } => Err(Error::NotVarType(decl.span.clone())),
             }
