@@ -227,9 +227,11 @@ impl Expression {
             Self::Dereference(exp) => match exp.ty() {
                 VarType::Pointer(ty) => match ty.as_ref() {
                     Ty::Var(ty) => ty,
-                    Ty::Fun(_) => todo!(),
+                    Ty::Fun(_) => panic!(
+                        "Dereference of function pointer. This should be caught by type checker."
+                    ),
                 },
-                _ => todo!(),
+                _ => panic!("Dereference of non-pointer. This should be caught by type checker."),
             },
             Self::AddrOf { ty, .. } => ty,
         }
