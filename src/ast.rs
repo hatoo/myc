@@ -149,14 +149,20 @@ impl Const {
         }
     }
 
-    pub fn get_static_init(&self, ty: &VarType) -> StaticInit {
+    pub fn get_static_init(&self, ty: &VarType) -> Option<StaticInit> {
         match ty {
-            VarType::Int => StaticInit::Int(self.get_int()),
-            VarType::Uint => StaticInit::Uint(self.get_uint()),
-            VarType::Long => StaticInit::Long(self.get_long()),
-            VarType::Ulong => StaticInit::Ulong(self.get_ulong()),
-            VarType::Double => StaticInit::Double(self.get_double()),
-            _ => todo!(),
+            VarType::Int => Some(StaticInit::Int(self.get_int())),
+            VarType::Uint => Some(StaticInit::Uint(self.get_uint())),
+            VarType::Long => Some(StaticInit::Long(self.get_long())),
+            VarType::Ulong => Some(StaticInit::Ulong(self.get_ulong())),
+            VarType::Double => Some(StaticInit::Double(self.get_double())),
+            VarType::Pointer(_) => match self {
+                Self::Int(0) => Some(StaticInit::Ulong(0)),
+                Self::Uint(0) => Some(StaticInit::Ulong(0)),
+                Self::Long(0) => Some(StaticInit::Ulong(0)),
+                Self::Ulong(0) => Some(StaticInit::Ulong(0)),
+                _ => None,
+            },
         }
     }
 }
@@ -251,6 +257,14 @@ impl Expression {
             _ => false,
         }
     }
+
+    pub fn is_lvalue(&self) -> bool {
+        match self {
+            Self::Var(_, _) => true,
+            Self::Dereference(_) => true,
+            _ => false,
+        }
+    }
 }
 
 impl HasSpan for Expression {
@@ -319,7 +333,7 @@ impl VarType {
             Self::Long => StaticInit::Long(0),
             Self::Ulong => StaticInit::Ulong(0),
             Self::Double => StaticInit::Double(0.0),
-            _ => todo!(),
+            Self::Pointer(_) => StaticInit::Ulong(0),
         }
     }
 

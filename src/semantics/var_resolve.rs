@@ -295,9 +295,6 @@ impl VarResolver {
                 }
             }
             ast::Expression::Assignment { lhs, rhs } => {
-                if !matches!(lhs.as_ref(), ast::Expression::Var(..)) {
-                    return Err(Error::InvalidLValue(lhs.as_ref().clone()));
-                }
                 self.resolve_expression(lhs)?;
                 self.resolve_expression(rhs)?;
                 Ok(())
@@ -327,7 +324,14 @@ impl VarResolver {
                 self.resolve_expression(exp)?;
                 Ok(())
             }
-            _ => todo!(),
+            ast::Expression::AddrOf { exp, .. } => {
+                self.resolve_expression(exp)?;
+                Ok(())
+            }
+            ast::Expression::Dereference(exp) => {
+                self.resolve_expression(exp)?;
+                Ok(())
+            }
         }
     }
 }

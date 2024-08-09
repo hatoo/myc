@@ -279,9 +279,10 @@ impl TypeChecker {
         } = decl;
 
         let mut init = match init {
-            Some(Expression::Constant(Spanned { data: c, .. })) => {
-                InitialValue::Initial(c.get_static_init(ty))
-            }
+            Some(Expression::Constant(Spanned { data: c, .. })) => InitialValue::Initial(
+                c.get_static_init(ty)
+                    .ok_or_else(|| Error::BadInitializer(ident.clone()))?,
+            ),
             Some(_) => return Err(Error::BadInitializer(ident.clone())),
             None => {
                 if storage_class == &Some(crate::ast::StorageClass::Extern) {
@@ -376,9 +377,11 @@ impl TypeChecker {
             }
             Some(crate::ast::StorageClass::Static) => {
                 let init = match init {
-                    Some(Expression::Constant(val)) => {
-                        InitialValue::Initial(val.data.get_static_init(ty))
-                    }
+                    Some(Expression::Constant(val)) => InitialValue::Initial(
+                        val.data
+                            .get_static_init(ty)
+                            .ok_or_else(|| Error::BadInitializer(ident.clone()))?,
+                    ),
                     None => InitialValue::Initial(ty.zero()),
                     _ => return Err(Error::BadInitializer(ident.clone())),
                 };
@@ -494,6 +497,9 @@ impl TypeChecker {
                 Ok(ty.clone())
             }
             crate::ast::Expression::Assignment { lhs, rhs } => {
+                if !lhs.is_lvalue() {
+                    return Err(Error::IncompatibleTypes(lhs.span()));
+                }
                 let tyl = self.check_expression(lhs)?;
                 self.check_expression(rhs)?;
                 convert_by_assignment(rhs, &tyl)?;
@@ -567,6 +573,10 @@ impl TypeChecker {
                 }
             }
             ast::Expression::AddrOf { exp, ty } => {
+                if !exp.is_lvalue() {
+                    return Err(Error::IncompatibleTypes(exp.span()));
+                }
+
                 let exp_ty = self.check_expression(exp)?;
                 *ty = ast::VarType::Pointer(Box::new(ast::Ty::Var(exp_ty.clone())));
                 Ok(ty.clone())
