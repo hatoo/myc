@@ -424,6 +424,22 @@ impl TypeChecker {
                     ast::BinaryOp::And | ast::BinaryOp::Or => {
                         *ty = ast::VarType::Int;
                     }
+                    ast::BinaryOp::Equal | ast::BinaryOp::NotEqual => {
+                        let cty = if tyl.is_pointer() || tyr.is_pointer() {
+                            if let Some(cty) = common_pointer_type(lhs, rhs) {
+                                cty.clone()
+                            } else {
+                                return Err(Error::IncompatibleTypes(exp.span()));
+                            }
+                        } else {
+                            common_type(tyl, tyr)
+                        };
+
+                        convert_to(lhs, &cty);
+                        convert_to(rhs, &cty);
+
+                        *ty = ast::VarType::Int;
+                    }
                     _ => {
                         let cty = common_type(tyl, tyr);
                         convert_to(lhs, &cty);
@@ -466,7 +482,15 @@ impl TypeChecker {
                 let tyl = self.check_expression(then_branch)?;
                 let tyr = self.check_expression(else_branch)?;
 
-                let cty = common_type(tyl, tyr);
+                let cty = if tyl.is_pointer() || tyr.is_pointer() {
+                    if let Some(cty) = common_pointer_type(then_branch, else_branch) {
+                        cty.clone()
+                    } else {
+                        return Err(Error::IncompatibleTypes(exp.span()));
+                    }
+                } else {
+                    common_type(tyl, tyr)
+                };
 
                 convert_to(then_branch, &cty);
                 convert_to(else_branch, &cty);
