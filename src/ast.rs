@@ -282,7 +282,8 @@ impl HasSpan for Expression {
             } => condition.span().start..else_branch.span().end,
             Self::FunctionCall { name, .. } => name.span.clone(),
             Self::Cast { exp, .. } => exp.span(),
-            _ => todo!(),
+            Self::Dereference(exp) => exp.span(),
+            Self::AddrOf { exp, .. } => exp.span(),
         }
     }
 }

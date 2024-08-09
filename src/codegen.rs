@@ -39,7 +39,7 @@ impl<'a> From<&'a ast::VarType> for AssemblyType {
             ast::VarType::Ulong => AssemblyType::QuadWord,
             ast::VarType::Long => AssemblyType::QuadWord,
             ast::VarType::Double => AssemblyType::Double,
-            _ => todo!(),
+            ast::VarType::Pointer(_) => AssemblyType::QuadWord,
         }
     }
 }
@@ -52,7 +52,7 @@ impl From<ast::VarType> for AssemblyType {
             ast::VarType::Ulong => AssemblyType::QuadWord,
             ast::VarType::Long => AssemblyType::QuadWord,
             ast::VarType::Double => AssemblyType::Double,
-            _ => todo!(),
+            ast::VarType::Pointer(_) => AssemblyType::QuadWord,
         }
     }
 }
@@ -932,8 +932,35 @@ impl<'a> CodeGen<'a> {
                     }
                     _ => unreachable!(),
                 },
-                _ => {
-                    todo!()
+                tacky::Instruction::Load { src, dst } => {
+                    body.push(Instruction::Mov {
+                        ty: AssemblyType::QuadWord,
+                        src: src.into(),
+                        dst: Operand::Reg(Register::Ax),
+                    });
+                    body.push(Instruction::Mov {
+                        ty: dst.ty(self.symbol_table).into(),
+                        src: Operand::Memory(Register::Ax, 0),
+                        dst: dst.into(),
+                    });
+                }
+                tacky::Instruction::Store { src, dst } => {
+                    body.push(Instruction::Mov {
+                        ty: AssemblyType::QuadWord,
+                        src: dst.into(),
+                        dst: Operand::Reg(Register::Ax),
+                    });
+                    body.push(Instruction::Mov {
+                        ty: src.ty(self.symbol_table).into(),
+                        src: src.into(),
+                        dst: Operand::Memory(Register::Ax, 0),
+                    });
+                }
+                tacky::Instruction::GetAddress { src, dst } => {
+                    body.push(Instruction::Lea {
+                        src: src.into(),
+                        dst: dst.into(),
+                    });
                 }
             }
         }
@@ -1086,8 +1113,9 @@ fn pseudo_to_stack(
                 remove_pseudo(src);
                 remove_pseudo(dst);
             }
-            _ => {
-                todo!()
+            Instruction::Lea { src, dst } => {
+                remove_pseudo(src);
+                remove_pseudo(dst);
             }
         }
     }
@@ -1404,6 +1432,19 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
                 });
                 new_insts.push(Instruction::Push(Operand::Reg(Register::R10)));
             }
+            Instruction::Push(op @ Operand::Reg(Register::Xmm(_))) => {
+                new_insts.push(Instruction::Binary {
+                    op: BinaryOp::Sub,
+                    ty: AssemblyType::QuadWord,
+                    lhs: Operand::Imm(8),
+                    rhs: Operand::Reg(Register::SP),
+                });
+                new_insts.push(Instruction::Mov {
+                    ty: AssemblyType::QuadWord,
+                    src: op,
+                    dst: Operand::Memory(Register::SP, 0),
+                });
+            }
             Instruction::MovZeroExtend { src, dst } => {
                 if let Operand::Reg(_) = dst {
                     new_insts.push(Instruction::Mov {
@@ -1462,6 +1503,17 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
                 } else {
                     new_insts.push(Instruction::Cvtsi2sd { ty, src, dst });
                 }
+            }
+            Instruction::Lea { src, dst } if !matches!(dst, Operand::Reg(_)) => {
+                new_insts.push(Instruction::Lea {
+                    src,
+                    dst: Operand::Reg(Register::R10),
+                });
+                new_insts.push(Instruction::Mov {
+                    ty: AssemblyType::QuadWord,
+                    src: Operand::Reg(Register::R10),
+                    dst,
+                });
             }
             _ => new_insts.push(inst),
         }
