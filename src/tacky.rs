@@ -461,7 +461,17 @@ impl<'a> InstructionGenerator<'a> {
                 ExpResult::PlainOperand(dst)
             }
             ast::Expression::Var(Spanned { data: var, .. }, _) => {
-                ExpResult::PlainOperand(Val::Var(var.clone()))
+                if let semantics::type_check::Attr::Fun { ty, .. } = &self.symbol_table[var] {
+                    let tmp = self
+                        .make_tmp_local(ast::VarType::Pointer(Box::new(ast::Ty::Fun(ty.clone()))));
+                    self.instructions.push(Instruction::GetAddress {
+                        src: Val::Var(var.clone()),
+                        dst: tmp.clone(),
+                    });
+                    ExpResult::PlainOperand(tmp)
+                } else {
+                    ExpResult::PlainOperand(Val::Var(var.clone()))
+                }
             }
             ast::Expression::Assignment { lhs, rhs } => {
                 let lhs = self.add_expression(lhs);

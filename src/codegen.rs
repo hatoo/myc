@@ -125,7 +125,7 @@ pub enum Instruction {
     Label(EcoString),
     Ret,
     Push(Operand),
-    Call(EcoString),
+    Call(Callee),
     Cvttsd2si {
         ty: AssemblyType,
         src: Operand,
@@ -136,6 +136,12 @@ pub enum Instruction {
         src: Operand,
         dst: Operand,
     },
+}
+
+#[derive(Debug)]
+pub enum Callee {
+    Global(EcoString),
+    Pointer(Operand),
 }
 
 #[derive(Debug)]
@@ -685,9 +691,22 @@ impl<'a> CodeGen<'a> {
                     body.push(Instruction::Label(label.clone()));
                 }
                 tacky::Instruction::FunCall { name, args, dst } => {
-                    let semantics::type_check::Attr::Fun { ty, .. } = &self.symbol_table[name]
-                    else {
-                        unreachable!()
+                    let (callee, ty) = match &self.symbol_table[name] {
+                        semantics::type_check::Attr::Fun { ty, .. } => {
+                            (Callee::Global(name.clone()), ty)
+                        }
+                        semantics::type_check::Attr::Local(ast::VarType::Pointer(ty))
+                        | semantics::type_check::Attr::Static {
+                            ty: ast::VarType::Pointer(ty),
+                            ..
+                        } => match ty.as_ref() {
+                            ast::Ty::Fun(ty) => (
+                                Callee::Pointer(Operand::Pseudo(Pseudo::Var(name.clone()))),
+                                ty,
+                            ),
+                            _ => unreachable!(),
+                        },
+                        _ => unreachable!(),
                     };
 
                     let (int_reg_args, double_reg_args, stack_args) =
@@ -738,7 +757,7 @@ impl<'a> CodeGen<'a> {
                         }
                     }
 
-                    body.push(Instruction::Call(name.clone()));
+                    body.push(Instruction::Call(callee));
 
                     let bytes_to_remove = 8 * stack_len + stack_padding;
 
@@ -1037,7 +1056,8 @@ fn pseudo_to_stack(
         if let Operand::Pseudo(var) = operand {
             match var {
                 Pseudo::Var(var) => match &symbol_table[var] {
-                    semantics::type_check::Attr::Static { .. } => {
+                    semantics::type_check::Attr::Static { .. }
+                    | semantics::type_check::Attr::Fun { .. } => {
                         *operand = Operand::Data(var.clone());
                     }
                     attr => {
@@ -1091,6 +1111,9 @@ fn pseudo_to_stack(
             }
             Instruction::Label(_) => {}
             Instruction::Push(op) => {
+                remove_pseudo(op);
+            }
+            Instruction::Call(Callee::Pointer(op)) => {
                 remove_pseudo(op);
             }
             Instruction::Call(_) => {}
@@ -1761,9 +1784,10 @@ impl Display for Instruction {
             Instruction::Push(op) => {
                 writeln!(f, "pushq {}", op.sized(AssemblyType::QuadWord))?;
             }
-            Instruction::Call(name) => {
-                writeln!(f, "call {}@PLT", name)?;
-            }
+            Instruction::Call(callee) => match callee {
+                Callee::Global(name) => writeln!(f, "call {}@PLT", name)?,
+                Callee::Pointer(op) => writeln!(f, "call *{}", op.sized(AssemblyType::QuadWord))?,
+            },
             Instruction::Movsx { src, dst } => {
                 writeln!(
                     f,
