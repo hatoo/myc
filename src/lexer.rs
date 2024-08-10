@@ -22,6 +22,8 @@ pub enum Token {
     CloseParen,
     OpenBrace,
     CloseBrace,
+    OpenSquareBracket,
+    CloseSquareBracket,
     SemiColon,
     Tilde,
     Hyphen,
@@ -273,6 +275,20 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
             b'}' => {
                 tokens.push(Spanned {
                     data: Token::CloseBrace,
+                    span: index..index + 1,
+                });
+                index += 1;
+            }
+            b'[' => {
+                tokens.push(Spanned {
+                    data: Token::OpenSquareBracket,
+                    span: index..index + 1,
+                });
+                index += 1;
+            }
+            b']' => {
+                tokens.push(Spanned {
+                    data: Token::CloseSquareBracket,
                     span: index..index + 1,
                 });
                 index += 1;
