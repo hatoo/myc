@@ -207,7 +207,7 @@ impl<'a> InstructionGenerator<'a> {
             return;
         }
         if let Some(exp) = &decl.init {
-            let val = self.add_expression_and_convert(exp);
+            let val = self.add_expression_and_convert(todo!());
             self.instructions.push(Instruction::Copy {
                 src: val,
                 dst: Val::Var(decl.ident.data.clone()),
@@ -624,6 +624,7 @@ impl<'a> InstructionGenerator<'a> {
                     ExpResult::DereferencedPointer(ptr) => ExpResult::PlainOperand(ptr),
                 }
             }
+            _ => todo!(),
         }
     }
 

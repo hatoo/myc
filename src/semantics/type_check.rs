@@ -279,10 +279,13 @@ impl TypeChecker {
         } = decl;
 
         let mut init = match init {
+            /*
             Some(Expression::Constant(Spanned { data: c, .. })) => InitialValue::Initial(
                 c.get_static_init(ty)
                     .ok_or_else(|| Error::BadInitializer(ident.clone()))?,
             ),
+            */
+            _ => todo!(),
             Some(_) => return Err(Error::BadInitializer(ident.clone())),
             None => {
                 if storage_class == &Some(crate::ast::StorageClass::Extern) {
@@ -377,11 +380,14 @@ impl TypeChecker {
             }
             Some(crate::ast::StorageClass::Static) => {
                 let init = match init {
+                    /*
                     Some(Expression::Constant(val)) => InitialValue::Initial(
                         val.data
                             .get_static_init(ty)
                             .ok_or_else(|| Error::BadInitializer(ident.clone()))?,
                     ),
+                    */
+                    _ => todo!(),
                     None => InitialValue::Initial(ty.zero()),
                     _ => return Err(Error::BadInitializer(ident.clone())),
                 };
@@ -397,10 +403,13 @@ impl TypeChecker {
             _ => {
                 self.sym_table
                     .insert(ident.data.clone(), Attr::Local(ty.clone()));
+                todo!()
+                /*
                 if let Some(exp) = init {
                     self.check_expression(exp)?;
                     convert_by_assignment(exp, ty)?;
                 }
+                */
             }
         }
 
@@ -608,6 +617,7 @@ impl TypeChecker {
                 *ty = ast::VarType::Pointer(Box::new(ast::Ty::Var(exp_ty.clone())));
                 Ok(ty.clone())
             }
+            _ => todo!(),
         }
     }
 

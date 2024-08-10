@@ -40,6 +40,7 @@ impl<'a> From<&'a ast::VarType> for AssemblyType {
             ast::VarType::Long => AssemblyType::QuadWord,
             ast::VarType::Double => AssemblyType::Double,
             ast::VarType::Pointer(_) => AssemblyType::QuadWord,
+            _ => todo!(),
         }
     }
 }
@@ -53,6 +54,7 @@ impl From<ast::VarType> for AssemblyType {
             ast::VarType::Long => AssemblyType::QuadWord,
             ast::VarType::Double => AssemblyType::Double,
             ast::VarType::Pointer(_) => AssemblyType::QuadWord,
+            _ => todo!(),
         }
     }
 }

@@ -271,7 +271,7 @@ impl VarResolver {
             );
             ident.data = unique_name;
             if let Some(exp) = init {
-                self.resolve_expression(exp)?;
+                self.resolve_expression(todo!())?;
             }
             Ok(())
         }
@@ -332,6 +332,7 @@ impl VarResolver {
                 self.resolve_expression(exp)?;
                 Ok(())
             }
+            _ => todo!(),
         }
     }
 }
