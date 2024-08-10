@@ -968,9 +968,8 @@ impl<'a> Parser<'a> {
                 span,
             };
 
-            let index = self.index;
-
             loop {
+                let index = self.index;
                 if let Ok(Spanned { data: size, span }) = self.parse_square_constant() {
                     decl = Spanned {
                         data: Declarator::Array {
@@ -1004,6 +1003,14 @@ impl<'a> Parser<'a> {
             data: index,
             span: start..end,
         })
+    }
+
+    fn parse_square_exp(&mut self) -> Result<Expression, Error> {
+        self.expect(Token::OpenSquareBracket)?.span.start;
+        let exp = self.parse_expression(0)?;
+        self.expect(Token::CloseSquareBracket)?.span.end;
+
+        Ok(exp)
     }
 
     fn parse_param_list(&mut self) -> Result<Vec<ParamInfo>, Error> {
@@ -1126,6 +1133,34 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn parse_initializer(&mut self) -> Result<Initializer, Error> {
+        if self.expect(Token::OpenBrace).is_ok() {
+            let mut inits = Vec::new();
+
+            loop {
+                if self.expect(Token::CloseBrace).is_ok() {
+                    break;
+                }
+
+                inits.push(self.parse_initializer()?);
+
+                if self.expect(Token::Comma).is_err() {
+                    self.expect(Token::CloseBrace)?;
+                    break;
+                }
+            }
+
+            if inits.is_empty() {
+                todo!()
+            }
+
+            Ok(Initializer::CompoundInit(inits))
+        } else {
+            let exp = self.parse_expression(0)?;
+            Ok(Initializer::SingleInit(exp))
+        }
+    }
+
     fn parse_var_decl(&mut self) -> Result<VarDecl, Error> {
         let (ty, storage_class) = self.parse_specifiers()?;
         let decl = self.parse_declarator()?;
@@ -1137,12 +1172,12 @@ impl<'a> Parser<'a> {
         };
 
         if self.expect(Token::Equal).is_ok() {
-            let exp = self.parse_expression(0)?;
+            let init = self.parse_initializer()?;
             self.expect(Token::SemiColon)?;
             Ok(VarDecl {
                 ident,
                 ty,
-                init: todo!(), //Some(exp),
+                init: Some(init),
                 storage_class,
             })
         } else {
@@ -1203,6 +1238,7 @@ impl<'a> Parser<'a> {
         let (return_type, storage_class) = self.parse_specifiers()?;
         let decl = self.parse_declarator()?;
         let span = decl.span.clone();
+        dbg!(&decl);
 
         let (name, ty, params) = process_declarator(decl, return_type)?;
 
@@ -1237,7 +1273,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_factor(&mut self) -> Result<Expression, Error> {
+    fn parse_primary_exp(&mut self) -> Result<Expression, Error> {
         if let Some(token) = self.peek() {
             match &token.data {
                 Token::Constant(constant) => match constant {
@@ -1281,45 +1317,8 @@ impl<'a> Parser<'a> {
                         Ok(Expression::Constant(constant))
                     }
                 },
-                _ if UnaryOp::try_from(&token.data).is_ok() => {
-                    let op = UnaryOp::try_from(&token.data).unwrap();
-                    let op = token.clone().map(|_| op);
-                    self.advance();
-                    let exp = self.parse_factor()?;
-                    Ok(Expression::Unary {
-                        op,
-                        exp: Box::new(exp),
-                        // Fixed in type check pass
-                        ty: VarType::Int,
-                    })
-                }
-                Token::Ampersands => {
-                    self.advance();
-                    let exp = self.parse_factor()?;
-                    Ok(Expression::AddrOf {
-                        exp: Box::new(exp),
-                        // Fixed in type check pass
-                        ty: VarType::Int,
-                    })
-                }
-                Token::Asterisk => {
-                    self.advance();
-                    let exp = self.parse_factor()?;
-                    Ok(Expression::Dereference(Box::new(exp)))
-                }
                 Token::OpenParen => {
                     self.advance();
-                    let index = self.index;
-                    if let Ok(ty) = self.parse_cast_target() {
-                        if self.expect(Token::CloseParen).is_ok() {
-                            let exp = self.parse_factor()?;
-                            return Ok(Expression::Cast {
-                                target: ty,
-                                exp: Box::new(exp),
-                            });
-                        }
-                    }
-                    self.index = index;
                     let exp = self.parse_expression(0)?;
                     self.expect(Token::CloseParen)?;
                     Ok(exp)
@@ -1369,6 +1368,79 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn parse_postfix_exp(&mut self) -> Result<Expression, Error> {
+        let mut exp = self.parse_primary_exp()?;
+        loop {
+            let index = self.index;
+            if let Ok(i) = self.parse_square_exp() {
+                exp = Expression::Subscript {
+                    array: Box::new(exp),
+                    index: Box::new(i),
+                };
+            } else {
+                self.index = index;
+                break;
+            }
+        }
+        Ok(exp)
+    }
+
+    fn parse_unary_exp(&mut self) -> Result<Expression, Error> {
+        if let Some(token) = self.peek() {
+            match &token.data {
+                _ if UnaryOp::try_from(&token.data).is_ok() => {
+                    let op = UnaryOp::try_from(&token.data).unwrap();
+                    let op = token.clone().map(|_| op);
+                    self.advance();
+                    let exp = self.parse_unary_exp()?;
+                    Ok(Expression::Unary {
+                        op,
+                        exp: Box::new(exp),
+                        // Fixed in type check pass
+                        ty: VarType::Int,
+                    })
+                }
+                Token::Ampersands => {
+                    self.advance();
+                    let exp = self.parse_unary_exp()?;
+                    Ok(Expression::AddrOf {
+                        exp: Box::new(exp),
+                        // Fixed in type check pass
+                        ty: VarType::Int,
+                    })
+                }
+                Token::Asterisk => {
+                    self.advance();
+                    let exp = self.parse_unary_exp()?;
+                    Ok(Expression::Dereference(Box::new(exp)))
+                }
+                Token::OpenParen => {
+                    let index = self.index;
+                    let r: Result<_, Error> = (|| {
+                        self.advance();
+                        let ty = self.parse_cast_target()?;
+                        self.expect(Token::CloseParen)?;
+                        let exp = self.parse_unary_exp()?;
+                        Ok(Expression::Cast {
+                            target: ty,
+                            exp: Box::new(exp),
+                        })
+                    })();
+
+                    if let Ok(r) = r {
+                        Ok(r)
+                    } else {
+                        self.index = index;
+                        self.parse_postfix_exp()
+                    }
+                }
+                _ => self.parse_postfix_exp(),
+            }
+        } else {
+            Err(Error::UnexpectedEof)
+        }
+    }
+
     fn parse_abstract_declarator(&mut self) -> Result<Spanned<Declarator>, Error> {
         if let Ok(Spanned { span: aspan, .. }) = self.expect(Token::Asterisk) {
             let aspan = aspan.clone();
@@ -1401,16 +1473,24 @@ impl<'a> Parser<'a> {
 
         let r: Result<_, Error> = (|| {
             self.expect(Token::OpenParen)?;
-            let decl = self.parse_abstract_declarator()?;
+            let mut decl = self.parse_abstract_declarator()?;
             self.expect(Token::CloseParen)?;
-            let size = self.parse_square_constant()?;
-            Ok(Spanned {
-                span: decl.span.start..size.span.end,
-                data: Declarator::Array {
-                    decl: decl.map(Box::new),
-                    size: size.data,
-                },
-            })
+            loop {
+                let index = self.index;
+                if let Ok(size) = self.parse_square_constant() {
+                    decl = Spanned {
+                        span: decl.span.start..size.span.end,
+                        data: Declarator::Array {
+                            decl: decl.map(Box::new),
+                            size: size.data,
+                        },
+                    };
+                } else {
+                    self.index = index;
+                    break;
+                }
+            }
+            Ok(decl)
         })();
 
         if let Ok(r) = r {
@@ -1468,7 +1548,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_expression(&mut self, min_prec: usize) -> Result<Expression, Error> {
-        let mut left = self.parse_factor()?;
+        let mut left = self.parse_unary_exp()?;
         loop {
             let Some(token) = self.peek() else {
                 break;
