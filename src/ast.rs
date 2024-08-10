@@ -651,6 +651,41 @@ fn process_declarator(
 }
 
 impl<'a> Parser<'a> {
+    fn atomic<T>(&mut self, f: impl FnOnce(&mut Self) -> Result<T, Error>) -> Result<T, Error> {
+        let index = self.index;
+        match f(self) {
+            Ok(t) => Ok(t),
+            Err(err) => {
+                self.index = index;
+                Err(err)
+            }
+        }
+    }
+
+    fn many0<T>(&mut self, mut f: impl FnMut(&mut Self) -> Result<T, Error>) -> Vec<T> {
+        let mut res = Vec::new();
+
+        while let Ok(t) = self.atomic(&mut f) {
+            res.push(t);
+        }
+
+        res
+    }
+
+    fn many1<T>(
+        &mut self,
+        mut f: impl FnMut(&mut Self) -> Result<T, Error>,
+    ) -> Result<Vec<T>, Error> {
+        let mut res = Vec::new();
+        res.push(self.atomic(&mut f)?);
+
+        while let Ok(t) = self.atomic(&mut f) {
+            res.push(t);
+        }
+
+        Ok(res)
+    }
+
     fn expect(&mut self, token: Token) -> Result<&Spanned<Token>, Error> {
         if let Some(spanned) = self.tokens.get(self.index) {
             if spanned.data == token {
@@ -757,11 +792,9 @@ impl<'a> Parser<'a> {
         if self.expect(Token::SemiColon).is_ok() {
             return Ok(None);
         }
-        let index = self.index;
-        if let Ok(decl) = self.parse_var_decl() {
+        if let Ok(decl) = self.atomic(|s| s.parse_var_decl()) {
             Ok(Some(ForInit::VarDecl(decl)))
         } else {
-            self.index = index;
             let exp = self.parse_expression(0)?;
             self.expect(Token::SemiColon)?;
             Ok(Some(ForInit::Expression(exp)))
@@ -946,9 +979,8 @@ impl<'a> Parser<'a> {
 
     fn parse_direct_declarator(&mut self) -> Result<Spanned<Declarator>, Error> {
         let mut decl = self.parse_simple_declarator()?;
-        let index = self.index;
 
-        if let Ok(params) = self.parse_param_list() {
+        if let Ok(params) = self.atomic(|s| s.parse_param_list()) {
             let span = decl.span.start..self.tokens[self.index - 1].span.end;
             return Ok(Spanned {
                 data: Declarator::Fun {
@@ -958,33 +990,17 @@ impl<'a> Parser<'a> {
                 span,
             });
         }
-        self.index = index;
-        if let Ok(Spanned { data: size, span }) = self.parse_square_constant() {
+
+        let sizes = self.many0(|s| s.parse_square_constant());
+
+        for s in sizes {
             decl = Spanned {
                 data: Declarator::Array {
                     decl: decl.map(Box::new),
-                    size,
+                    size: s.data,
                 },
-                span,
+                span: s.span,
             };
-
-            loop {
-                let index = self.index;
-                if let Ok(Spanned { data: size, span }) = self.parse_square_constant() {
-                    decl = Spanned {
-                        data: Declarator::Array {
-                            decl: decl.map(Box::new),
-                            size,
-                        },
-                        span,
-                    };
-                } else {
-                    self.index = index;
-                    break;
-                }
-            }
-
-            return Ok(decl);
         }
 
         Ok(decl)
@@ -1263,12 +1279,9 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_declaration(&mut self) -> Result<Declaration, Error> {
-        let index = self.index;
-
-        if let Ok(decl) = self.parse_var_decl() {
+        if let Ok(decl) = self.atomic(|s| s.parse_var_decl()) {
             Ok(Declaration::VarDecl(decl))
         } else {
-            self.index = index;
             Ok(Declaration::FunDecl(self.parse_fun_decl()?))
         }
     }
@@ -1370,18 +1383,15 @@ impl<'a> Parser<'a> {
 
     fn parse_postfix_exp(&mut self) -> Result<Expression, Error> {
         let mut exp = self.parse_primary_exp()?;
-        loop {
-            let index = self.index;
-            if let Ok(i) = self.parse_square_exp() {
-                exp = Expression::Subscript {
-                    array: Box::new(exp),
-                    index: Box::new(i),
-                };
-            } else {
-                self.index = index;
-                break;
-            }
+        let subscriptions = self.many0(|s| s.parse_square_exp());
+
+        for sub in subscriptions {
+            exp = Expression::Subscript {
+                array: Box::new(exp),
+                index: Box::new(sub),
+            };
         }
+
         Ok(exp)
     }
 
@@ -1415,22 +1425,18 @@ impl<'a> Parser<'a> {
                     Ok(Expression::Dereference(Box::new(exp)))
                 }
                 Token::OpenParen => {
-                    let index = self.index;
-                    let r: Result<_, Error> = (|| {
-                        self.advance();
-                        let ty = self.parse_cast_target()?;
-                        self.expect(Token::CloseParen)?;
-                        let exp = self.parse_unary_exp()?;
+                    if let Ok(cast) = self.atomic(|s| {
+                        s.advance();
+                        let ty = s.parse_cast_target()?;
+                        s.expect(Token::CloseParen)?;
+                        let exp = s.parse_unary_exp()?;
                         Ok(Expression::Cast {
                             target: ty,
                             exp: Box::new(exp),
                         })
-                    })();
-
-                    if let Ok(r) = r {
-                        Ok(r)
+                    }) {
+                        Ok(cast)
                     } else {
-                        self.index = index;
                         self.parse_postfix_exp()
                     }
                 }
@@ -1444,8 +1450,7 @@ impl<'a> Parser<'a> {
     fn parse_abstract_declarator(&mut self) -> Result<Spanned<Declarator>, Error> {
         if let Ok(Spanned { span: aspan, .. }) = self.expect(Token::Asterisk) {
             let aspan = aspan.clone();
-            let index = self.index;
-            if let Ok(Spanned { data, span }) = self.parse_abstract_declarator() {
+            if let Ok(Spanned { data, span }) = self.atomic(|s| s.parse_abstract_declarator()) {
                 Ok(Spanned {
                     data: Declarator::Pointer(Spanned {
                         data: Box::new(data),
@@ -1454,7 +1459,6 @@ impl<'a> Parser<'a> {
                     span: aspan.start..span.end,
                 })
             } else {
-                self.index = index;
                 Ok(Spanned {
                     data: Declarator::Pointer(Spanned {
                         data: Box::new(Declarator::Ident("".into())),
@@ -1469,70 +1473,49 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_direct_abstract_declarator(&mut self) -> Result<Spanned<Declarator>, Error> {
-        let index = self.index;
+        let r = self.atomic(|s| {
+            s.expect(Token::OpenParen)?;
+            let mut decl = s.parse_abstract_declarator()?;
+            s.expect(Token::CloseParen)?;
+            let sizes = s.many0(|s| s.parse_square_constant());
 
-        let r: Result<_, Error> = (|| {
-            self.expect(Token::OpenParen)?;
-            let mut decl = self.parse_abstract_declarator()?;
-            self.expect(Token::CloseParen)?;
-            loop {
-                let index = self.index;
-                if let Ok(size) = self.parse_square_constant() {
-                    decl = Spanned {
-                        span: decl.span.start..size.span.end,
-                        data: Declarator::Array {
-                            decl: decl.map(Box::new),
-                            size: size.data,
-                        },
-                    };
-                } else {
-                    self.index = index;
-                    break;
-                }
+            for s in sizes {
+                decl = Spanned {
+                    data: Declarator::Array {
+                        decl: decl.map(Box::new),
+                        size: s.data,
+                    },
+                    span: s.span,
+                };
             }
             Ok(decl)
-        })();
+        });
 
         if let Ok(r) = r {
             Ok(r)
         } else {
-            self.index = index;
-            let size = self.parse_square_constant()?;
+            let sizes = self.many1(|s| s.parse_square_constant())?;
             let mut decl = Spanned {
-                data: Declarator::Array {
-                    decl: Spanned {
-                        data: Box::new(Declarator::Ident("".into())),
-                        span: 0..0,
-                    },
-                    size: size.data,
-                },
-                span: size.span,
+                data: Declarator::Ident("".into()),
+                span: 0..0,
             };
-
-            let index = self.index;
-
-            loop {
-                if let Ok(Spanned { data: size, span }) = self.parse_square_constant() {
-                    decl = Spanned {
-                        data: Declarator::Array {
-                            decl: decl.map(Box::new),
-                            size,
-                        },
-                        span,
-                    };
-                } else {
-                    self.index = index;
-                    break;
-                }
+            for s in sizes {
+                decl = Spanned {
+                    data: Declarator::Array {
+                        decl: decl.map(Box::new),
+                        size: s.data,
+                    },
+                    span: s.span,
+                };
             }
+
             Ok(decl)
         }
     }
 
     fn parse_cast_target(&mut self) -> Result<VarType, Error> {
         let base_type = self.parse_type_specifiers()?;
-        let start = self.index;
-        if let Ok(decl) = self.parse_abstract_declarator() {
+        if let Ok(decl) = self.atomic(|s| s.parse_abstract_declarator()) {
             let span = decl.span.clone();
 
             let (_, ty, _) = process_declarator(decl, base_type)?;
@@ -1542,7 +1525,6 @@ impl<'a> Parser<'a> {
                 Ty::Fun(_) => Err(Error::NotVarType(span)),
             }
         } else {
-            self.index = start;
             Ok(base_type)
         }
     }
