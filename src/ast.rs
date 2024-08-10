@@ -310,7 +310,7 @@ pub enum VarType {
     Ulong,
     Double,
     Pointer(Box<Ty>),
-    Array { element: Box<Ty>, size: usize },
+    Array { element: Box<VarType>, size: usize },
 }
 
 impl VarType {
@@ -573,6 +573,10 @@ fn solve_type_specifier(ty: &[Spanned<TypeSpecifier>]) -> Result<VarType, Error>
 enum Declarator {
     Ident(EcoString),
     Pointer(Spanned<Box<Declarator>>),
+    Array {
+        decl: Spanned<Box<Declarator>>,
+        size: usize,
+    },
     Fun {
         params: Vec<ParamInfo>,
         decl: Spanned<Box<Declarator>>,
@@ -633,7 +637,15 @@ fn process_declarator(
                     Ok((name, ty, param_names))
                 }
                 Declarator::Fun { .. } => Err(Error::NotVarType(decl.span.clone())),
+                Declarator::Array { .. } => todo!(),
             }
+        }
+        Declarator::Array { decl, size } => {
+            let derived_type = VarType::Array {
+                element: Box::new(base_type),
+                size,
+            };
+            process_declarator(decl.map(|b| *b), derived_type)
         }
     }
 }
@@ -672,6 +684,21 @@ impl<'a> Parser<'a> {
         }
     }
     */
+    fn expect_constant(&mut self) -> Result<Spanned<Constant>, Error> {
+        if let Some(spanned) = self.tokens.get(self.index) {
+            if let Token::Constant(c) = &spanned.data {
+                self.index += 1;
+                Ok(Spanned {
+                    data: c.clone(),
+                    span: spanned.span.clone(),
+                })
+            } else {
+                Err(Error::Unexpected(spanned.clone(), ExpectedToken::Constant))
+            }
+        } else {
+            Err(Error::UnexpectedEof)
+        }
+    }
 
     fn expect_eof(&mut self) -> Result<(), Error> {
         if let Some(spanned) = self.tokens.get(self.index) {
@@ -918,22 +945,65 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_direct_declarator(&mut self) -> Result<Spanned<Declarator>, Error> {
-        let decl = self.parse_simple_declarator()?;
+        let mut decl = self.parse_simple_declarator()?;
         let index = self.index;
 
         if let Ok(params) = self.parse_param_list() {
             let span = decl.span.start..self.tokens[self.index - 1].span.end;
-            Ok(Spanned {
+            return Ok(Spanned {
                 data: Declarator::Fun {
                     params,
                     decl: decl.map(Box::new),
                 },
                 span,
-            })
-        } else {
-            self.index = index;
-            Ok(decl)
+            });
         }
+        self.index = index;
+        if let Ok(Spanned { data: size, span }) = self.parse_square_constant() {
+            decl = Spanned {
+                data: Declarator::Array {
+                    decl: decl.map(Box::new),
+                    size,
+                },
+                span,
+            };
+
+            let index = self.index;
+
+            loop {
+                if let Ok(Spanned { data: size, span }) = self.parse_square_constant() {
+                    decl = Spanned {
+                        data: Declarator::Array {
+                            decl: decl.map(Box::new),
+                            size,
+                        },
+                        span,
+                    };
+                } else {
+                    self.index = index;
+                    break;
+                }
+            }
+
+            return Ok(decl);
+        }
+
+        Ok(decl)
+    }
+
+    fn parse_square_constant(&mut self) -> Result<Spanned<usize>, Error> {
+        let start = self.expect(Token::OpenSquareBracket)?.span.start;
+        let c = self.expect_constant()?;
+        let index = match c.data {
+            Constant::Integer { value, .. } => value as usize,
+            Constant::Float(_) => todo!(),
+        };
+        let end = self.expect(Token::CloseSquareBracket)?.span.end;
+
+        Ok(Spanned {
+            data: index,
+            span: start..end,
+        })
     }
 
     fn parse_param_list(&mut self) -> Result<Vec<ParamInfo>, Error> {
