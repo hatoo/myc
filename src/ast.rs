@@ -1397,11 +1397,56 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_direct_abstract_declarator(&mut self) -> Result<Spanned<Declarator>, Error> {
-        self.expect(Token::OpenParen)?;
-        let decl = self.parse_abstract_declarator()?;
-        self.expect(Token::CloseParen)?;
+        let index = self.index;
 
-        Ok(decl)
+        let r: Result<_, Error> = (|| {
+            self.expect(Token::OpenParen)?;
+            let decl = self.parse_abstract_declarator()?;
+            self.expect(Token::CloseParen)?;
+            let size = self.parse_square_constant()?;
+            Ok(Spanned {
+                span: decl.span.start..size.span.end,
+                data: Declarator::Array {
+                    decl: decl.map(Box::new),
+                    size: size.data,
+                },
+            })
+        })();
+
+        if let Ok(r) = r {
+            Ok(r)
+        } else {
+            self.index = index;
+            let size = self.parse_square_constant()?;
+            let mut decl = Spanned {
+                data: Declarator::Array {
+                    decl: Spanned {
+                        data: Box::new(Declarator::Ident("".into())),
+                        span: 0..0,
+                    },
+                    size: size.data,
+                },
+                span: size.span,
+            };
+
+            let index = self.index;
+
+            loop {
+                if let Ok(Spanned { data: size, span }) = self.parse_square_constant() {
+                    decl = Spanned {
+                        data: Declarator::Array {
+                            decl: decl.map(Box::new),
+                            size,
+                        },
+                        span,
+                    };
+                } else {
+                    self.index = index;
+                    break;
+                }
+            }
+            Ok(decl)
+        }
     }
 
     fn parse_cast_target(&mut self) -> Result<VarType, Error> {
