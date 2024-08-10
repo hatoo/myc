@@ -20,7 +20,7 @@ pub enum Declaration {
 #[derive(Debug)]
 pub struct VarDecl {
     pub ident: Spanned<EcoString>,
-    pub init: Option<Expression>,
+    pub init: Option<Initializer>,
     pub ty: VarType,
     pub storage_class: Option<StorageClass>,
 }
@@ -32,6 +32,12 @@ pub struct FunDecl {
     pub body: Option<Block>,
     pub ty: FunType,
     pub storage_class: Option<StorageClass>,
+}
+
+#[derive(Debug)]
+pub enum Initializer {
+    SingleInit(Expression),
+    CompoundInit(Vec<Initializer>),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -163,6 +169,7 @@ impl Const {
                 Self::Ulong(0) => Some(StaticInit::Ulong(0)),
                 _ => None,
             },
+            _ => todo!(),
         }
     }
 }
@@ -205,6 +212,10 @@ pub enum Expression {
         exp: Box<Expression>,
         ty: VarType,
     },
+    Subscript {
+        array: Box<Expression>,
+        index: Box<Expression>,
+    },
 }
 
 impl Expression {
@@ -234,6 +245,7 @@ impl Expression {
                 _ => panic!("Dereference of non-pointer. This should be caught by type checker."),
             },
             Self::AddrOf { ty, .. } => ty,
+            _ => todo!(),
         }
     }
 
@@ -279,6 +291,7 @@ impl HasSpan for Expression {
             Self::Cast { exp, .. } => exp.span(),
             Self::Dereference(exp) => exp.span(),
             Self::AddrOf { exp, .. } => exp.span(),
+            _ => todo!(),
         }
     }
 }
@@ -297,6 +310,7 @@ pub enum VarType {
     Ulong,
     Double,
     Pointer(Box<Ty>),
+    Array { element: Box<Ty>, size: usize },
 }
 
 impl VarType {
@@ -308,6 +322,7 @@ impl VarType {
             Self::Ulong => 8,
             Self::Double => 8,
             Self::Pointer(_) => 8,
+            _ => todo!(),
         }
     }
 
@@ -319,6 +334,7 @@ impl VarType {
             Self::Ulong => false,
             Self::Double => false,
             Self::Pointer(_) => false,
+            _ => todo!(),
         }
     }
 
@@ -330,6 +346,7 @@ impl VarType {
             Self::Ulong => StaticInit::Ulong(0),
             Self::Double => StaticInit::Double(0.0),
             Self::Pointer(_) => StaticInit::Ulong(0),
+            _ => todo!(),
         }
     }
 
@@ -1055,7 +1072,7 @@ impl<'a> Parser<'a> {
             Ok(VarDecl {
                 ident,
                 ty,
-                init: Some(exp),
+                init: todo!(), //Some(exp),
                 storage_class,
             })
         } else {
