@@ -576,10 +576,10 @@ impl TypeChecker {
                             convert_to(rhs, &cty);
                             *ty = cty;
                         } else if tyl.is_pointer() && tyr.is_integer() {
-                            convert_to(rhs, &tyl);
+                            convert_to(rhs, &VarType::Long);
                             *ty = tyl.clone();
                         } else if tyl.is_integer() && tyr.is_pointer() {
-                            convert_to(lhs, &tyr);
+                            convert_to(lhs, &VarType::Long);
                             *ty = tyr.clone();
                         } else {
                             return Err(Error::IncompatibleTypes(exp.span()));
@@ -592,7 +592,7 @@ impl TypeChecker {
                             convert_to(rhs, &cty);
                             *ty = cty;
                         } else if tyl.is_pointer() && tyr.is_integer() {
-                            convert_to(rhs, &tyl);
+                            convert_to(rhs, &VarType::Long);
                             *ty = tyl.clone();
                         } else if tyl.is_pointer() && tyr.is_pointer() && tyl == tyr {
                             *ty = ast::VarType::Long;
