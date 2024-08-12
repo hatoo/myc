@@ -6,7 +6,7 @@ use ecow::EcoString;
 use crate::{
     ast::{self, Const, VarType},
     semantics::{self, type_check::SymbolTable},
-    tacky,
+    tacky::{self, Val},
 };
 
 #[derive(Debug)]
@@ -19,6 +19,7 @@ pub enum AssemblyType {
     LongWord,
     QuadWord,
     Double,
+    ByteArray { size: usize, alignment: usize },
 }
 
 impl AssemblyType {
@@ -77,7 +78,7 @@ pub struct StaticConstant {
 pub struct StaticVariable {
     pub global: bool,
     pub name: EcoString,
-    pub init: semantics::type_check::StaticInit,
+    pub init: Vec<semantics::type_check::StaticInit>,
 }
 
 #[derive(Debug)]
@@ -163,6 +164,7 @@ pub enum Pseudo {
     Var(EcoString),
     // Must be placed in read only section
     Double { value: f64, alignment: usize },
+    Mem { name: EcoString, offset: usize },
 }
 
 #[derive(Debug, Clone)]
@@ -173,6 +175,11 @@ pub enum Operand {
     Memory(Register, i32),
     Data(EcoString),
     Plt(EcoString),
+    Indexed {
+        base: Register,
+        index: Register,
+        scale: usize,
+    },
 }
 
 impl Operand {
@@ -970,12 +977,50 @@ impl<'a> CodeGen<'a> {
                     });
                 }
                 tacky::Instruction::GetAddress { src, dst } => {
+                    let Val::Var(var) = src else { unreachable!() };
                     body.push(Instruction::Lea {
-                        src: src.into(),
+                        src: Operand::Pseudo(Pseudo::Mem {
+                            name: var.clone(),
+                            offset: 0,
+                        }),
                         dst: dst.into(),
                     });
                 }
-                _ => todo!(),
+                tacky::Instruction::CopyToOffset { src, dst, offset } => {
+                    body.push(Instruction::Mov {
+                        ty: src.ty(self.symbol_table).into(),
+                        src: src.into(),
+                        dst: Operand::Pseudo(Pseudo::Mem {
+                            name: dst.clone(),
+                            offset: *offset,
+                        }),
+                    });
+                }
+                tacky::Instruction::AddPtr {
+                    ptr,
+                    index,
+                    scale,
+                    dst,
+                } => {
+                    body.push(Instruction::Mov {
+                        ty: AssemblyType::QuadWord,
+                        src: ptr.into(),
+                        dst: Operand::Reg(Register::Ax),
+                    });
+                    body.push(Instruction::Mov {
+                        ty: AssemblyType::QuadWord,
+                        src: index.into(),
+                        dst: Operand::Reg(Register::Dx),
+                    });
+                    body.push(Instruction::Lea {
+                        src: Operand::Indexed {
+                            base: Register::Ax,
+                            index: Register::Dx,
+                            scale: *scale,
+                        },
+                        dst: dst.into(),
+                    });
+                }
             }
         }
 
