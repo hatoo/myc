@@ -492,7 +492,7 @@ impl TypeChecker {
                 }
 
                 for _ in list.len()..*size {
-                    list.push(ast::Initializer::zero(target));
+                    list.push(ast::Initializer::zero(&element));
                 }
 
                 Ok(())
