@@ -344,7 +344,7 @@ impl VarResolver {
                 self.resolve_expression(exp)?;
                 Ok(())
             }
-            ast::Expression::Subscript { array, index, ty } => {
+            ast::Expression::Subscript { array, index, .. } => {
                 self.resolve_expression(array)?;
                 self.resolve_expression(index)?;
                 Ok(())
