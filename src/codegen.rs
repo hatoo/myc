@@ -1166,8 +1166,9 @@ fn pseudo_to_stack(
                             *operand = Operand::stack(*addr);
                         } else {
                             let size = attr.ty().size() as i32;
+                            let align = attr.ty().alignment() as i32;
                             total += size;
-                            total = (total + (size - 1)) / size * size;
+                            total = (total + (align - 1)) / align * align;
                             known_vars.insert(var.clone(), -total);
                             *operand = Operand::stack(-total);
                         }
@@ -1191,8 +1192,9 @@ fn pseudo_to_stack(
                             }
                             Entry::Vacant(entry) => {
                                 let size = ty.size() as i32;
+                                let align = ty.alignment() as i32;
                                 total += size;
-                                total = (total + (size - 1)) / size * size;
+                                total = (total + (align - 1)) / align * align;
                                 entry.insert(-total);
                                 *operand = Operand::stack(-total + (*offset as i32));
                             }
