@@ -215,6 +215,7 @@ pub enum Expression {
     Subscript {
         array: Box<Expression>,
         index: Box<Expression>,
+        ty: VarType,
     },
 }
 
@@ -1396,6 +1397,7 @@ impl<'a> Parser<'a> {
             exp = Expression::Subscript {
                 array: Box::new(exp),
                 index: Box::new(sub),
+                ty: VarType::Int,
             };
         }
 

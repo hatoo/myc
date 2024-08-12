@@ -661,8 +661,39 @@ impl TypeChecker {
                 *ty = ast::VarType::Pointer(Box::new(ast::Ty::Var(exp_ty.clone())));
                 Ok(ty.clone())
             }
-            ast::Expression::Subscript { array, index } => {
-                todo!()
+            ast::Expression::Subscript { array, index, ty } => {
+                let array_ty = self.check_expression_and_convert(array)?;
+                let index_ty = self.check_expression_and_convert(index)?;
+
+                if array_ty.is_pointer() && index_ty.is_integer() {
+                    convert_to(index, &ast::VarType::Long);
+                    *ty = match array_ty {
+                        ast::VarType::Pointer(ty) => {
+                            if let ast::Ty::Var(ty) = ty.as_ref() {
+                                ty.clone()
+                            } else {
+                                return Err(Error::IncompatibleTypes(exp.span()));
+                            }
+                        }
+                        _ => unreachable!(),
+                    };
+                } else if array_ty.is_integer() && index_ty.is_pointer() {
+                    convert_to(array, &ast::VarType::Long);
+                    *ty = match index_ty {
+                        ast::VarType::Pointer(ty) => {
+                            if let ast::Ty::Var(ty) = ty.as_ref() {
+                                ty.clone()
+                            } else {
+                                return Err(Error::IncompatibleTypes(exp.span()));
+                            }
+                        }
+                        _ => unreachable!(),
+                    };
+                } else {
+                    return Err(Error::IncompatibleTypes(exp.span()));
+                }
+
+                Ok(ty.clone())
             }
         }
     }
