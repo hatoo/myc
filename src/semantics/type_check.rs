@@ -457,8 +457,8 @@ impl TypeChecker {
                 Ok(ty.clone())
             }
             crate::ast::Expression::Binary { op, lhs, rhs, ty } => {
-                let tyl = self.check_expression(lhs)?;
-                let tyr = self.check_expression(rhs)?;
+                let tyl = self.check_expression_and_convert(lhs)?;
+                let tyr = self.check_expression_and_convert(rhs)?;
 
                 match op {
                     ast::BinaryOp::And | ast::BinaryOp::Or => {
@@ -480,15 +480,43 @@ impl TypeChecker {
 
                         *ty = ast::VarType::Int;
                     }
+                    ast::BinaryOp::Add => {
+                        if !tyl.is_pointer() && !tyr.is_pointer() {
+                            let cty = common_type(tyl, tyr);
+                            convert_to(lhs, &cty);
+                            convert_to(rhs, &cty);
+                            *ty = cty;
+                        } else if tyl.is_pointer() && tyr.is_integer() {
+                            convert_to(rhs, &VarType::Long);
+                            *ty = tyl.clone();
+                        } else if tyl.is_integer() && tyr.is_pointer() {
+                            convert_to(lhs, &VarType::Long);
+                            *ty = tyr.clone();
+                        } else {
+                            return Err(Error::IncompatibleTypes(exp.span()));
+                        }
+                    }
+                    ast::BinaryOp::Subtract => {
+                        if !tyl.is_pointer() && !tyr.is_pointer() {
+                            let cty = common_type(tyl, tyr);
+                            convert_to(lhs, &cty);
+                            convert_to(rhs, &cty);
+                            *ty = cty;
+                        } else if tyl.is_pointer() && tyr.is_integer() {
+                            convert_to(rhs, &VarType::Long);
+                            *ty = tyl.clone();
+                        } else if tyl.is_pointer() && tyr.is_pointer() && tyl == tyr {
+                            *ty = ast::VarType::Long;
+                        } else {
+                            return Err(Error::IncompatibleTypes(exp.span()));
+                        }
+                    }
                     _ => {
                         let cty = common_type(tyl, tyr);
                         convert_to(lhs, &cty);
                         convert_to(rhs, &cty);
 
                         match op {
-                            ast::BinaryOp::Add | ast::BinaryOp::Subtract => {
-                                *ty = cty;
-                            }
                             ast::BinaryOp::Multiply | ast::BinaryOp::Divide => {
                                 if cty.is_pointer() {
                                     return Err(Error::IncompatibleTypes(exp.span()));
@@ -511,11 +539,11 @@ impl TypeChecker {
                 Ok(ty.clone())
             }
             crate::ast::Expression::Assignment { lhs, rhs } => {
+                let tyl = self.check_expression_and_convert(lhs)?;
                 if !lhs.is_lvalue() {
                     return Err(Error::IncompatibleTypes(lhs.span()));
                 }
-                let tyl = self.check_expression(lhs)?;
-                self.check_expression(rhs)?;
+                self.check_expression_and_convert(rhs)?;
                 convert_by_assignment(rhs, &tyl)?;
                 Ok(tyl)
             }
@@ -617,7 +645,26 @@ impl TypeChecker {
                 *ty = ast::VarType::Pointer(Box::new(ast::Ty::Var(exp_ty.clone())));
                 Ok(ty.clone())
             }
-            _ => todo!(),
+            ast::Expression::Subscript { array, index } => {
+                todo!()
+            }
+        }
+    }
+
+    fn check_expression_and_convert(
+        &mut self,
+        exp: &mut crate::ast::Expression,
+    ) -> Result<ast::VarType, Error> {
+        match self.check_expression(exp)? {
+            VarType::Array { element, .. } => {
+                let ty = VarType::Pointer(Box::new(ast::Ty::Var(*element)));
+                *exp = Expression::AddrOf {
+                    exp: Box::new(exp.clone()),
+                    ty: ty.clone(),
+                };
+                Ok(ty)
+            }
+            t => Ok(t),
         }
     }
 

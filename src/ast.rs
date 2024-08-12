@@ -270,7 +270,10 @@ impl Expression {
     }
 
     pub fn is_lvalue(&self) -> bool {
-        matches!(self, Self::Var(_, _) | Self::Dereference(_))
+        matches!(
+            self,
+            Self::Var(_, _) | Self::Dereference(_) | Self::Subscript { .. }
+        )
     }
 }
 
@@ -324,6 +327,10 @@ impl VarType {
             Self::Pointer(_) => 8,
             _ => todo!(),
         }
+    }
+
+    pub fn is_integer(&self) -> bool {
+        matches!(self, Self::Int | Self::Uint | Self::Long | Self::Ulong)
     }
 
     pub fn is_signed(&self) -> bool {
