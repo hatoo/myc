@@ -34,7 +34,7 @@ pub struct Function {
 pub struct StaticVariable {
     pub global: bool,
     pub name: EcoString,
-    pub init: semantics::type_check::StaticInit,
+    pub init: Vec<semantics::type_check::StaticInit>,
 }
 
 #[derive(Debug)]
@@ -109,6 +109,17 @@ pub enum Instruction {
         name: EcoString,
         args: Vec<Val>,
         dst: Val,
+    },
+    AddPtr {
+        ptr: Val,
+        index: Val,
+        scale: usize,
+        dst: Val,
+    },
+    CopyToOffset {
+        src: Val,
+        dst: EcoString,
+        offset: usize,
     },
 }
 
@@ -439,6 +450,62 @@ impl<'a> InstructionGenerator<'a> {
                 let lhs = self.add_expression_and_convert(lhs);
                 let rhs = self.add_expression_and_convert(rhs);
                 let dst = self.make_tmp_local(ty.clone());
+
+                if let ast::VarType::Pointer(elem) = ty {
+                    match op {
+                        ast::BinaryOp::Add => {
+                            let (lhs, rhs) = if lhs.ty(self.symbol_table).is_pointer() {
+                                (lhs, rhs)
+                            } else {
+                                (rhs, lhs)
+                            };
+                            self.instructions.push(Instruction::AddPtr {
+                                ptr: lhs,
+                                index: rhs,
+                                scale: elem.size(),
+                                dst: dst.clone(),
+                            });
+                            return ExpResult::PlainOperand(dst);
+                        }
+                        ast::BinaryOp::Subtract => {
+                            if rhs.ty(self.symbol_table).is_pointer() {
+                                // ptr - ptr
+                                let diff = self.make_tmp_local(ast::VarType::Long);
+                                self.instructions.push(Instruction::Binary {
+                                    op: BinaryOp::Subtract,
+                                    lhs: lhs.clone(),
+                                    rhs: rhs.clone(),
+                                    dst: diff.clone(),
+                                });
+                                self.instructions.push(Instruction::Binary {
+                                    op: BinaryOp::Divide,
+                                    lhs: diff.clone(),
+                                    rhs: Val::Constant(ast::Const::Long(elem.size() as _)),
+                                    dst: dst.clone(),
+                                });
+                                return ExpResult::PlainOperand(dst);
+                            } else {
+                                // ptr - int
+
+                                let neg = self.make_tmp_local(ast::VarType::Long);
+                                self.instructions.push(Instruction::Unary {
+                                    op: UnaryOp::Negate,
+                                    src: rhs.clone(),
+                                    dst: neg.clone(),
+                                });
+                                self.instructions.push(Instruction::AddPtr {
+                                    ptr: lhs,
+                                    index: neg,
+                                    scale: elem.size(),
+                                    dst: dst.clone(),
+                                });
+                                return ExpResult::PlainOperand(dst);
+                            }
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+
                 self.instructions.push(Instruction::Binary {
                     op: match op {
                         ast::BinaryOp::Add => BinaryOp::Add,
@@ -624,7 +691,27 @@ impl<'a> InstructionGenerator<'a> {
                     ExpResult::DereferencedPointer(ptr) => ExpResult::PlainOperand(ptr),
                 }
             }
-            _ => todo!(),
+            ast::Expression::Subscript { array, index, ty } => {
+                let lhs = self.add_expression_and_convert(array);
+                let rhs = self.add_expression_and_convert(index);
+
+                let dst = self.make_tmp_local(ty.clone());
+
+                let (ptr, index) = if lhs.ty(self.symbol_table).is_pointer() {
+                    (lhs, rhs)
+                } else {
+                    (rhs, lhs)
+                };
+
+                self.instructions.push(Instruction::AddPtr {
+                    ptr,
+                    index,
+                    scale: ty.size(),
+                    dst: dst.clone(),
+                });
+
+                ExpResult::DereferencedPointer(dst)
+            }
         }
     }
 

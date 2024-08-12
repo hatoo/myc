@@ -342,6 +342,16 @@ pub enum Ty {
     Fun(FunType),
 }
 
+impl Ty {
+    pub fn size(&self) -> usize {
+        match self {
+            Self::Var(ty) => ty.size(),
+            // TODO: Search it, currently it uses gcc/clang's value
+            Self::Fun(_) => 1,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VarType {
     Int,

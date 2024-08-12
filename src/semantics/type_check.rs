@@ -3,7 +3,7 @@ use std::collections::{hash_map::Entry, HashMap};
 use ecow::EcoString;
 
 use crate::{
-    ast::{self, Const, Expression, Initializer, VarType},
+    ast::{self, Expression, Initializer, VarType},
     span::{HasSpan, Spanned},
 };
 
