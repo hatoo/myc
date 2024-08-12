@@ -1322,7 +1322,6 @@ impl<'a> Parser<'a> {
         let (return_type, storage_class) = self.parse_specifiers()?;
         let decl = self.parse_declarator()?;
         let span = decl.span.clone();
-        dbg!(&decl);
 
         let (name, ty, params) = process_declarator(decl, return_type)?;
 
