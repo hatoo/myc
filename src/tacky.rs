@@ -723,7 +723,7 @@ impl<'a> InstructionGenerator<'a> {
                 let lhs = self.add_expression_and_convert(array);
                 let rhs = self.add_expression_and_convert(index);
 
-                let dst = self.make_tmp_local(ty.clone());
+                let dst = self.make_tmp_local(VarType::Long);
 
                 let (ptr, index) = if lhs.ty(self.symbol_table).is_pointer() {
                     (lhs, rhs)
