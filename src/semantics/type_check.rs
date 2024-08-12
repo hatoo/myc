@@ -631,6 +631,10 @@ impl TypeChecker {
                 _ => Err(Error::IncompatibleTypes(name.span.clone())),
             },
             crate::ast::Expression::Cast { target, exp } => {
+                if let VarType::Array { .. } = target {
+                    return Err(Error::IncompatibleTypes(exp.span()));
+                }
+
                 let ty = self.check_expression(exp)?;
 
                 if (target.is_pointer() && ty == VarType::Double)
