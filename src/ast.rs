@@ -362,7 +362,7 @@ impl VarType {
             Self::Ulong => 8,
             Self::Double => 8,
             Self::Pointer(_) => 8,
-            _ => todo!(),
+            Self::Array { element, size } => element.size() * size,
         }
     }
 
@@ -383,15 +383,7 @@ impl VarType {
     }
 
     pub fn zero(&self) -> StaticInit {
-        match self {
-            Self::Int => StaticInit::Int(0),
-            Self::Uint => StaticInit::Uint(0),
-            Self::Long => StaticInit::Long(0),
-            Self::Ulong => StaticInit::Ulong(0),
-            Self::Double => StaticInit::Double(0.0),
-            Self::Pointer(_) => StaticInit::Ulong(0),
-            _ => todo!(),
-        }
+        StaticInit::Zero(self.size())
     }
 
     pub fn is_pointer(&self) -> bool {

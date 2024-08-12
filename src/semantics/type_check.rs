@@ -784,7 +784,7 @@ impl TypeChecker {
     ) -> Result<(), Error> {
         match stmt {
             crate::ast::Statement::Return(exp) => {
-                self.check_expression(exp)?;
+                self.check_expression_and_convert(exp)?;
                 convert_by_assignment(exp, ret_type)?;
                 Ok(())
             }
