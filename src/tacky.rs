@@ -652,14 +652,14 @@ pub fn gen_program(program: &ast::Program, symbol_table: &mut HashMap<EcoString,
             .filter_map(|(key, value)| {
                 if let Attr::Static { init, global, ty } = value {
                     let init = match init {
-                        semantics::type_check::InitialValue::Initial(i) => *i,
-                        semantics::type_check::InitialValue::Tentative => ty.zero(),
+                        semantics::type_check::InitialValue::Initial(i) => todo!(), // *i,
+                        semantics::type_check::InitialValue::Tentative => todo!(),  // ty.zero(),
                         semantics::type_check::InitialValue::NoInitializer => return None,
                     };
                     Some(TopLevelItem::StaticVariable(StaticVariable {
                         global: *global,
                         name: key.clone(),
-                        init,
+                        init: todo!(),
                     }))
                 } else {
                     None

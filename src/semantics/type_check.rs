@@ -3,7 +3,7 @@ use std::collections::{hash_map::Entry, HashMap};
 use ecow::EcoString;
 
 use crate::{
-    ast::{self, Expression, VarType},
+    ast::{self, Const, Expression, Initializer, VarType},
     span::{HasSpan, Spanned},
 };
 
@@ -39,10 +39,10 @@ impl Attr {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum InitialValue {
     Tentative,
-    Initial(StaticInit),
+    Initial(Vec<StaticInit>),
     NoInitializer,
 }
 
@@ -53,6 +53,7 @@ pub enum StaticInit {
     Uint(u32),
     Ulong(u64),
     Double(f64),
+    Zero(usize),
 }
 
 impl StaticInit {
@@ -63,6 +64,7 @@ impl StaticInit {
             StaticInit::Long(_) => 8,
             StaticInit::Ulong(_) => 8,
             StaticInit::Double(_) => 8,
+            _ => todo!(),
         }
     }
 
@@ -73,6 +75,36 @@ impl StaticInit {
             StaticInit::Long(_) => 8,
             StaticInit::Ulong(_) => 8,
             StaticInit::Double(_) => 8,
+            _ => todo!(),
+        }
+    }
+
+    pub fn from_const_expr(target: &ast::VarType, exp: &Expression) -> Result<Self, Error> {
+        if let ast::Expression::Constant(Spanned { data, .. }) = exp {
+            data.get_static_init(target)
+                .ok_or_else(|| Error::IncompatibleTypes(exp.span()))
+        } else {
+            Err(Error::IncompatibleTypes(exp.span()))
+        }
+    }
+
+    pub fn from_initializer(
+        target: &ast::VarType,
+        inits: &Initializer,
+    ) -> Result<Vec<Self>, Error> {
+        match inits {
+            Initializer::SingleInit(exp) => Ok(vec![Self::from_const_expr(target, exp)?]),
+            Initializer::CompoundInit(inits) => {
+                if let ast::VarType::Array { element, .. } = target {
+                    let mut res = Vec::new();
+                    for init in inits {
+                        res.extend(Self::from_initializer(element, init)?);
+                    }
+                    Ok(res)
+                } else {
+                    Err(Error::IncompatibleTypes(0..0))
+                }
+            }
         }
     }
 }
@@ -289,14 +321,7 @@ impl TypeChecker {
         } = decl;
 
         let mut init = match init {
-            /*
-            Some(Expression::Constant(Spanned { data: c, .. })) => InitialValue::Initial(
-                c.get_static_init(ty)
-                    .ok_or_else(|| Error::BadInitializer(ident.clone()))?,
-            ),
-            */
-            _ => todo!(),
-            Some(_) => return Err(Error::BadInitializer(ident.clone())),
+            Some(init) => InitialValue::Initial(StaticInit::from_initializer(ty, init)?),
             None => {
                 if storage_class == &Some(crate::ast::StorageClass::Extern) {
                     InitialValue::NoInitializer
@@ -331,7 +356,7 @@ impl TypeChecker {
                     if matches!(init, InitialValue::Initial(_)) {
                         return Err(Error::BadInitializer(ident.clone()));
                     }
-                    init = *old_init;
+                    init = old_init.clone();
                 } else if !matches!(init, InitialValue::Initial(_))
                     && matches!(old_init, InitialValue::Tentative)
                 {
@@ -390,16 +415,8 @@ impl TypeChecker {
             }
             Some(crate::ast::StorageClass::Static) => {
                 let init = match init {
-                    /*
-                    Some(Expression::Constant(val)) => InitialValue::Initial(
-                        val.data
-                            .get_static_init(ty)
-                            .ok_or_else(|| Error::BadInitializer(ident.clone()))?,
-                    ),
-                    */
-                    _ => todo!(),
-                    None => InitialValue::Initial(ty.zero()),
-                    _ => return Err(Error::BadInitializer(ident.clone())),
+                    Some(init) => InitialValue::Initial(StaticInit::from_initializer(ty, init)?),
+                    None => InitialValue::Initial(vec![ty.zero()]),
                 };
                 self.sym_table.insert(
                     ident.data.clone(),

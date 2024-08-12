@@ -1617,6 +1617,7 @@ impl Display for StaticConstant {
                 writeln!(f, ".quad {}", d.to_bits())?;
                 writeln!(f, "# {:+e}", d)?;
             }
+            _ => todo!(),
         }
         Ok(())
     }
@@ -1673,6 +1674,7 @@ impl Display for StaticVariable {
                 writeln!(f, ".quad {}", d.to_bits())?;
                 writeln!(f, "# {:+e}", d)?;
             }
+            _ => todo!(),
         }
         Ok(())
     }
