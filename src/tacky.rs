@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use ecow::EcoString;
 
 use crate::{
-    ast::{self, Block, VarType},
+    ast::{self, Block, Initializer, VarType},
     semantics::{
         self,
         type_check::{Attr, SymbolTable},
@@ -213,16 +213,43 @@ impl<'a> InstructionGenerator<'a> {
         }
     }
 
+    fn copy_initializers(&mut self, inits: &[Initializer], name: EcoString, offset: &mut usize) {
+        for init in inits {
+            match init {
+                Initializer::SingleInit(exp) => {
+                    let val = self.add_expression_and_convert(exp);
+                    let size = val.ty(self.symbol_table).size();
+                    self.instructions.push(Instruction::CopyToOffset {
+                        src: val,
+                        dst: name.clone(),
+                        offset: *offset,
+                    });
+                    *offset += size;
+                }
+                Initializer::CompoundInit(inits) => {
+                    self.copy_initializers(inits, name.clone(), offset);
+                }
+            }
+        }
+    }
+
     fn add_var_declaration(&mut self, decl: &ast::VarDecl) {
         if decl.storage_class.is_some() {
             return;
         }
-        if let Some(exp) = &decl.init {
-            let val = self.add_expression_and_convert(todo!());
-            self.instructions.push(Instruction::Copy {
-                src: val,
-                dst: Val::Var(decl.ident.data.clone()),
-            });
+        if let Some(init) = &decl.init {
+            match init {
+                ast::Initializer::SingleInit(exp) => {
+                    let val = self.add_expression_and_convert(exp);
+                    self.instructions.push(Instruction::Copy {
+                        src: val,
+                        dst: Val::Var(decl.ident.data.clone()),
+                    });
+                }
+                ast::Initializer::CompoundInit(inits) => {
+                    self.copy_initializers(inits, decl.ident.data.clone(), &mut 0);
+                }
+            }
         }
     }
 
