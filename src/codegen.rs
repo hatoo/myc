@@ -1001,26 +1001,54 @@ impl<'a> CodeGen<'a> {
                     index,
                     scale,
                     dst,
-                } => {
-                    body.push(Instruction::Mov {
-                        ty: AssemblyType::QuadWord,
-                        src: ptr.into(),
-                        dst: Operand::Reg(Register::Ax),
-                    });
-                    body.push(Instruction::Mov {
-                        ty: AssemblyType::QuadWord,
-                        src: index.into(),
-                        dst: Operand::Reg(Register::Dx),
-                    });
-                    body.push(Instruction::Lea {
-                        src: Operand::Indexed {
-                            base: Register::Ax,
-                            index: Register::Dx,
-                            scale: *scale,
-                        },
-                        dst: dst.into(),
-                    });
-                }
+                } => match *scale {
+                    1 | 2 | 4 | 8 => {
+                        body.push(Instruction::Mov {
+                            ty: AssemblyType::QuadWord,
+                            src: ptr.into(),
+                            dst: Operand::Reg(Register::Ax),
+                        });
+                        body.push(Instruction::Mov {
+                            ty: AssemblyType::QuadWord,
+                            src: index.into(),
+                            dst: Operand::Reg(Register::Dx),
+                        });
+                        body.push(Instruction::Lea {
+                            src: Operand::Indexed {
+                                base: Register::Ax,
+                                index: Register::Dx,
+                                scale: *scale,
+                            },
+                            dst: dst.into(),
+                        });
+                    }
+                    _ => {
+                        body.push(Instruction::Mov {
+                            ty: AssemblyType::QuadWord,
+                            src: ptr.into(),
+                            dst: Operand::Reg(Register::Ax),
+                        });
+                        body.push(Instruction::Mov {
+                            ty: AssemblyType::QuadWord,
+                            src: index.into(),
+                            dst: Operand::Reg(Register::Dx),
+                        });
+                        body.push(Instruction::Binary {
+                            op: BinaryOp::Mult,
+                            ty: AssemblyType::QuadWord,
+                            lhs: Operand::Imm(*scale as _),
+                            rhs: Operand::Reg(Register::Dx),
+                        });
+                        body.push(Instruction::Lea {
+                            src: Operand::Indexed {
+                                base: Register::Ax,
+                                index: Register::Dx,
+                                scale: 1,
+                            },
+                            dst: dst.into(),
+                        });
+                    }
+                },
             }
         }
 
