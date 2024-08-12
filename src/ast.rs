@@ -34,10 +34,46 @@ pub struct FunDecl {
     pub storage_class: Option<StorageClass>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Initializer {
     SingleInit(Expression),
     CompoundInit(Vec<Initializer>),
+}
+
+impl Initializer {
+    pub fn zero(ty: &VarType) -> Self {
+        match ty {
+            VarType::Int => Self::SingleInit(Expression::Constant(Spanned {
+                data: Const::Int(0),
+                span: 0..0,
+            })),
+            VarType::Long => Self::SingleInit(Expression::Constant(Spanned {
+                data: Const::Long(0),
+                span: 0..0,
+            })),
+            VarType::Uint => Self::SingleInit(Expression::Constant(Spanned {
+                data: Const::Uint(0),
+                span: 0..0,
+            })),
+            VarType::Ulong => Self::SingleInit(Expression::Constant(Spanned {
+                data: Const::Ulong(0),
+                span: 0..0,
+            })),
+            VarType::Double => Self::SingleInit(Expression::Constant(Spanned {
+                data: Const::Double(0.0),
+                span: 0..0,
+            })),
+            VarType::Pointer(_) => Self::SingleInit(Expression::Constant(Spanned {
+                data: Const::Long(0),
+                span: 0..0,
+            })),
+            VarType::Array { element, size } => {
+                let inits = vec![Initializer::zero(element.as_ref()); *size];
+
+                Self::CompoundInit(inits)
+            }
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]

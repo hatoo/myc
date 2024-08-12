@@ -413,17 +413,48 @@ impl TypeChecker {
             _ => {
                 self.sym_table
                     .insert(ident.data.clone(), Attr::Local(ty.clone()));
-                todo!()
-                /*
-                if let Some(exp) = init {
-                    self.check_expression(exp)?;
-                    convert_by_assignment(exp, ty)?;
+                if let Some(init) = init {
+                    self.check_init(ty, init)?;
                 }
-                */
             }
         }
 
         Ok(())
+    }
+
+    fn check_init(
+        &mut self,
+        target: &ast::VarType,
+        init: &mut ast::Initializer,
+    ) -> Result<(), Error> {
+        match (target, init) {
+            (_, ast::Initializer::SingleInit(e)) => {
+                self.check_expression_and_convert(e)?;
+                convert_by_assignment(e, target)?;
+                Ok(())
+            }
+            (ast::VarType::Array { element, size }, ast::Initializer::CompoundInit(list)) => {
+                if list.len() > *size {
+                    // todo
+                    return Err(Error::IncompatibleTypes(0..0));
+                }
+
+                for init in list.iter_mut() {
+                    self.check_init(element, init)?;
+                }
+
+                for _ in list.len()..*size {
+                    list.push(ast::Initializer::zero(target));
+                }
+
+                Ok(())
+            }
+
+            _ => {
+                // todo
+                Err(Error::IncompatibleTypes(0..0))
+            }
+        }
     }
 
     fn check_expression(
