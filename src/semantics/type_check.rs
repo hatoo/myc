@@ -233,6 +233,16 @@ impl TypeChecker {
             },
         );
 
+        if ty.ret.is_array() {
+            return Err(Error::IncompatibleTypes(name.span.clone()));
+        }
+
+        for ty in &mut ty.params {
+            if let ast::VarType::Array { element, .. } = ty {
+                *ty = ast::VarType::Pointer(Box::new(ast::Ty::Var(element.as_ref().clone())));
+            }
+        }
+
         if let Some(body) = body {
             for (param, ty) in params.iter().zip(ty.params.iter()) {
                 self.sym_table
