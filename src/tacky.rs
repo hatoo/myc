@@ -496,42 +496,49 @@ impl<'a> InstructionGenerator<'a> {
                             return ExpResult::PlainOperand(dst);
                         }
                         ast::BinaryOp::Subtract => {
-                            if rhs.ty(self.symbol_table).is_pointer() {
-                                // ptr - ptr
-                                let diff = self.make_tmp_local(ast::VarType::Long);
-                                self.instructions.push(Instruction::Binary {
-                                    op: BinaryOp::Subtract,
-                                    lhs: lhs.clone(),
-                                    rhs: rhs.clone(),
-                                    dst: diff.clone(),
-                                });
-                                self.instructions.push(Instruction::Binary {
-                                    op: BinaryOp::Divide,
-                                    lhs: diff.clone(),
-                                    rhs: Val::Constant(ast::Const::Long(elem.size() as _)),
-                                    dst: dst.clone(),
-                                });
-                                return ExpResult::PlainOperand(dst);
-                            } else {
-                                // ptr - int
+                            // ptr - int
 
-                                let neg = self.make_tmp_local(ast::VarType::Long);
-                                self.instructions.push(Instruction::Unary {
-                                    op: UnaryOp::Negate,
-                                    src: rhs.clone(),
-                                    dst: neg.clone(),
-                                });
-                                self.instructions.push(Instruction::AddPtr {
-                                    ptr: lhs,
-                                    index: neg,
-                                    scale: elem.size(),
-                                    dst: dst.clone(),
-                                });
-                                return ExpResult::PlainOperand(dst);
-                            }
+                            let neg = self.make_tmp_local(ast::VarType::Long);
+                            self.instructions.push(Instruction::Unary {
+                                op: UnaryOp::Negate,
+                                src: rhs.clone(),
+                                dst: neg.clone(),
+                            });
+                            self.instructions.push(Instruction::AddPtr {
+                                ptr: lhs,
+                                index: neg,
+                                scale: elem.size(),
+                                dst: dst.clone(),
+                            });
+                            return ExpResult::PlainOperand(dst);
                         }
                         _ => unreachable!(),
                     }
+                }
+
+                if matches!(op, ast::BinaryOp::Subtract)
+                    && lhs.ty(self.symbol_table).is_pointer()
+                    && rhs.ty(self.symbol_table).is_pointer()
+                {
+                    let VarType::Pointer(elem) = lhs.ty(self.symbol_table) else {
+                        unreachable!()
+                    };
+                    let elem_size = elem.size();
+                    // ptr - ptr
+                    let diff = self.make_tmp_local(ast::VarType::Long);
+                    self.instructions.push(Instruction::Binary {
+                        op: BinaryOp::Subtract,
+                        lhs: lhs.clone(),
+                        rhs: rhs.clone(),
+                        dst: diff.clone(),
+                    });
+                    self.instructions.push(Instruction::Binary {
+                        op: BinaryOp::Divide,
+                        lhs: diff.clone(),
+                        rhs: Val::Constant(ast::Const::Long(elem_size as _)),
+                        dst: dst.clone(),
+                    });
+                    return ExpResult::PlainOperand(dst);
                 }
 
                 self.instructions.push(Instruction::Binary {
