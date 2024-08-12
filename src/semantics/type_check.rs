@@ -57,6 +57,18 @@ pub enum StaticInit {
 }
 
 impl StaticInit {
+    pub fn is_zero(&self) -> bool {
+        matches!(
+            self,
+            StaticInit::Int(0)
+                | StaticInit::Long(0)
+                | StaticInit::Uint(0)
+                | StaticInit::Ulong(0)
+                | StaticInit::Double(0.0)
+                | StaticInit::Zero(_)
+        )
+    }
+
     pub fn alignment(&self) -> usize {
         match self {
             StaticInit::Int(_) => 4,

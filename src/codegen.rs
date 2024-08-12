@@ -31,6 +31,7 @@ impl AssemblyType {
             AssemblyType::LongWord => "l",
             AssemblyType::QuadWord => "q",
             AssemblyType::Double => "sd",
+            AssemblyType::ByteArray { .. } => todo!(),
         }
     }
 }
@@ -107,6 +108,7 @@ pub struct StaticConstant {
 pub struct StaticVariable {
     pub global: bool,
     pub name: EcoString,
+    pub alignment: usize,
     pub init: Vec<semantics::type_check::StaticInit>,
 }
 
@@ -342,10 +344,12 @@ impl<'a> CodeGen<'a> {
                 tacky::TopLevelItem::StaticVariable(tacky::StaticVariable {
                     global,
                     name,
+                    alignment,
                     init,
                 }) => TopLevel::StaticVariable(StaticVariable {
                     global: *global,
                     name: name.clone(),
+                    alignment: *alignment,
                     init: init.clone(),
                 }),
                 tacky::TopLevelItem::Function(function) => {
@@ -1563,6 +1567,7 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
 
                     new_insts.push(Instruction::Cmp(ty, lhs, rhs));
                 }
+                AssemblyType::ByteArray { .. } => unreachable!(),
             },
             Instruction::Push(op @ Operand::Imm(_)) => {
                 new_insts.push(Instruction::Mov {
@@ -1673,17 +1678,26 @@ impl<'a> Display for SizedOperand<'a> {
                 // trucated anyway
                 AssemblyType::LongWord => write!(f, "${}", *imm as i32)?,
                 AssemblyType::QuadWord | AssemblyType::Double => write!(f, "${}", imm)?,
+                _ => unreachable!(),
             },
             Operand::Reg(reg) => match self.ty {
                 AssemblyType::LongWord => write!(f, "{}", RegisterSize::Dword(reg))?,
                 AssemblyType::QuadWord | AssemblyType::Double => {
                     write!(f, "{}", RegisterSize::Qword(reg))?
                 }
+                _ => unreachable!(),
             },
             Operand::Pseudo(_) => panic!("Pseudo operand should have been removed"),
             Operand::Data(name) => write!(f, "{}(%rip)", name)?,
             Operand::Memory(reg, offset) => write!(f, "{}({})", offset, RegisterSize::Qword(reg))?,
             Operand::Plt(name) => write!(f, "{}@PLT", name)?,
+            Operand::Indexed { base, index, scale } => write!(
+                f,
+                "({},{},{})",
+                RegisterSize::Qword(base),
+                RegisterSize::Qword(index),
+                scale
+            )?,
         }
 
         Ok(())
@@ -1752,53 +1766,37 @@ impl Display for StaticVariable {
         if self.global {
             writeln!(f, ".globl {}", self.name)?;
         }
-        match self.init {
-            semantics::type_check::StaticInit::Int(0)
-            | semantics::type_check::StaticInit::Uint(0) => {
-                writeln!(f, ".bss")?;
-                writeln!(f, ".align {}", self.init.alignment())?;
-                writeln!(f, "{}:", self.name)?;
-                writeln!(f, ".zero {}", self.init.size())?;
+
+        let is_zero = self.init.iter().all(|i| i.is_zero());
+
+        if is_zero {
+            writeln!(f, ".bss")?;
+            writeln!(f, ".align {}", self.alignment)?;
+            writeln!(f, "{}:", self.name)?;
+            writeln!(
+                f,
+                ".zero {}",
+                self.init.iter().map(|i| i.size()).sum::<usize>()
+            )?;
+        } else {
+            writeln!(f, ".data")?;
+            writeln!(f, ".align {}", self.alignment)?;
+            writeln!(f, "{}:", self.name)?;
+            for init in &self.init {
+                match init {
+                    semantics::type_check::StaticInit::Int(x) => writeln!(f, ".long {}", x)?,
+                    semantics::type_check::StaticInit::Uint(x) => writeln!(f, ".long {}", x)?,
+                    semantics::type_check::StaticInit::Long(x) => writeln!(f, ".quad {}", x)?,
+                    semantics::type_check::StaticInit::Ulong(x) => writeln!(f, ".quad {}", x)?,
+                    semantics::type_check::StaticInit::Double(d) => {
+                        writeln!(f, ".quad {}", d.to_bits())?;
+                        writeln!(f, "# {:+e}", d)?;
+                    }
+                    semantics::type_check::StaticInit::Zero(size) => {
+                        writeln!(f, ".zero {}", size)?;
+                    }
+                }
             }
-            semantics::type_check::StaticInit::Int(x) => {
-                writeln!(f, ".data")?;
-                writeln!(f, ".align {}", self.init.alignment())?;
-                writeln!(f, "{}:", self.name)?;
-                writeln!(f, ".long {}", x)?;
-            }
-            semantics::type_check::StaticInit::Uint(x) => {
-                writeln!(f, ".data")?;
-                writeln!(f, ".align {}", self.init.alignment())?;
-                writeln!(f, "{}:", self.name)?;
-                writeln!(f, ".long {}", x)?;
-            }
-            semantics::type_check::StaticInit::Long(0)
-            | semantics::type_check::StaticInit::Ulong(0) => {
-                writeln!(f, ".bss")?;
-                writeln!(f, ".align {}", self.init.alignment())?;
-                writeln!(f, "{}:", self.name)?;
-                writeln!(f, ".zero {}", self.init.size())?;
-            }
-            semantics::type_check::StaticInit::Long(x) => {
-                writeln!(f, ".data")?;
-                writeln!(f, ".align {}", self.init.alignment())?;
-                writeln!(f, "{}:", self.name)?;
-                writeln!(f, ".quad {}", x)?;
-            }
-            semantics::type_check::StaticInit::Ulong(x) => {
-                writeln!(f, ".data")?;
-                writeln!(f, ".align {}", self.init.alignment())?;
-                writeln!(f, "{}:", self.name)?;
-                writeln!(f, ".quad {}", x)?;
-            }
-            semantics::type_check::StaticInit::Double(d) => {
-                writeln!(f, ".data")?;
-                writeln!(f, ".align {}", self.init.alignment())?;
-                writeln!(f, "{}:", self.name)?;
-                writeln!(f, ".quad {}", d.to_bits())?;
-                writeln!(f, "# {:+e}", d)?;
-            }
-            _ => todo!(),
         }
         Ok(())
     }
@@ -1863,6 +1861,7 @@ impl Display for Instruction {
                 AssemblyType::QuadWord | AssemblyType::Double => {
                     writeln!(f, "cqo")?;
                 }
+                AssemblyType::ByteArray { .. } => unimplemented!(),
             },
             Instruction::Idiv(ty, op) => {
                 writeln!(f, "idiv{} {}", ty.suffix(), op.sized(*ty))?;

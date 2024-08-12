@@ -34,6 +34,7 @@ pub struct Function {
 pub struct StaticVariable {
     pub global: bool,
     pub name: EcoString,
+    pub alignment: usize,
     pub init: Vec<semantics::type_check::StaticInit>,
 }
 
@@ -773,6 +774,7 @@ pub fn gen_program(program: &ast::Program, symbol_table: &mut HashMap<EcoString,
                     Some(TopLevelItem::StaticVariable(StaticVariable {
                         global: *global,
                         name: key.clone(),
+                        alignment: ty.alignment(),
                         init,
                     }))
                 } else {

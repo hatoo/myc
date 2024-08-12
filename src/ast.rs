@@ -376,6 +376,24 @@ impl VarType {
         }
     }
 
+    pub fn alignment(&self) -> usize {
+        match self {
+            Self::Int => 4,
+            Self::Uint => 4,
+            Self::Long => 8,
+            Self::Ulong => 8,
+            Self::Double => 8,
+            Self::Pointer(_) => 8,
+            Self::Array { element, .. } => {
+                if self.size() <= 16 {
+                    element.alignment()
+                } else {
+                    16
+                }
+            }
+        }
+    }
+
     pub fn is_integer(&self) -> bool {
         matches!(self, Self::Int | Self::Uint | Self::Long | Self::Ulong)
     }
