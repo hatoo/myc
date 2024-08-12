@@ -487,10 +487,10 @@ impl TypeChecker {
                             convert_to(rhs, &cty);
                             *ty = cty;
                         } else if tyl.is_pointer() && tyr.is_integer() {
-                            convert_to(rhs, &VarType::Long);
+                            convert_to(rhs, &tyl);
                             *ty = tyl.clone();
                         } else if tyl.is_integer() && tyr.is_pointer() {
-                            convert_to(lhs, &VarType::Long);
+                            convert_to(lhs, &tyr);
                             *ty = tyr.clone();
                         } else {
                             return Err(Error::IncompatibleTypes(exp.span()));
@@ -503,7 +503,7 @@ impl TypeChecker {
                             convert_to(rhs, &cty);
                             *ty = cty;
                         } else if tyl.is_pointer() && tyr.is_integer() {
-                            convert_to(rhs, &VarType::Long);
+                            convert_to(rhs, &tyl);
                             *ty = tyl.clone();
                         } else if tyl.is_pointer() && tyr.is_pointer() && tyl == tyr {
                             *ty = ast::VarType::Long;
@@ -511,29 +511,45 @@ impl TypeChecker {
                             return Err(Error::IncompatibleTypes(exp.span()));
                         }
                     }
-                    _ => {
-                        let cty = common_type(tyl, tyr);
-                        convert_to(lhs, &cty);
-                        convert_to(rhs, &cty);
-
-                        match op {
-                            ast::BinaryOp::Multiply | ast::BinaryOp::Divide => {
-                                if cty.is_pointer() {
-                                    return Err(Error::IncompatibleTypes(exp.span()));
-                                }
-                                *ty = cty;
+                    _ => match op {
+                        ast::BinaryOp::Multiply | ast::BinaryOp::Divide => {
+                            if tyl.is_pointer() || tyr.is_pointer() {
+                                return Err(Error::IncompatibleTypes(exp.span()));
                             }
-                            ast::BinaryOp::Remainder => {
-                                if cty == ast::VarType::Double || cty.is_pointer() {
-                                    return Err(Error::IncompatibleTypes(exp.span()));
-                                }
-                                *ty = cty;
+                            let cty = common_type(tyl.clone(), tyr.clone());
+                            convert_to(lhs, &cty);
+                            convert_to(rhs, &cty);
+                            if cty.is_pointer() {
+                                return Err(Error::IncompatibleTypes(exp.span()));
                             }
-                            _ => {
-                                *ty = ast::VarType::Int;
-                            }
+                            *ty = cty;
                         }
-                    }
+                        ast::BinaryOp::Remainder => {
+                            if tyl.is_pointer() || tyr.is_pointer() {
+                                return Err(Error::IncompatibleTypes(exp.span()));
+                            }
+                            let cty = common_type(tyl.clone(), tyr.clone());
+                            convert_to(lhs, &cty);
+                            convert_to(rhs, &cty);
+                            if cty == ast::VarType::Double || cty.is_pointer() {
+                                return Err(Error::IncompatibleTypes(exp.span()));
+                            }
+                            *ty = cty;
+                        }
+                        _ => {
+                            if (tyl != tyr) && (tyl.is_pointer() || tyr.is_pointer()) {
+                                return Err(Error::IncompatibleTypes(exp.span()));
+                            }
+
+                            if !tyl.is_pointer() && !tyr.is_pointer() {
+                                let cty = common_type(tyl, tyr);
+                                convert_to(lhs, &cty);
+                                convert_to(rhs, &cty);
+                            }
+
+                            *ty = ast::VarType::Int;
+                        }
+                    },
                 }
 
                 Ok(ty.clone())
