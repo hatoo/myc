@@ -724,7 +724,7 @@ impl TypeChecker {
                     return Err(Error::IncompatibleTypes(exp.span()));
                 }
 
-                let ty = self.check_expression(exp)?;
+                let ty = self.check_expression_and_convert(exp)?;
 
                 if (target.is_pointer() && ty == VarType::Double)
                     || (ty.is_pointer() && target == &VarType::Double)
