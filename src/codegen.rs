@@ -1,5 +1,8 @@
 use core::panic;
-use std::{collections::HashMap, fmt::Display};
+use std::{
+    collections::{hash_map::Entry, HashMap},
+    fmt::Display,
+};
 
 use ecow::EcoString;
 
@@ -41,21 +44,47 @@ impl<'a> From<&'a ast::VarType> for AssemblyType {
             ast::VarType::Long => AssemblyType::QuadWord,
             ast::VarType::Double => AssemblyType::Double,
             ast::VarType::Pointer(_) => AssemblyType::QuadWord,
-            _ => todo!(),
+            ast::VarType::Array { element, .. } => {
+                let total_size = ty.size();
+                if total_size <= 16 {
+                    AssemblyType::ByteArray {
+                        size: total_size,
+                        alignment: element.size(),
+                    }
+                } else {
+                    AssemblyType::ByteArray {
+                        size: total_size,
+                        alignment: 16,
+                    }
+                }
+            }
         }
     }
 }
 
 impl From<ast::VarType> for AssemblyType {
     fn from(ty: ast::VarType) -> Self {
-        match ty {
+        match &ty {
             ast::VarType::Int => AssemblyType::LongWord,
             ast::VarType::Uint => AssemblyType::LongWord,
             ast::VarType::Ulong => AssemblyType::QuadWord,
             ast::VarType::Long => AssemblyType::QuadWord,
             ast::VarType::Double => AssemblyType::Double,
             ast::VarType::Pointer(_) => AssemblyType::QuadWord,
-            _ => todo!(),
+            ast::VarType::Array { element, .. } => {
+                let total_size = ty.size();
+                if total_size <= 16 {
+                    AssemblyType::ByteArray {
+                        size: total_size,
+                        alignment: element.size(),
+                    }
+                } else {
+                    AssemblyType::ByteArray {
+                        size: total_size,
+                        alignment: 16,
+                    }
+                }
+            }
         }
     }
 }
@@ -317,7 +346,7 @@ impl<'a> CodeGen<'a> {
                 }) => TopLevel::StaticVariable(StaticVariable {
                     global: *global,
                     name: name.clone(),
-                    init: todo!(), // *init,
+                    init: init.clone(),
                 }),
                 tacky::TopLevelItem::Function(function) => {
                     TopLevel::Function(self.gen_function(function))
@@ -1146,6 +1175,27 @@ fn pseudo_to_stack(
                 } => {
                     *operand = Operand::Data(const_table.label(*d, *alignment));
                 }
+                Pseudo::Mem { name, offset } => match &symbol_table[name] {
+                    semantics::type_check::Attr::Static { .. } => {
+                        *operand = Operand::Data(name.clone())
+                    }
+                    semantics::type_check::Attr::Local(ty) => {
+                        match known_vars.entry(name.clone()) {
+                            Entry::Occupied(entry) => {
+                                let addr = *entry.get();
+                                *operand = Operand::stack(addr + (*offset as i32));
+                            }
+                            Entry::Vacant(entry) => {
+                                let size = ty.size() as i32;
+                                total += size;
+                                total = (total + (size - 1)) / size * size;
+                                entry.insert(-total);
+                                *operand = Operand::stack(-total + (*offset as i32));
+                            }
+                        }
+                    }
+                    _ => todo!(),
+                },
             }
         }
     };

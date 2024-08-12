@@ -388,7 +388,7 @@ impl VarType {
             Self::Ulong => false,
             Self::Double => false,
             Self::Pointer(_) => false,
-            _ => todo!(),
+            Self::Array { .. } => false,
         }
     }
 
