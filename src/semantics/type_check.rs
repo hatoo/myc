@@ -75,7 +75,7 @@ impl StaticInit {
             StaticInit::Long(_) => 8,
             StaticInit::Ulong(_) => 8,
             StaticInit::Double(_) => 8,
-            _ => todo!(),
+            StaticInit::Zero(size) => *size,
         }
     }
 
@@ -93,13 +93,29 @@ impl StaticInit {
         inits: &Initializer,
     ) -> Result<Vec<Self>, Error> {
         match inits {
-            Initializer::SingleInit(exp) => Ok(vec![Self::from_const_expr(target, exp)?]),
+            Initializer::SingleInit(exp) => {
+                if let ast::VarType::Array { .. } = target {
+                    return Err(Error::IncompatibleTypes(0..0));
+                }
+
+                Ok(vec![Self::from_const_expr(target, exp)?])
+            }
             Initializer::CompoundInit(inits) => {
-                if let ast::VarType::Array { element, .. } = target {
+                if let ast::VarType::Array { element, size } = target {
+                    if inits.len() > *size {
+                        return Err(Error::IncompatibleTypes(0..0));
+                    }
                     let mut res = Vec::new();
+
                     for init in inits {
                         res.extend(Self::from_initializer(element, init)?);
                     }
+
+                    let filled = res.iter().map(|init| init.size()).sum::<usize>();
+                    if filled < target.size() {
+                        res.push(StaticInit::Zero(target.size() - filled));
+                    }
+
                     Ok(res)
                 } else {
                     Err(Error::IncompatibleTypes(0..0))
@@ -229,6 +245,16 @@ impl TypeChecker {
             ty,
         } = fun_decl;
 
+        if ty.ret.is_array() {
+            return Err(Error::IncompatibleTypes(name.span.clone()));
+        }
+
+        for ty in &mut ty.params {
+            if let ast::VarType::Array { element, .. } = ty {
+                *ty = ast::VarType::Pointer(Box::new(ast::Ty::Var(element.as_ref().clone())));
+            }
+        }
+
         let mut new_global = storage_class != &Some(crate::ast::StorageClass::Static);
         let mut already_defined = false;
 
@@ -264,16 +290,6 @@ impl TypeChecker {
                 ty: ty.clone(),
             },
         );
-
-        if ty.ret.is_array() {
-            return Err(Error::IncompatibleTypes(name.span.clone()));
-        }
-
-        for ty in &mut ty.params {
-            if let ast::VarType::Array { element, .. } = ty {
-                *ty = ast::VarType::Pointer(Box::new(ast::Ty::Var(element.as_ref().clone())));
-            }
-        }
 
         if let Some(body) = body {
             for (param, ty) in params.iter().zip(ty.params.iter()) {
@@ -446,6 +462,9 @@ impl TypeChecker {
     ) -> Result<(), Error> {
         match (target, init) {
             (_, ast::Initializer::SingleInit(e)) => {
+                if target.is_array() {
+                    return Err(Error::IncompatibleTypes(0..0));
+                }
                 self.check_expression_and_convert(e)?;
                 convert_by_assignment(e, target)?;
                 Ok(())
@@ -657,7 +676,7 @@ impl TypeChecker {
                     let ret = ty.ret.clone();
 
                     for (arg, ty) in args.iter_mut().zip(ty.params.clone().into_iter()) {
-                        self.check_expression(arg)?;
+                        self.check_expression_and_convert(arg)?;
                         convert_by_assignment(arg, &ty)?;
                     }
                     *fty = ret.clone();
@@ -704,7 +723,7 @@ impl TypeChecker {
                 Ok(target.clone())
             }
             crate::ast::Expression::Dereference(exp) => {
-                let ty = self.check_expression(exp)?;
+                let ty = self.check_expression_and_convert(exp)?;
                 if let ast::VarType::Pointer(ty) = ty {
                     match ty.as_ref() {
                         ast::Ty::Fun(_) => Err(Error::IncompatibleTypes(exp.span())),
