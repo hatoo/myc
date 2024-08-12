@@ -282,7 +282,7 @@ impl Expression {
                 _ => panic!("Dereference of non-pointer. This should be caught by type checker."),
             },
             Self::AddrOf { ty, .. } => ty,
-            _ => todo!(),
+            Self::Subscript { ty, .. } => ty,
         }
     }
 

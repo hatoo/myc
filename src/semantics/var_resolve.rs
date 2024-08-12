@@ -270,10 +270,22 @@ impl VarResolver {
                 },
             );
             ident.data = unique_name;
-            if let Some(exp) = init {
-                self.resolve_expression(todo!())?;
+            if let Some(init) = init {
+                self.resolve_initializer(init)?;
             }
             Ok(())
+        }
+    }
+
+    fn resolve_initializer(&mut self, init: &mut ast::Initializer) -> Result<(), Error> {
+        match init {
+            ast::Initializer::SingleInit(exp) => self.resolve_expression(exp),
+            ast::Initializer::CompoundInit(inits) => {
+                for init in inits {
+                    self.resolve_initializer(init)?;
+                }
+                Ok(())
+            }
         }
     }
 
@@ -332,7 +344,11 @@ impl VarResolver {
                 self.resolve_expression(exp)?;
                 Ok(())
             }
-            _ => todo!(),
+            ast::Expression::Subscript { array, index, ty } => {
+                self.resolve_expression(array)?;
+                self.resolve_expression(index)?;
+                Ok(())
+            }
         }
     }
 }
