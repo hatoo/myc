@@ -310,7 +310,7 @@ impl<'a> CodeGen<'a> {
                 }) => TopLevel::StaticVariable(StaticVariable {
                     global: *global,
                     name: name.clone(),
-                    init: *init,
+                    init: todo!(), // *init,
                 }),
                 tacky::TopLevelItem::Function(function) => {
                     TopLevel::Function(self.gen_function(function))
@@ -975,6 +975,7 @@ impl<'a> CodeGen<'a> {
                         dst: dst.into(),
                     });
                 }
+                _ => todo!(),
             }
         }
 
