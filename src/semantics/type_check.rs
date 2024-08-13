@@ -69,17 +69,6 @@ impl StaticInit {
         )
     }
 
-    pub fn alignment(&self) -> usize {
-        match self {
-            StaticInit::Int(_) => 4,
-            StaticInit::Uint(_) => 4,
-            StaticInit::Long(_) => 8,
-            StaticInit::Ulong(_) => 8,
-            StaticInit::Double(_) => 8,
-            _ => todo!(),
-        }
-    }
-
     pub fn size(&self) -> usize {
         match self {
             StaticInit::Int(_) => 4,
@@ -107,7 +96,7 @@ impl StaticInit {
         match inits {
             Initializer::SingleInit(exp) => {
                 if let ast::VarType::Array { .. } = target {
-                    return Err(Error::IncompatibleTypes(0..0));
+                    return Err(Error::IncompatibleTypes(exp.span()));
                 }
 
                 Ok(vec![Self::from_const_expr(target, exp)?])
