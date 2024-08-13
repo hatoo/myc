@@ -1131,18 +1131,20 @@ fn pseudo_to_stack(
                     | semantics::type_check::Attr::Fun { .. } => {
                         *operand = Operand::Data(var.clone());
                     }
-                    attr => {
-                        if let Some(addr) = known_vars.get(var) {
-                            *operand = Operand::stack(*addr);
-                        } else {
+                    attr => match known_vars.entry(var.clone()) {
+                        Entry::Occupied(entry) => {
+                            let addr = *entry.get();
+                            *operand = Operand::stack(addr);
+                        }
+                        Entry::Vacant(entry) => {
                             let size = attr.ty().size() as i32;
                             let align = attr.ty().alignment() as i32;
                             total += size;
                             total = round_up(total as usize, align as usize) as i32;
-                            known_vars.insert(var.clone(), -total);
+                            entry.insert(-total);
                             *operand = Operand::stack(-total);
                         }
-                    }
+                    },
                 },
                 Pseudo::Double {
                     value: d,
