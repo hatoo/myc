@@ -45,48 +45,17 @@ impl<'a> From<&'a ast::VarType> for AssemblyType {
             ast::VarType::Long => AssemblyType::QuadWord,
             ast::VarType::Double => AssemblyType::Double,
             ast::VarType::Pointer(_) => AssemblyType::QuadWord,
-            ast::VarType::Array { element, .. } => {
-                let total_size = ty.size();
-                if total_size <= 16 {
-                    AssemblyType::ByteArray {
-                        size: total_size,
-                        alignment: element.size(),
-                    }
-                } else {
-                    AssemblyType::ByteArray {
-                        size: total_size,
-                        alignment: 16,
-                    }
-                }
-            }
+            ast::VarType::Array { .. } => AssemblyType::ByteArray {
+                size: ty.size(),
+                alignment: ty.alignment(),
+            },
         }
     }
 }
 
 impl From<ast::VarType> for AssemblyType {
     fn from(ty: ast::VarType) -> Self {
-        match &ty {
-            ast::VarType::Int => AssemblyType::LongWord,
-            ast::VarType::Uint => AssemblyType::LongWord,
-            ast::VarType::Ulong => AssemblyType::QuadWord,
-            ast::VarType::Long => AssemblyType::QuadWord,
-            ast::VarType::Double => AssemblyType::Double,
-            ast::VarType::Pointer(_) => AssemblyType::QuadWord,
-            ast::VarType::Array { element, .. } => {
-                let total_size = ty.size();
-                if total_size <= 16 {
-                    AssemblyType::ByteArray {
-                        size: total_size,
-                        alignment: element.size(),
-                    }
-                } else {
-                    AssemblyType::ByteArray {
-                        size: total_size,
-                        alignment: 16,
-                    }
-                }
-            }
-        }
+        (&ty).into()
     }
 }
 
