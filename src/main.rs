@@ -77,7 +77,31 @@ fn main() {
     let tacky = myc::tacky::gen_program(&program, &mut type_checker.sym_table);
 
     if opts.tacky {
-        dbg!(tacky);
+        for item in tacky.top_levels {
+            match item {
+                myc::tacky::TopLevelItem::Function(f) => {
+                    println!(
+                        "{} {} {:?}:",
+                        if f.global { "global" } else { "private" },
+                        f.name,
+                        f.params
+                    );
+
+                    for inst in f.body {
+                        println!("    {:?}", inst);
+                    }
+                }
+                myc::tacky::TopLevelItem::StaticVariable(v) => {
+                    println!(
+                        "static {} {} align({}) = {:?};",
+                        if v.global { "global" } else { "private" },
+                        v.name,
+                        v.alignment,
+                        v.init
+                    );
+                }
+            }
+        }
         return;
     }
 
