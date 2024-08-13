@@ -205,7 +205,7 @@ impl Const {
                 Self::Ulong(0) => Some(StaticInit::Ulong(0)),
                 _ => None,
             },
-            _ => todo!(),
+            VarType::Array { .. } => None,
         }
     }
 }
@@ -331,7 +331,7 @@ impl HasSpan for Expression {
             Self::Cast { exp, .. } => exp.span(),
             Self::Dereference(exp) => exp.span(),
             Self::AddrOf { exp, .. } => exp.span(),
-            _ => todo!(),
+            Self::Subscript { array, index, .. } => array.span().start..index.span().end,
         }
     }
 }
