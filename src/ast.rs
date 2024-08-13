@@ -554,6 +554,8 @@ pub enum Error {
     NotVarType(std::ops::Range<usize>),
     #[error("Variable type isn't allowed here")]
     NotFunType(std::ops::Range<usize>),
+    #[error("Float can't be used as array length")]
+    FloatAsArrayLength(std::ops::Range<usize>),
 }
 
 impl MayHasSpan for Error {
@@ -570,6 +572,7 @@ impl MayHasSpan for Error {
             Error::UnexpectedSpecifier(spanned) => Some(spanned.span.clone()),
             Error::NotVarType(span) => Some(span.clone()),
             Error::NotFunType(span) => Some(span.clone()),
+            Error::FloatAsArrayLength(span) => Some(span.clone()),
         }
     }
 }
@@ -1079,7 +1082,7 @@ impl<'a> Parser<'a> {
         let c = self.expect_constant()?;
         let index = match c.data {
             Constant::Integer { value, .. } => value as usize,
-            Constant::Float(_) => todo!(),
+            Constant::Float(_) => return Err(Error::FloatAsArrayLength(c.span.clone())),
         };
         let end = self.expect(Token::CloseSquareBracket)?.span.end;
 
