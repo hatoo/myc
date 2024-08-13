@@ -1090,9 +1090,9 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_square_exp(&mut self) -> Result<Expression, Error> {
-        self.expect(Token::OpenSquareBracket)?.span.start;
+        self.expect(Token::OpenSquareBracket)?;
         let exp = self.parse_expression(0)?;
-        self.expect(Token::CloseSquareBracket)?.span.end;
+        self.expect(Token::CloseSquareBracket)?;
 
         Ok(exp)
     }
