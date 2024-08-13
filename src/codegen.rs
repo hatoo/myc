@@ -8,6 +8,7 @@ use ecow::EcoString;
 
 use crate::{
     ast::{self, Const, VarType},
+    math::round_up,
     semantics::{self, type_check::SymbolTable},
     tacky::{self, Val},
 };
@@ -1055,7 +1056,7 @@ impl<'a> CodeGen<'a> {
         }
 
         let stack_size = pseudo_to_stack(&mut body, self.symbol_table, &mut self.const_table);
-        let stack_size = (stack_size + 15) / 16 * 16;
+        let stack_size = round_up(stack_size, 16);
         body.insert(
             0,
             Instruction::Binary {
@@ -1137,7 +1138,7 @@ fn pseudo_to_stack(
                             let size = attr.ty().size() as i32;
                             let align = attr.ty().alignment() as i32;
                             total += size;
-                            total = (total + (align - 1)) / align * align;
+                            total = round_up(total as usize, align as usize) as i32;
                             known_vars.insert(var.clone(), -total);
                             *operand = Operand::stack(-total);
                         }
@@ -1163,7 +1164,7 @@ fn pseudo_to_stack(
                                 let size = ty.size() as i32;
                                 let align = ty.alignment() as i32;
                                 total += size;
-                                total = (total + (align - 1)) / align * align;
+                                total = round_up(total as usize, align as usize) as i32;
                                 entry.insert(-total);
                                 *operand = Operand::stack(-total + (*offset as i32));
                             }
