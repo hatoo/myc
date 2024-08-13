@@ -4,7 +4,7 @@ use ecow::EcoString;
 
 use crate::{
     ast::{self, Expression, Initializer, VarType},
-    span::{HasSpan, Spanned},
+    span::{HasSpan, MayHasSpan, Spanned},
 };
 
 pub type SymbolTable = HashMap<EcoString, Attr>;
@@ -461,10 +461,11 @@ impl TypeChecker {
         target: &ast::VarType,
         init: &mut ast::Initializer,
     ) -> Result<(), Error> {
+        let span = init.may_span();
         match (target, init) {
             (_, ast::Initializer::SingleInit(e)) => {
                 if target.is_array() {
-                    return Err(Error::IncompatibleTypes(0..0));
+                    return Err(Error::IncompatibleTypes(e.span()));
                 }
                 self.check_expression_and_convert(e)?;
                 convert_by_assignment(e, target)?;
@@ -472,8 +473,7 @@ impl TypeChecker {
             }
             (ast::VarType::Array { element, size }, ast::Initializer::CompoundInit(list)) => {
                 if list.len() > *size {
-                    // todo
-                    return Err(Error::IncompatibleTypes(0..0));
+                    return Err(Error::IncompatibleTypes(span.unwrap()));
                 }
 
                 for init in list.iter_mut() {
@@ -487,10 +487,7 @@ impl TypeChecker {
                 Ok(())
             }
 
-            _ => {
-                // todo
-                Err(Error::IncompatibleTypes(0..0))
-            }
+            _ => Err(Error::IncompatibleTypes(span.unwrap())),
         }
     }
 

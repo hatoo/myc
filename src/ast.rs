@@ -76,6 +76,19 @@ impl Initializer {
     }
 }
 
+impl MayHasSpan for Initializer {
+    fn may_span(&self) -> Option<std::ops::Range<usize>> {
+        match self {
+            Self::SingleInit(exp) => Some(exp.span()),
+            Self::CompoundInit(inits) => {
+                let start = inits.first()?.may_span()?.start;
+                let end = inits.last()?.may_span()?.end;
+                Some(start..end)
+            }
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum StorageClass {
     Static,
