@@ -94,6 +94,8 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
     });
     static CHAR_RE: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r#"^'([^'\\\n])|(\\['"?\\abfnrtv])'"#).unwrap());
+    static STRING_RE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r#"^"((([^"\\\n])|(\\['"?\\abfnrtv]))*)""#).unwrap());
 
     let mut tokens = Vec::new();
 
@@ -505,10 +507,61 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
                     };
                     tokens.push(Spanned {
                         data: Token::Constant(Constant::Char(c)),
-                        span: index..index + cap.len(),
+                        span: index..index + cap[0].len(),
                     });
 
-                    index += cap.len();
+                    index += cap[0].len();
+                } else {
+                    return Err(Error::Unexpected(Spanned {
+                        data: c as char,
+                        span: index..index + 1,
+                    }));
+                }
+            }
+            b'"' => {
+                if let Some(cap) = STRING_RE.captures(&src[index..]) {
+                    let mut s = Vec::new();
+                    let mut iter = cap.get(1).unwrap().as_bytes().iter();
+
+                    loop {
+                        if let Some(&b) = iter.next() {
+                            if b == b'\\' {
+                                let c = match iter.next() {
+                                    Some(&b) => match b {
+                                        b'\'' => b'\'',
+                                        b'?' => b'?',
+                                        b'\\' => b'\\',
+                                        b'"' => b'"',
+                                        b'a' => b'\x07',
+                                        b'b' => b'\x08',
+                                        b'f' => b'\x0c',
+                                        b'n' => b'\n',
+                                        b'r' => b'\r',
+                                        b't' => b'\t',
+                                        b'v' => b'\x0b',
+                                        _ => unreachable!(),
+                                    },
+                                    None => {
+                                        return Err(Error::Unexpected(Spanned {
+                                            data: b as char,
+                                            span: index + s.len()..index + s.len() + 1,
+                                        }))
+                                    }
+                                };
+                                s.push(c);
+                            } else {
+                                s.push(b);
+                            }
+                        } else {
+                            break;
+                        }
+                    }
+
+                    tokens.push(Spanned {
+                        data: Token::Constant(Constant::String(s)),
+                        span: index..index + cap[0].len(),
+                    });
+                    index += cap[0].len();
                 } else {
                     return Err(Error::Unexpected(Spanned {
                         data: c as char,
