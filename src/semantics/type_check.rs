@@ -11,6 +11,7 @@ pub type SymbolTable = HashMap<EcoString, Attr>;
 
 #[derive(Debug, Default)]
 pub struct TypeChecker {
+    pub tmp_string_count: usize,
     pub sym_table: SymbolTable,
 }
 
@@ -26,6 +27,10 @@ pub enum Attr {
         init: InitialValue,
         global: bool,
     },
+    Constant {
+        ty: ast::VarType,
+        init: StaticInit,
+    },
     Local(ast::VarType),
 }
 
@@ -35,6 +40,7 @@ impl Attr {
             Attr::Fun { ty, .. } => &ty.ret,
             Attr::Static { ty, .. } => ty,
             Attr::Local(ty) => ty,
+            Attr::Constant { ty, .. } => ty,
         }
     }
 }
@@ -46,7 +52,7 @@ pub enum InitialValue {
     NoInitializer,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum StaticInit {
     Int(i32),
     Long(i64),
@@ -56,6 +62,11 @@ pub enum StaticInit {
     Zero(usize),
     CharInit(i8),
     UCharInit(u8),
+    String {
+        data: Vec<u8>,
+        null_terminated: bool,
+    },
+    Pointer(EcoString),
 }
 
 impl StaticInit {
@@ -83,11 +94,13 @@ impl StaticInit {
     }
 
     pub fn from_const_expr(target: &ast::VarType, exp: &Expression) -> Result<Self, Error> {
-        if let ast::Expression::Constant(Spanned { data, .. }) = exp {
-            data.get_static_init(target)
-                .ok_or_else(|| Error::IncompatibleTypes(exp.span()))
-        } else {
-            Err(Error::IncompatibleTypes(exp.span()))
+        match exp {
+            ast::Expression::Constant(Spanned { data, .. }) => data
+                .get_static_init(target)
+                .ok_or_else(|| Error::IncompatibleTypes(exp.span())),
+
+            ast::Expression::String(Spanned { data, .. }, _) => {}
+            _ => Err(Error::IncompatibleTypes(exp.span())),
         }
     }
 
@@ -245,6 +258,69 @@ impl TypeChecker {
         }
 
         Ok(())
+    }
+
+    fn tmp_string(&mut self) -> EcoString {
+        let s = format!("string.{}", self.tmp_string_count);
+        self.tmp_string_count += 1;
+        s.into()
+    }
+
+    fn static_init(
+        &mut self,
+        target: &ast::VarType,
+        exp: &Expression,
+    ) -> Result<StaticInit, Error> {
+        match exp {
+            ast::Expression::Constant(Spanned { data, .. }) => data
+                .get_static_init(target)
+                .ok_or_else(|| Error::IncompatibleTypes(exp.span())),
+
+            ast::Expression::String(Spanned { data, .. }, _) => match target {
+                ast::VarType::Array { element, size } => {
+                    if !element.is_character() {
+                        return Err(Error::IncompatibleTypes(exp.span()));
+                    }
+
+                    if data.len() > *size {
+                        return Err(Error::IncompatibleTypes(exp.span()));
+                    }
+
+                    Ok(StaticInit::String {
+                        data: data.clone(),
+                        null_terminated: data.len() < *size,
+                    })
+                }
+                ast::VarType::Pointer(ty) => {
+                    if let ast::Ty::Var(ty) = ty.as_ref() {
+                        if !ty.is_character() {
+                            return Err(Error::IncompatibleTypes(exp.span()));
+                        }
+
+                        let s = self.tmp_string();
+                        self.sym_table.insert(
+                            s.clone(),
+                            Attr::Constant {
+                                ty: ast::VarType::Array {
+                                    element: Box::new(ty.clone()),
+                                    size: data.len() + 1,
+                                },
+                                init: StaticInit::String {
+                                    data: data.clone(),
+                                    null_terminated: true,
+                                },
+                            },
+                        );
+
+                        Ok(StaticInit::Pointer(s))
+                    } else {
+                        Err(Error::IncompatibleTypes(exp.span()))
+                    }
+                }
+                _ => Err(Error::IncompatibleTypes(exp.span())),
+            },
+            _ => Err(Error::IncompatibleTypes(exp.span())),
+        }
     }
 
     fn check_fun_decl(&mut self, fun_decl: &mut crate::ast::FunDecl) -> Result<(), Error> {
