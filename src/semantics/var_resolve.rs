@@ -349,7 +349,7 @@ impl VarResolver {
                 self.resolve_expression(index)?;
                 Ok(())
             }
-            _ => todo!(),
+            ast::Expression::String(..) => Ok(()),
         }
     }
 }

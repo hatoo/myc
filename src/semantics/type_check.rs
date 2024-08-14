@@ -232,6 +232,24 @@ impl TypeChecker {
         inits: &Initializer,
     ) -> Result<Vec<StaticInit>, Error> {
         match inits {
+            Initializer::SingleInit(Expression::String(s, _)) if target.is_array() => {
+                let ast::VarType::Array { element, size } = target else {
+                    unreachable!()
+                };
+
+                if !element.is_character() {
+                    return Err(Error::IncompatibleTypes(0..0));
+                }
+
+                if size < &s.data.len() {
+                    return Err(Error::IncompatibleTypes(0..0));
+                }
+
+                Ok(vec![StaticInit::String {
+                    data: s.data.clone(),
+                    null_terminated: s.data.len() < *size,
+                }])
+            }
             Initializer::SingleInit(exp) => {
                 if let ast::VarType::Array { .. } = target {
                     return Err(Error::IncompatibleTypes(exp.span()));
@@ -568,7 +586,7 @@ impl TypeChecker {
                 ast::VarType::Array { element, size },
                 ast::Initializer::SingleInit(Expression::String(s, ty)),
             ) => {
-                if element.as_ref() != &ast::VarType::Char {
+                if !element.is_character() {
                     return Err(Error::IncompatibleTypes(span.unwrap()));
                 }
                 if s.data.len() > *size {

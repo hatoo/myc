@@ -43,6 +43,18 @@ pub enum Initializer {
 impl Initializer {
     pub fn zero(ty: &VarType) -> Self {
         match ty {
+            VarType::Char => Self::SingleInit(Expression::Constant(Spanned {
+                data: Const::Char(0),
+                span: 0..0,
+            })),
+            VarType::SChar => Self::SingleInit(Expression::Constant(Spanned {
+                data: Const::Char(0),
+                span: 0..0,
+            })),
+            VarType::UChar => Self::SingleInit(Expression::Constant(Spanned {
+                data: Const::UChar(0),
+                span: 0..0,
+            })),
             VarType::Int => Self::SingleInit(Expression::Constant(Spanned {
                 data: Const::Int(0),
                 span: 0..0,
@@ -72,7 +84,6 @@ impl Initializer {
 
                 Self::CompoundInit(inits)
             }
-            _ => todo!(),
         }
     }
 }
@@ -163,57 +174,65 @@ pub enum Const {
 impl Const {
     pub fn get_int(&self) -> i32 {
         match self {
+            Self::Char(i) => *i as i32,
+            Self::UChar(i) => *i as i32,
             Self::Int(i) => *i,
             Self::Uint(i) => *i as i32,
             Self::Long(i) => *i as i32,
             Self::Ulong(i) => *i as i32,
             Self::Double(i) => *i as i32,
-            _ => todo!(),
         }
     }
     pub fn get_uint(&self) -> u32 {
         match self {
+            Self::Char(i) => *i as u32,
+            Self::UChar(i) => *i as u32,
             Self::Int(i) => *i as u32,
             Self::Uint(i) => *i,
             Self::Long(i) => *i as u32,
             Self::Ulong(i) => *i as u32,
             Self::Double(i) => *i as u32,
-            _ => todo!(),
         }
     }
     pub fn get_long(&self) -> i64 {
         match self {
+            Self::Char(i) => *i as i64,
+            Self::UChar(i) => *i as i64,
             Self::Int(i) => *i as i64,
             Self::Uint(i) => *i as i64,
             Self::Long(i) => *i,
             Self::Ulong(i) => *i as i64,
             Self::Double(i) => *i as i64,
-            _ => todo!(),
         }
     }
     pub fn get_ulong(&self) -> u64 {
         match self {
+            Self::Char(i) => *i as u64,
+            Self::UChar(i) => *i as u64,
             Self::Int(i) => *i as u64,
             Self::Uint(i) => *i as u64,
             Self::Long(i) => *i as u64,
             Self::Ulong(i) => *i,
             Self::Double(i) => *i as u64,
-            _ => todo!(),
         }
     }
     pub fn get_double(&self) -> f64 {
         match self {
+            Self::Char(i) => *i as f64,
+            Self::UChar(i) => *i as f64,
             Self::Int(i) => *i as f64,
             Self::Uint(i) => *i as f64,
             Self::Long(i) => *i as f64,
             Self::Ulong(i) => *i as f64,
             Self::Double(i) => *i,
-            _ => todo!(),
         }
     }
 
     pub fn get_static_init(&self, ty: &VarType) -> Option<StaticInit> {
         match ty {
+            VarType::Char => Some(StaticInit::Char(self.get_int() as i8)),
+            VarType::SChar => Some(StaticInit::Char(self.get_int() as i8)),
+            VarType::UChar => Some(StaticInit::UChar(self.get_uint() as u8)),
             VarType::Int => Some(StaticInit::Int(self.get_int())),
             VarType::Uint => Some(StaticInit::Uint(self.get_uint())),
             VarType::Long => Some(StaticInit::Long(self.get_long())),
@@ -227,7 +246,6 @@ impl Const {
                 _ => None,
             },
             VarType::Array { .. } => None,
-            _ => todo!(),
         }
     }
 }
@@ -357,7 +375,7 @@ impl HasSpan for Expression {
             Self::Dereference(exp) => exp.span(),
             Self::AddrOf { exp, .. } => exp.span(),
             Self::Subscript { array, index, .. } => array.span().start..index.span().end,
-            _ => todo!(),
+            Self::String(s, _) => s.span.clone(),
         }
     }
 }
@@ -395,6 +413,9 @@ pub enum VarType {
 impl VarType {
     pub fn size(&self) -> usize {
         match self {
+            Self::Char => 1,
+            Self::SChar => 1,
+            Self::UChar => 1,
             Self::Int => 4,
             Self::Uint => 4,
             Self::Long => 8,
@@ -402,12 +423,14 @@ impl VarType {
             Self::Double => 8,
             Self::Pointer(_) => 8,
             Self::Array { element, size } => element.size() * size,
-            _ => todo!(),
         }
     }
 
     pub fn alignment(&self) -> usize {
         match self {
+            Self::Char => 1,
+            Self::SChar => 1,
+            Self::UChar => 1,
             Self::Int => 4,
             Self::Uint => 4,
             Self::Long => 8,
@@ -421,7 +444,6 @@ impl VarType {
                     16
                 }
             }
-            _ => todo!(),
         }
     }
 
@@ -1483,6 +1505,7 @@ impl<'a> Parser<'a> {
                         let start = token.span.start;
                         let mut end = token.span.end;
                         let mut s = value.clone();
+                        self.advance();
                         // adjacent string literals must be concatenated
                         while let Some(Spanned {
                             data: Token::Constant(Constant::String(s2)),
