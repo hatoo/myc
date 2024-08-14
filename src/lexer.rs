@@ -9,6 +9,8 @@ use crate::span::{MayHasSpan, Spanned};
 pub enum Constant {
     Integer { value: u64, suffix: Suffix },
     Float(f64),
+    Char(u8),
+    String(Vec<u8>),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -60,6 +62,7 @@ pub enum Token {
     Signed,
     Unsigned,
     Double,
+    Char,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -89,6 +92,8 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
     static FLOAT_RE: LazyLock<Regex> = LazyLock::new(|| {
         Regex::new(r"^(([0-9]*\.[0-9]+|[0-9]+\.?)[Ee][+-]?[0-9]+|[0-9]*\.[0-9]+|[0-9]+\.)").unwrap()
     });
+    static CHAR_RE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r#"^'([^'\\\n])|(\\['"?\\abfnrtv])'"#).unwrap());
 
     let mut tokens = Vec::new();
 
@@ -237,6 +242,7 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
                     "signed" => Token::Signed,
                     "unsigned" => Token::Unsigned,
                     "double" => Token::Double,
+                    "char" => Token::Char,
                     _ => Token::Ident(EcoString::from(ident)),
                 };
                 tokens.push(Spanned {
@@ -476,6 +482,39 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
                     span: index..index + 1,
                 });
                 index += 1;
+            }
+            b'\'' => {
+                if let Some(cap) = CHAR_RE.captures(&src[index..]) {
+                    let c = if let Some(g) = cap.get(1) {
+                        g.as_bytes()[0]
+                    } else {
+                        match cap.get(2).unwrap().as_bytes()[1] {
+                            b'\'' => b'\'',
+                            b'?' => b'?',
+                            b'\\' => b'\\',
+                            b'"' => b'"',
+                            b'a' => b'\x07',
+                            b'b' => b'\x08',
+                            b'f' => b'\x0c',
+                            b'n' => b'\n',
+                            b'r' => b'\r',
+                            b't' => b'\t',
+                            b'v' => b'\x0b',
+                            _ => unreachable!(),
+                        }
+                    };
+                    tokens.push(Spanned {
+                        data: Token::Constant(Constant::Char(c)),
+                        span: index..index + cap.len(),
+                    });
+
+                    index += cap.len();
+                } else {
+                    return Err(Error::Unexpected(Spanned {
+                        data: c as char,
+                        span: index..index + 1,
+                    }));
+                }
             }
 
             // TODO

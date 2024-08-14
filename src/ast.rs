@@ -1096,6 +1096,7 @@ impl<'a> Parser<'a> {
         let index = match c.data {
             Constant::Integer { value, .. } => value as usize,
             Constant::Float(_) => return Err(Error::FloatAsArrayLength(c.span.clone())),
+            _ => todo!(),
         };
         let end = self.expect(Token::CloseSquareBracket)?.span.end;
 
@@ -1412,6 +1413,7 @@ impl<'a> Parser<'a> {
                         self.advance();
                         Ok(Expression::Constant(constant))
                     }
+                    _ => todo!(),
                 },
                 Token::OpenParen => {
                     self.advance();
