@@ -1770,6 +1770,7 @@ impl Display for StaticVariable {
                     semantics::type_check::StaticInit::Zero(size) => {
                         writeln!(f, ".zero {}", size)?;
                     }
+                    _ => todo!(),
                 }
             }
         }

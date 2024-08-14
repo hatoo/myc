@@ -421,7 +421,7 @@ impl TypeChecker {
         } = decl;
 
         let mut init = match init {
-            Some(init) => InitialValue::Initial(StaticInit::from_initializer(ty, init)?),
+            Some(init) => InitialValue::Initial(self.static_init_from_initializer(ty, init)?),
             None => {
                 if storage_class == &Some(crate::ast::StorageClass::Extern) {
                     InitialValue::NoInitializer
@@ -503,6 +503,7 @@ impl TypeChecker {
                                 return Err(Error::IncompatibleTypes(ident.span.clone()));
                             }
                         }
+                        Attr::Constant { .. } => unreachable!(),
                     },
                     Entry::Vacant(v) => {
                         v.insert(Attr::Static {
@@ -515,7 +516,9 @@ impl TypeChecker {
             }
             Some(crate::ast::StorageClass::Static) => {
                 let init = match init {
-                    Some(init) => InitialValue::Initial(StaticInit::from_initializer(ty, init)?),
+                    Some(init) => {
+                        InitialValue::Initial(self.static_init_from_initializer(ty, init)?)
+                    }
                     None => InitialValue::Initial(vec![ty.zero()]),
                 };
                 self.sym_table.insert(
@@ -565,7 +568,7 @@ impl TypeChecker {
                 ast::VarType::Array { element, size },
                 ast::Initializer::SingleInit(Expression::String(s, ty)),
             ) => {
-                if element != &ast::VarType::Char {
+                if element.as_ref() != &ast::VarType::Char {
                     return Err(Error::IncompatibleTypes(span.unwrap()));
                 }
                 if s.data.len() > *size {
@@ -603,6 +606,9 @@ impl TypeChecker {
                 Some(Attr::Static { ty: target, .. }) | Some(Attr::Local(target)) => {
                     *ty = target.clone();
                     Ok(target.clone())
+                }
+                Some(Attr::Constant { .. }) => {
+                    unreachable!()
                 }
                 None => Err(Error::IncompatibleTypes(name.span.clone())),
             },
