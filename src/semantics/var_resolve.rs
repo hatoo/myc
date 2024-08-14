@@ -349,6 +349,7 @@ impl VarResolver {
                 self.resolve_expression(index)?;
                 Ok(())
             }
+            _ => todo!(),
         }
     }
 }

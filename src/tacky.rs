@@ -161,6 +161,7 @@ impl Val {
                 ast::Const::Uint(_) => &ast::VarType::Uint,
                 ast::Const::Ulong(_) => &ast::VarType::Ulong,
                 ast::Const::Double(_) => &ast::VarType::Double,
+                _ => todo!(),
             },
             Val::Var(var) => symbol_table[var].ty(),
         }
@@ -747,6 +748,7 @@ impl<'a> InstructionGenerator<'a> {
 
                 ExpResult::DereferencedPointer(dst)
             }
+            _ => todo!(),
         }
     }
 

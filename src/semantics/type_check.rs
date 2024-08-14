@@ -774,6 +774,7 @@ impl TypeChecker {
 
                 Ok(ty.clone())
             }
+            _ => todo!(),
         }
     }
 

@@ -72,6 +72,7 @@ impl Initializer {
 
                 Self::CompoundInit(inits)
             }
+            _ => todo!(),
         }
     }
 }
@@ -167,6 +168,7 @@ impl Const {
             Self::Long(i) => *i as i32,
             Self::Ulong(i) => *i as i32,
             Self::Double(i) => *i as i32,
+            _ => todo!(),
         }
     }
     pub fn get_uint(&self) -> u32 {
@@ -176,6 +178,7 @@ impl Const {
             Self::Long(i) => *i as u32,
             Self::Ulong(i) => *i as u32,
             Self::Double(i) => *i as u32,
+            _ => todo!(),
         }
     }
     pub fn get_long(&self) -> i64 {
@@ -185,6 +188,7 @@ impl Const {
             Self::Long(i) => *i,
             Self::Ulong(i) => *i as i64,
             Self::Double(i) => *i as i64,
+            _ => todo!(),
         }
     }
     pub fn get_ulong(&self) -> u64 {
@@ -194,6 +198,7 @@ impl Const {
             Self::Long(i) => *i as u64,
             Self::Ulong(i) => *i,
             Self::Double(i) => *i as u64,
+            _ => todo!(),
         }
     }
     pub fn get_double(&self) -> f64 {
@@ -203,6 +208,7 @@ impl Const {
             Self::Long(i) => *i as f64,
             Self::Ulong(i) => *i as f64,
             Self::Double(i) => *i,
+            _ => todo!(),
         }
     }
 
@@ -221,6 +227,7 @@ impl Const {
                 _ => None,
             },
             VarType::Array { .. } => None,
+            _ => todo!(),
         }
     }
 }
@@ -282,6 +289,7 @@ impl Expression {
                 Const::Uint(_) => &VarType::Uint,
                 Const::Ulong(_) => &VarType::Ulong,
                 Const::Double(_) => &VarType::Double,
+                _ => todo!(),
             },
             Self::Unary { ty, .. } => ty,
             Self::Binary { ty, .. } => ty,
@@ -299,6 +307,7 @@ impl Expression {
             },
             Self::AddrOf { ty, .. } => ty,
             Self::Subscript { ty, .. } => ty,
+            _ => todo!(),
         }
     }
 
@@ -348,6 +357,7 @@ impl HasSpan for Expression {
             Self::Dereference(exp) => exp.span(),
             Self::AddrOf { exp, .. } => exp.span(),
             Self::Subscript { array, index, .. } => array.span().start..index.span().end,
+            _ => todo!(),
         }
     }
 }
@@ -392,6 +402,7 @@ impl VarType {
             Self::Double => 8,
             Self::Pointer(_) => 8,
             Self::Array { element, size } => element.size() * size,
+            _ => todo!(),
         }
     }
 
@@ -410,6 +421,7 @@ impl VarType {
                     16
                 }
             }
+            _ => todo!(),
         }
     }
 
@@ -426,6 +438,7 @@ impl VarType {
             Self::Double => false,
             Self::Pointer(_) => false,
             Self::Array { .. } => false,
+            _ => todo!(),
         }
     }
 
@@ -574,8 +587,8 @@ pub enum Error {
     NotVarType(std::ops::Range<usize>),
     #[error("Variable type isn't allowed here")]
     NotFunType(std::ops::Range<usize>),
-    #[error("Float can't be used as array length")]
-    FloatAsArrayLength(std::ops::Range<usize>),
+    #[error("Array length must be a constant integer")]
+    BadArrayLength(std::ops::Range<usize>),
 }
 
 impl MayHasSpan for Error {
@@ -592,7 +605,7 @@ impl MayHasSpan for Error {
             Error::UnexpectedSpecifier(spanned) => Some(spanned.span.clone()),
             Error::NotVarType(span) => Some(span.clone()),
             Error::NotFunType(span) => Some(span.clone()),
-            Error::FloatAsArrayLength(span) => Some(span.clone()),
+            Error::BadArrayLength(span) => Some(span.clone()),
         }
     }
 }
@@ -1122,8 +1135,8 @@ impl<'a> Parser<'a> {
         let c = self.expect_constant()?;
         let index = match c.data {
             Constant::Integer { value, .. } => value as usize,
-            Constant::Float(_) => return Err(Error::FloatAsArrayLength(c.span.clone())),
-            _ => todo!(),
+            Constant::Char(c) => c as usize,
+            _ => return Err(Error::BadArrayLength(c.span.clone())),
         };
         let end = self.expect(Token::CloseSquareBracket)?.span.end;
 
