@@ -275,7 +275,7 @@ pub enum Expression {
         index: Box<Expression>,
         ty: VarType,
     },
-    String(Spanned<Vec<u8>>),
+    String(Spanned<Vec<u8>>, VarType),
 }
 
 impl Expression {
@@ -307,7 +307,7 @@ impl Expression {
             },
             Self::AddrOf { ty, .. } => ty,
             Self::Subscript { ty, .. } => ty,
-            _ => todo!(),
+            Self::String(_, ty) => ty,
         }
     }
 
@@ -334,7 +334,7 @@ impl Expression {
     pub fn is_lvalue(&self) -> bool {
         matches!(
             self,
-            Self::Var(_, _) | Self::Dereference(_) | Self::Subscript { .. }
+            Self::Var(_, _) | Self::Dereference(_) | Self::Subscript { .. } | Self::String(..)
         )
     }
 }
@@ -452,6 +452,10 @@ impl VarType {
 
     pub fn is_array(&self) -> bool {
         matches!(self, Self::Array { .. })
+    }
+
+    pub fn is_character(&self) -> bool {
+        matches!(self, Self::Char | Self::SChar | Self::UChar)
     }
 }
 
@@ -1490,10 +1494,18 @@ impl<'a> Parser<'a> {
                             self.advance();
                         }
 
-                        Ok(Expression::String(Spanned {
-                            data: s,
-                            span: start..end,
-                        }))
+                        let len = s.len();
+
+                        Ok(Expression::String(
+                            Spanned {
+                                data: s,
+                                span: start..end,
+                            },
+                            VarType::Array {
+                                element: Box::new(VarType::Char),
+                                size: len + 1,
+                            },
+                        ))
                     }
                 },
                 Token::OpenParen => {

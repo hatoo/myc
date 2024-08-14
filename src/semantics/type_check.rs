@@ -54,6 +54,8 @@ pub enum StaticInit {
     Ulong(u64),
     Double(f64),
     Zero(usize),
+    CharInit(i8),
+    UCharInit(u8),
 }
 
 impl StaticInit {
@@ -176,9 +178,17 @@ fn common_pointer_type<'a>(
     }
 }
 
-fn common_type(ty0: ast::VarType, ty1: ast::VarType) -> ast::VarType {
+fn common_type(mut ty0: ast::VarType, mut ty1: ast::VarType) -> ast::VarType {
     if ty0 == ast::VarType::Double || ty1 == ast::VarType::Double {
         return ast::VarType::Double;
+    }
+
+    if ty0.is_character() {
+        ty0 = ast::VarType::Int;
+    }
+
+    if ty1.is_character() {
+        ty1 = ast::VarType::Int;
     }
 
     if ty0 == ty1 {
@@ -463,14 +473,6 @@ impl TypeChecker {
     ) -> Result<(), Error> {
         let span = init.may_span();
         match (target, init) {
-            (_, ast::Initializer::SingleInit(e)) => {
-                if target.is_array() {
-                    return Err(Error::IncompatibleTypes(e.span()));
-                }
-                self.check_expression_and_convert(e)?;
-                convert_by_assignment(e, target)?;
-                Ok(())
-            }
             (ast::VarType::Array { element, size }, ast::Initializer::CompoundInit(list)) => {
                 if list.len() > *size {
                     return Err(Error::IncompatibleTypes(span.unwrap()));
@@ -484,6 +486,28 @@ impl TypeChecker {
                     list.push(ast::Initializer::zero(element));
                 }
 
+                Ok(())
+            }
+            (
+                ast::VarType::Array { element, size },
+                ast::Initializer::SingleInit(Expression::String(s, ty)),
+            ) => {
+                if !element.is_character() {
+                    return Err(Error::IncompatibleTypes(span.unwrap()));
+                }
+                if s.data.len() > *size {
+                    return Err(Error::IncompatibleTypes(span.unwrap()));
+                }
+
+                *ty = target.clone();
+                Ok(())
+            }
+            (_, ast::Initializer::SingleInit(e)) => {
+                if target.is_array() {
+                    return Err(Error::IncompatibleTypes(e.span()));
+                }
+                self.check_expression_and_convert(e)?;
+                convert_by_assignment(e, target)?;
                 Ok(())
             }
 
@@ -521,11 +545,19 @@ impl TypeChecker {
                         if *ty == ast::VarType::Double || ty.is_pointer() {
                             return Err(Error::IncompatibleTypes(exp.span()));
                         }
+                        if ty.is_character() {
+                            *ty = ast::VarType::Int;
+                            convert_to(exp, &ast::VarType::Int);
+                        }
                     }
                     ast::UnaryOp::Negate => {
                         *ty = self.check_expression(exp)?;
                         if ty.is_pointer() {
                             return Err(Error::IncompatibleTypes(exp.span()));
+                        }
+                        if ty.is_character() {
+                            *ty = ast::VarType::Int;
+                            convert_to(exp, &ast::VarType::Int);
                         }
                     }
                 }
@@ -774,7 +806,7 @@ impl TypeChecker {
 
                 Ok(ty.clone())
             }
-            _ => todo!(),
+            ast::Expression::String(_, ty) => Ok(ty.clone()),
         }
     }
 
