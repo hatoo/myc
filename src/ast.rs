@@ -448,7 +448,16 @@ impl VarType {
     }
 
     pub fn is_integer(&self) -> bool {
-        matches!(self, Self::Int | Self::Uint | Self::Long | Self::Ulong)
+        matches!(
+            self,
+            Self::Int
+                | Self::Uint
+                | Self::Long
+                | Self::Ulong
+                | Self::Char
+                | Self::SChar
+                | Self::UChar
+        )
     }
 
     pub fn is_signed(&self) -> bool {
