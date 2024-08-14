@@ -60,8 +60,8 @@ pub enum StaticInit {
     Ulong(u64),
     Double(f64),
     Zero(usize),
-    CharInit(i8),
-    UCharInit(u8),
+    Char(i8),
+    UChar(u8),
     String {
         data: Vec<u8>,
         null_terminated: bool,
@@ -84,59 +84,19 @@ impl StaticInit {
 
     pub fn size(&self) -> usize {
         match self {
+            StaticInit::Char(_) => 1,
+            StaticInit::UChar(_) => 1,
             StaticInit::Int(_) => 4,
             StaticInit::Uint(_) => 4,
             StaticInit::Long(_) => 8,
             StaticInit::Ulong(_) => 8,
             StaticInit::Double(_) => 8,
             StaticInit::Zero(size) => *size,
-        }
-    }
-
-    pub fn from_const_expr(target: &ast::VarType, exp: &Expression) -> Result<Self, Error> {
-        match exp {
-            ast::Expression::Constant(Spanned { data, .. }) => data
-                .get_static_init(target)
-                .ok_or_else(|| Error::IncompatibleTypes(exp.span())),
-
-            ast::Expression::String(Spanned { data, .. }, _) => {}
-            _ => Err(Error::IncompatibleTypes(exp.span())),
-        }
-    }
-
-    pub fn from_initializer(
-        target: &ast::VarType,
-        inits: &Initializer,
-    ) -> Result<Vec<Self>, Error> {
-        match inits {
-            Initializer::SingleInit(exp) => {
-                if let ast::VarType::Array { .. } = target {
-                    return Err(Error::IncompatibleTypes(exp.span()));
-                }
-
-                Ok(vec![Self::from_const_expr(target, exp)?])
-            }
-            Initializer::CompoundInit(inits) => {
-                if let ast::VarType::Array { element, size } = target {
-                    if inits.len() > *size {
-                        return Err(Error::IncompatibleTypes(0..0));
-                    }
-                    let mut res = Vec::new();
-
-                    for init in inits {
-                        res.extend(Self::from_initializer(element, init)?);
-                    }
-
-                    let filled = res.iter().map(|init| init.size()).sum::<usize>();
-                    if filled < target.size() {
-                        res.push(StaticInit::Zero(target.size() - filled));
-                    }
-
-                    Ok(res)
-                } else {
-                    Err(Error::IncompatibleTypes(0..0))
-                }
-            }
+            StaticInit::String {
+                data,
+                null_terminated,
+            } => data.len() + if *null_terminated { 1 } else { 0 },
+            StaticInit::Pointer(_) => 8,
         }
     }
 }
@@ -266,6 +226,43 @@ impl TypeChecker {
         s.into()
     }
 
+    fn static_init_from_initializer(
+        &mut self,
+        target: &ast::VarType,
+        inits: &Initializer,
+    ) -> Result<Vec<StaticInit>, Error> {
+        match inits {
+            Initializer::SingleInit(exp) => {
+                if let ast::VarType::Array { .. } = target {
+                    return Err(Error::IncompatibleTypes(exp.span()));
+                }
+
+                Ok(vec![self.static_init(target, exp)?])
+            }
+            Initializer::CompoundInit(inits) => {
+                if let ast::VarType::Array { element, size } = target {
+                    if inits.len() > *size {
+                        return Err(Error::IncompatibleTypes(0..0));
+                    }
+                    let mut res = Vec::new();
+
+                    for init in inits {
+                        res.extend(self.static_init_from_initializer(element, init)?);
+                    }
+
+                    let filled = res.iter().map(|init| init.size()).sum::<usize>();
+                    if filled < target.size() {
+                        res.push(StaticInit::Zero(target.size() - filled));
+                    }
+
+                    Ok(res)
+                } else {
+                    Err(Error::IncompatibleTypes(0..0))
+                }
+            }
+        }
+    }
+
     fn static_init(
         &mut self,
         target: &ast::VarType,
@@ -293,7 +290,7 @@ impl TypeChecker {
                 }
                 ast::VarType::Pointer(ty) => {
                     if let ast::Ty::Var(ty) = ty.as_ref() {
-                        if !ty.is_character() {
+                        if ty != &ast::VarType::Char {
                             return Err(Error::IncompatibleTypes(exp.span()));
                         }
 
@@ -466,7 +463,7 @@ impl TypeChecker {
                     init = InitialValue::Tentative;
                 }
             }
-            Some(Attr::Local(_)) => {
+            Some(Attr::Local(_)) | Some(Attr::Constant { .. }) => {
                 unreachable!()
             }
             None => {}
@@ -568,7 +565,7 @@ impl TypeChecker {
                 ast::VarType::Array { element, size },
                 ast::Initializer::SingleInit(Expression::String(s, ty)),
             ) => {
-                if !element.is_character() {
+                if element != &ast::VarType::Char {
                     return Err(Error::IncompatibleTypes(span.unwrap()));
                 }
                 if s.data.len() > *size {
