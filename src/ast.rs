@@ -150,6 +150,8 @@ pub enum Statement {
 
 #[derive(Debug, Clone, Copy)]
 pub enum Const {
+    Char(i8),
+    UChar(u8),
     Int(i32),
     Long(i64),
     Uint(u32),
@@ -266,6 +268,7 @@ pub enum Expression {
         index: Box<Expression>,
         ty: VarType,
     },
+    String(Vec<u8>),
 }
 
 impl Expression {
@@ -367,6 +370,9 @@ impl Ty {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VarType {
+    Char,
+    SChar,
+    UChar,
     Int,
     Long,
     Uint,
