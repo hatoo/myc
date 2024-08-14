@@ -268,7 +268,7 @@ pub enum Expression {
         index: Box<Expression>,
         ty: VarType,
     },
-    String(Vec<u8>),
+    String(Spanned<Vec<u8>>),
 }
 
 impl Expression {
@@ -542,6 +542,7 @@ pub enum ExpectedToken {
 }
 
 enum TypeSpecifier {
+    Char,
     Int,
     Long,
     Unsigned,
@@ -599,8 +600,7 @@ impl MayHasSpan for Error {
 fn solve_type_specifier(ty: &[Spanned<TypeSpecifier>]) -> Result<VarType, Error> {
     debug_assert!(!ty.is_empty());
 
-    let mut int = false;
-    let mut long = false;
+    let mut base_ty = None;
     let mut signed = false;
     let mut unsigned = false;
 
@@ -616,17 +616,23 @@ fn solve_type_specifier(ty: &[Spanned<TypeSpecifier>]) -> Result<VarType, Error>
 
     for s in ty {
         match s.data {
-            TypeSpecifier::Int => {
-                if int {
+            TypeSpecifier::Char => {
+                if base_ty.is_some() {
                     return Err(Error::ConflictingSpecifier(s.span.clone()));
                 }
-                int = true;
+                base_ty = Some(VarType::Char);
+            }
+            TypeSpecifier::Int => {
+                if base_ty.is_some() {
+                    return Err(Error::ConflictingSpecifier(s.span.clone()));
+                }
+                base_ty = Some(VarType::Int);
             }
             TypeSpecifier::Long => {
-                if long {
+                if base_ty.is_some() {
                     return Err(Error::ConflictingSpecifier(s.span.clone()));
                 }
-                long = true;
+                base_ty = Some(VarType::Long);
             }
             TypeSpecifier::Signed => {
                 if signed || unsigned {
@@ -646,16 +652,31 @@ fn solve_type_specifier(ty: &[Spanned<TypeSpecifier>]) -> Result<VarType, Error>
         }
     }
 
-    if long {
-        if unsigned {
-            Ok(VarType::Ulong)
-        } else {
-            Ok(VarType::Long)
+    match base_ty.unwrap_or(VarType::Int) {
+        VarType::Char => {
+            if unsigned {
+                Ok(VarType::UChar)
+            } else if signed {
+                Ok(VarType::SChar)
+            } else {
+                Ok(VarType::Char)
+            }
         }
-    } else if unsigned {
-        Ok(VarType::Uint)
-    } else {
-        Ok(VarType::Int)
+        VarType::Long => {
+            if unsigned {
+                Ok(VarType::Ulong)
+            } else {
+                Ok(VarType::Long)
+            }
+        }
+        VarType::Int => {
+            if unsigned {
+                Ok(VarType::Uint)
+            } else {
+                Ok(VarType::Int)
+            }
+        }
+        _ => unreachable!(),
     }
 }
 
@@ -1189,6 +1210,11 @@ impl<'a> Parser<'a> {
 
         while let Some(s) = self.peek() {
             match &s.data {
+                Token::Char => {
+                    ty.push(s.clone().map(|_| TypeSpecifier::Char));
+                    end = s.span.end;
+                    self.advance();
+                }
                 Token::Int => {
                     ty.push(s.clone().map(|_| TypeSpecifier::Int));
                     end = s.span.end;
@@ -1303,6 +1329,10 @@ impl<'a> Parser<'a> {
         loop {
             if let Some(s) = self.peek() {
                 match &s.data {
+                    Token::Char => {
+                        ty.push(s.clone().map(|_| TypeSpecifier::Char));
+                        self.advance();
+                    }
                     Token::Int => {
                         ty.push(s.clone().map(|_| TypeSpecifier::Int));
                         self.advance();
@@ -1419,7 +1449,31 @@ impl<'a> Parser<'a> {
                         self.advance();
                         Ok(Expression::Constant(constant))
                     }
-                    _ => todo!(),
+                    Constant::Char(value) => {
+                        let constant = token.clone().map(|_| Const::Int(*value as _));
+                        self.advance();
+                        Ok(Expression::Constant(constant))
+                    }
+                    Constant::String(value) => {
+                        let start = token.span.start;
+                        let mut end = token.span.end;
+                        let mut s = value.clone();
+                        // adjacent string literals must be concatenated
+                        while let Some(Spanned {
+                            data: Token::Constant(Constant::String(s2)),
+                            span,
+                        }) = self.peek()
+                        {
+                            s.extend(s2);
+                            end = span.end;
+                            self.advance();
+                        }
+
+                        Ok(Expression::String(Spanned {
+                            data: s,
+                            span: start..end,
+                        }))
+                    }
                 },
                 Token::OpenParen => {
                     self.advance();
