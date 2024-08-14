@@ -93,7 +93,7 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
         Regex::new(r"^(([0-9]*\.[0-9]+|[0-9]+\.?)[Ee][+-]?[0-9]+|[0-9]*\.[0-9]+|[0-9]+\.)").unwrap()
     });
     static CHAR_RE: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r#"^'([^'\\\n])|(\\['"?\\abfnrtv])'"#).unwrap());
+        LazyLock::new(|| Regex::new(r#"^'(([^'\\\n])|(\\['"?\\abfnrtv]))'"#).unwrap());
     static STRING_RE: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r#"^"((([^"\\\n])|(\\['"?\\abfnrtv]))*)""#).unwrap());
 
@@ -487,10 +487,10 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
             }
             b'\'' => {
                 if let Some(cap) = CHAR_RE.captures(&src[index..]) {
-                    let c = if let Some(g) = cap.get(1) {
+                    let c = if let Some(g) = cap.get(2) {
                         g.as_bytes()[0]
                     } else {
-                        match cap.get(2).unwrap().as_bytes()[1] {
+                        match cap.get(3).unwrap().as_bytes()[1] {
                             b'\'' => b'\'',
                             b'?' => b'?',
                             b'\\' => b'\\',
