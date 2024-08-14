@@ -613,7 +613,9 @@ impl MayHasSpan for Error {
 fn solve_type_specifier(ty: &[Spanned<TypeSpecifier>]) -> Result<VarType, Error> {
     debug_assert!(!ty.is_empty());
 
-    let mut base_ty = None;
+    let mut int = false;
+    let mut long = false;
+    let mut char = false;
     let mut signed = false;
     let mut unsigned = false;
 
@@ -630,22 +632,22 @@ fn solve_type_specifier(ty: &[Spanned<TypeSpecifier>]) -> Result<VarType, Error>
     for s in ty {
         match s.data {
             TypeSpecifier::Char => {
-                if base_ty.is_some() {
+                if int || long || char {
                     return Err(Error::ConflictingSpecifier(s.span.clone()));
                 }
-                base_ty = Some(VarType::Char);
+                char = true;
             }
             TypeSpecifier::Int => {
-                if base_ty.is_some() {
+                if int || char {
                     return Err(Error::ConflictingSpecifier(s.span.clone()));
                 }
-                base_ty = Some(VarType::Int);
+                int = true;
             }
             TypeSpecifier::Long => {
-                if base_ty.is_some() {
+                if char || long {
                     return Err(Error::ConflictingSpecifier(s.span.clone()));
                 }
-                base_ty = Some(VarType::Long);
+                long = true;
             }
             TypeSpecifier::Signed => {
                 if signed || unsigned {
@@ -665,7 +667,13 @@ fn solve_type_specifier(ty: &[Spanned<TypeSpecifier>]) -> Result<VarType, Error>
         }
     }
 
-    match base_ty.unwrap_or(VarType::Int) {
+    let base_ty = match (char, int, long) {
+        (true, _, _) => VarType::Char,
+        (_, _, true) => VarType::Long,
+        _ => VarType::Int,
+    };
+
+    match base_ty {
         VarType::Char => {
             if unsigned {
                 Ok(VarType::UChar)
