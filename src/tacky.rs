@@ -881,7 +881,7 @@ pub fn gen_program(program: &ast::Program, symbol_table: &mut HashMap<EcoString,
                 })),
                 _ => None,
             })
-            .chain(functions.into_iter())
+            .chain(functions)
             .collect(),
     }
 }

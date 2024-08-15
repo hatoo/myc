@@ -932,7 +932,7 @@ impl<'a> CodeGen<'a> {
                     }
                 }
                 tacky::Instruction::IntToDouble { src, dst } => {
-                    if src.ty(&self.symbol_table).size() == 1 {
+                    if src.ty(self.symbol_table).size() == 1 {
                         body.push(Instruction::Movsx {
                             src_type: AssemblyType::Byte,
                             dst_type: AssemblyType::LongWord,
@@ -1375,18 +1375,18 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
                 dst: dst @ (Operand::Memory(..) | Operand::Data(_)),
             } => {
                 new_insts.push(Instruction::Mov {
-                    ty: src_type.clone(),
+                    ty: src_type,
                     src,
                     dst: Operand::Reg(Register::R10),
                 });
                 new_insts.push(Instruction::Movsx {
-                    src_type: src_type.clone(),
-                    dst_type: dst_type.clone(),
+                    src_type,
+                    dst_type,
                     src: Operand::Reg(Register::R10),
                     dst: Operand::Reg(Register::R11),
                 });
                 new_insts.push(Instruction::Mov {
-                    ty: dst_type.clone(),
+                    ty: dst_type,
                     src: Operand::Reg(Register::R11),
                     dst,
                 });
@@ -1398,13 +1398,13 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
                 dst,
             } => {
                 new_insts.push(Instruction::Mov {
-                    ty: src_type.clone(),
+                    ty: src_type,
                     src,
                     dst: Operand::Reg(Register::R10),
                 });
                 new_insts.push(Instruction::Movsx {
-                    src_type: src_type.clone(),
-                    dst_type: dst_type.clone(),
+                    src_type,
+                    dst_type,
                     src: Operand::Reg(Register::R10),
                     dst,
                 });
@@ -1416,13 +1416,13 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
                 dst: dst @ (Operand::Memory(..) | Operand::Data(_)),
             } => {
                 new_insts.push(Instruction::Movsx {
-                    src_type: src_type.clone(),
-                    dst_type: dst_type.clone(),
+                    src_type,
+                    dst_type,
                     src,
                     dst: Operand::Reg(Register::R10),
                 });
                 new_insts.push(Instruction::Mov {
-                    ty: dst_type.clone(),
+                    ty: dst_type,
                     src: Operand::Reg(Register::R10),
                     dst,
                 });
@@ -1695,7 +1695,7 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
                     });
                 } else {
                     new_insts.push(Instruction::Mov {
-                        ty: src_type.clone(),
+                        ty: src_type,
                         src,
                         dst: Operand::Reg(Register::R10),
                     });
@@ -2003,8 +2003,8 @@ impl Display for Instruction {
                     "movs{}{} {}, {}",
                     src_type.suffix(),
                     dst_type.suffix(),
-                    src.sized(src_type.clone()),
-                    dst.sized(dst_type.clone())
+                    src.sized(*src_type),
+                    dst.sized(*dst_type)
                 )?;
             }
             Instruction::MovZeroExtend {
@@ -2018,8 +2018,8 @@ impl Display for Instruction {
                     "movz{}{} {}, {}",
                     src_type.suffix(),
                     dst_type.suffix(),
-                    src.sized(src_type.clone()),
-                    dst.sized(dst_type.clone())
+                    src.sized(*src_type),
+                    dst.sized(*dst_type)
                 )?;
             }
             Instruction::Div(ty, op) => {
