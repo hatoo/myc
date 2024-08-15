@@ -1022,9 +1022,18 @@ impl Display for StaticInit {
             StaticInit::UChar(c) => writeln!(f, ".byte {}", c)?,
             StaticInit::Pointer(name) => writeln!(f, ".quad {}", name)?,
             StaticInit::String { data, pad } => {
-                for c in data {
-                    writeln!(f, ".byte {}", c)?;
+                if data.iter().all(|&c| c.is_ascii()) {
+                    write!(f, ".ascii \"")?;
+                    for c in data {
+                        write!(f, "{}", std::ascii::escape_default(*c))?;
+                    }
+                    writeln!(f, "\"")?;
+                } else {
+                    for c in data {
+                        writeln!(f, ".byte {}", c)?;
+                    }
                 }
+
                 if *pad > 0 {
                     writeln!(f, ".zero {}", pad)?;
                 }
