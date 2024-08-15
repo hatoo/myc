@@ -228,7 +228,15 @@ impl<'a> InstructionGenerator<'a> {
         for init in inits {
             match init {
                 Initializer::SingleInit(Expression::String(data, ty @ VarType::Array { .. })) => {
-                    for chunk in data.data.chunks(4) {
+                    for chunk in data
+                        .data
+                        .iter()
+                        .chain(std::iter::repeat(&0))
+                        .take(ty.size())
+                        .copied()
+                        .collect::<Vec<_>>()
+                        .chunks(4)
+                    {
                         if chunk.len() == 4 {
                             let val = Val::Constant(ast::Const::Uint(u32::from_le_bytes([
                                 chunk[0], chunk[1], chunk[2], chunk[3],
@@ -250,16 +258,6 @@ impl<'a> InstructionGenerator<'a> {
                                 *offset += 1;
                             }
                         }
-                    }
-
-                    for _ in 0..(ty.size() - data.data.len()) {
-                        let val = Val::Constant(ast::Const::UChar(0));
-                        self.instructions.push(Instruction::CopyToOffset {
-                            src: val,
-                            dst: name.clone(),
-                            offset: *offset,
-                        });
-                        *offset += 1;
                     }
                 }
                 Initializer::SingleInit(exp) => {
