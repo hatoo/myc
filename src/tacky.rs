@@ -675,7 +675,13 @@ impl<'a> InstructionGenerator<'a> {
                 let val = self.add_expression_and_convert(exp);
                 match (exp.ty(), target) {
                     (from, to) if from == to => ExpResult::PlainOperand(val),
-                    (ast::VarType::Double, to @ (ast::VarType::Int | ast::VarType::Long)) => {
+                    (
+                        ast::VarType::Double,
+                        to @ (ast::VarType::Int
+                        | ast::VarType::Long
+                        | ast::VarType::Char
+                        | ast::VarType::SChar),
+                    ) => {
                         let dst = self.make_tmp_local(to.clone());
                         self.instructions.push(Instruction::DoubleToInt {
                             src: val,
@@ -683,7 +689,10 @@ impl<'a> InstructionGenerator<'a> {
                         });
                         ExpResult::PlainOperand(dst)
                     }
-                    (ast::VarType::Double, to @ (ast::VarType::Uint | ast::VarType::Ulong)) => {
+                    (
+                        ast::VarType::Double,
+                        to @ (ast::VarType::Uint | ast::VarType::Ulong | ast::VarType::UChar),
+                    ) => {
                         let dst = self.make_tmp_local(to.clone());
                         self.instructions.push(Instruction::DoubleToUint {
                             src: val,
@@ -691,7 +700,13 @@ impl<'a> InstructionGenerator<'a> {
                         });
                         ExpResult::PlainOperand(dst)
                     }
-                    (ast::VarType::Int | ast::VarType::Long, ast::VarType::Double) => {
+                    (
+                        ast::VarType::Int
+                        | ast::VarType::Long
+                        | ast::VarType::Char
+                        | ast::VarType::SChar,
+                        ast::VarType::Double,
+                    ) => {
                         let dst = self.make_tmp_local(ast::VarType::Double);
                         self.instructions.push(Instruction::IntToDouble {
                             src: val,
@@ -699,7 +714,10 @@ impl<'a> InstructionGenerator<'a> {
                         });
                         ExpResult::PlainOperand(dst)
                     }
-                    (ast::VarType::Uint | ast::VarType::Ulong, ast::VarType::Double) => {
+                    (
+                        ast::VarType::Uint | ast::VarType::Ulong | ast::VarType::UChar,
+                        ast::VarType::Double,
+                    ) => {
                         let dst = self.make_tmp_local(ast::VarType::Double);
                         self.instructions.push(Instruction::UintToDouble {
                             src: val,

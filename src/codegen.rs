@@ -808,7 +808,7 @@ impl<'a> CodeGen<'a> {
                 }
                 tacky::Instruction::Truncate { src, dst } => {
                     body.push(Instruction::Mov {
-                        ty: AssemblyType::LongWord,
+                        ty: dst.ty(self.symbol_table).into(),
                         src: src.into(),
                         dst: dst.into(),
                     });
@@ -902,6 +902,8 @@ impl<'a> CodeGen<'a> {
                 tacky::Instruction::UintToDouble { src, dst } => match src.ty(self.symbol_table) {
                     ast::VarType::Uint => {
                         body.push(Instruction::MovZeroExtend {
+                            src_type: AssemblyType::LongWord,
+                            dst_type: AssemblyType::QuadWord,
                             src: src.into(),
                             dst: Operand::Reg(Register::R10),
                         });
@@ -1226,11 +1228,11 @@ fn pseudo_to_stack(
             Instruction::Call(op) => {
                 remove_pseudo(op);
             }
-            Instruction::Movsx { src, dst } => {
+            Instruction::Movsx { src, dst, .. } => {
                 remove_pseudo(src);
                 remove_pseudo(dst);
             }
-            Instruction::MovZeroExtend { src, dst } => {
+            Instruction::MovZeroExtend { src, dst, .. } => {
                 remove_pseudo(src);
                 remove_pseudo(dst);
             }
@@ -1298,20 +1300,24 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
                 });
             }
             Instruction::Movsx {
+                src_type,
+                dst_type,
                 src: src @ Operand::Imm(_),
                 dst: dst @ (Operand::Memory(..) | Operand::Data(_)),
             } => {
                 new_insts.push(Instruction::Mov {
-                    ty: AssemblyType::LongWord,
+                    ty: src_type.clone(),
                     src,
                     dst: Operand::Reg(Register::R10),
                 });
                 new_insts.push(Instruction::Movsx {
+                    src_type: src_type.clone(),
+                    dst_type: dst_type.clone(),
                     src: Operand::Reg(Register::R10),
                     dst: Operand::Reg(Register::R11),
                 });
                 new_insts.push(Instruction::Mov {
-                    ty: AssemblyType::QuadWord,
+                    ty: dst_type.clone(),
                     src: Operand::Reg(Register::R11),
                     dst,
                 });
