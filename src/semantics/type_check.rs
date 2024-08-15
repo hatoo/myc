@@ -1,4 +1,7 @@
-use std::collections::{hash_map::Entry, HashMap};
+use std::{
+    collections::{hash_map::Entry, HashMap},
+    fmt::Display,
+};
 
 use ecow::EcoString;
 
@@ -1000,5 +1003,34 @@ impl TypeChecker {
             }
             crate::ast::Statement::Null => Ok(()),
         }
+    }
+}
+
+impl Display for StaticInit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self {
+            StaticInit::Int(x) => writeln!(f, ".long {}", x)?,
+            StaticInit::Uint(x) => writeln!(f, ".long {}", x)?,
+            StaticInit::Long(x) => writeln!(f, ".quad {}", x)?,
+            StaticInit::Ulong(x) => writeln!(f, ".quad {}", x)?,
+            StaticInit::Double(d) => {
+                writeln!(f, ".quad {}", d.to_bits())?;
+                writeln!(f, "# {:+e}", d)?;
+            }
+            StaticInit::Zero(size) => writeln!(f, ".zero {}", size)?,
+            StaticInit::Char(c) => writeln!(f, ".byte {}", c)?,
+            StaticInit::UChar(c) => writeln!(f, ".byte {}", c)?,
+            StaticInit::Pointer(name) => writeln!(f, ".quad {}", name)?,
+            StaticInit::String { data, pad } => {
+                for c in data {
+                    writeln!(f, ".byte {}", c)?;
+                }
+                if *pad > 0 {
+                    writeln!(f, ".zero {}", pad)?;
+                }
+            }
+        }
+
+        Ok(())
     }
 }

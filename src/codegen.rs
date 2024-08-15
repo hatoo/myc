@@ -1850,28 +1850,7 @@ impl Display for StaticConstant {
         writeln!(f, ".section .rodata")?;
         writeln!(f, ".align {}", self.alignment)?;
         writeln!(f, "{}:", self.name)?;
-        match &self.init {
-            semantics::type_check::StaticInit::Int(x) => writeln!(f, ".long {}", x)?,
-            semantics::type_check::StaticInit::Uint(x) => writeln!(f, ".long {}", x)?,
-            semantics::type_check::StaticInit::Long(x) => writeln!(f, ".quad {}", x)?,
-            semantics::type_check::StaticInit::Ulong(x) => writeln!(f, ".quad {}", x)?,
-            semantics::type_check::StaticInit::Double(d) => {
-                writeln!(f, ".quad {}", d.to_bits())?;
-                writeln!(f, "# {:+e}", d)?;
-            }
-            semantics::type_check::StaticInit::Zero(size) => writeln!(f, ".zero {}", size)?,
-            semantics::type_check::StaticInit::Char(c) => writeln!(f, ".byte {}", c)?,
-            semantics::type_check::StaticInit::UChar(c) => writeln!(f, ".byte {}", c)?,
-            semantics::type_check::StaticInit::Pointer(name) => writeln!(f, ".quad {}", name)?,
-            semantics::type_check::StaticInit::String { data, pad } => {
-                for c in data {
-                    writeln!(f, ".byte {}", c)?;
-                }
-                if *pad > 0 {
-                    writeln!(f, ".zero {}", pad)?;
-                }
-            }
-        }
+        writeln!(f, "{}", self.init)?;
         Ok(())
     }
 }
@@ -1897,35 +1876,8 @@ impl Display for StaticVariable {
             writeln!(f, ".data")?;
             writeln!(f, ".align {}", self.alignment)?;
             writeln!(f, "{}:", self.name)?;
-            // TODO
             for init in &self.init {
-                match init {
-                    semantics::type_check::StaticInit::Int(x) => writeln!(f, ".long {}", x)?,
-                    semantics::type_check::StaticInit::Uint(x) => writeln!(f, ".long {}", x)?,
-                    semantics::type_check::StaticInit::Long(x) => writeln!(f, ".quad {}", x)?,
-                    semantics::type_check::StaticInit::Ulong(x) => writeln!(f, ".quad {}", x)?,
-                    semantics::type_check::StaticInit::Double(d) => {
-                        writeln!(f, ".quad {}", d.to_bits())?;
-                        writeln!(f, "# {:+e}", d)?;
-                    }
-                    semantics::type_check::StaticInit::Zero(size) => {
-                        writeln!(f, ".zero {}", size)?;
-                    }
-                    semantics::type_check::StaticInit::Char(c) => writeln!(f, ".byte {}", c)?,
-                    semantics::type_check::StaticInit::UChar(c) => writeln!(f, ".byte {}", c)?,
-                    semantics::type_check::StaticInit::Pointer(name) => {
-                        writeln!(f, ".quad {}", name)?
-                    }
-                    semantics::type_check::StaticInit::String { data, pad } => {
-                        for c in data {
-                            writeln!(f, ".byte {}", c)?;
-                        }
-
-                        if *pad > 0 {
-                            writeln!(f, ".zero {}", pad)?;
-                        }
-                    }
-                }
+                writeln!(f, "{}", init)?;
             }
         }
         Ok(())
