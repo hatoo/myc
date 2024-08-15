@@ -463,13 +463,10 @@ impl VarType {
     pub fn is_signed(&self) -> bool {
         match self {
             Self::Int => true,
-            Self::Uint => false,
             Self::Long => true,
-            Self::Ulong => false,
-            Self::Double => false,
-            Self::Pointer(_) => false,
-            Self::Array { .. } => false,
-            _ => todo!(),
+            Self::SChar => true,
+            Self::Char => true,
+            _ => false,
         }
     }
 

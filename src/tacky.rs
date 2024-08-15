@@ -169,7 +169,8 @@ impl Val {
                 ast::Const::Uint(_) => &ast::VarType::Uint,
                 ast::Const::Ulong(_) => &ast::VarType::Ulong,
                 ast::Const::Double(_) => &ast::VarType::Double,
-                _ => todo!(),
+                ast::Const::Char(_) => &ast::VarType::Char,
+                ast::Const::UChar(_) => &ast::VarType::UChar,
             },
             Val::Var(var) => symbol_table[var].ty(),
         }
