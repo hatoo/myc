@@ -822,14 +822,38 @@ impl<'a> CodeGen<'a> {
                     });
                 }
                 tacky::Instruction::DoubleToInt { src, dst } => {
-                    body.push(Instruction::Cvttsd2si {
-                        ty: dst.ty(self.symbol_table).into(),
-                        src: src.into(),
-                        dst: dst.into(),
-                    });
+                    if dst.ty(self.symbol_table).size() == 1 {
+                        body.push(Instruction::Cvttsd2si {
+                            ty: AssemblyType::LongWord,
+                            src: src.into(),
+                            dst: Operand::Reg(Register::R10),
+                        });
+                        body.push(Instruction::Mov {
+                            ty: AssemblyType::Byte,
+                            src: Operand::Reg(Register::R10),
+                            dst: dst.into(),
+                        });
+                    } else {
+                        body.push(Instruction::Cvttsd2si {
+                            ty: dst.ty(self.symbol_table).into(),
+                            src: src.into(),
+                            dst: dst.into(),
+                        });
+                    }
                 }
                 tacky::Instruction::DoubleToUint { src, dst } => {
-                    if dst.ty(self.symbol_table) == &ast::VarType::Uint {
+                    if dst.ty(self.symbol_table) == &ast::VarType::UChar {
+                        body.push(Instruction::Cvttsd2si {
+                            ty: AssemblyType::LongWord,
+                            src: src.into(),
+                            dst: Operand::Reg(Register::R10),
+                        });
+                        body.push(Instruction::Mov {
+                            ty: AssemblyType::Byte,
+                            src: Operand::Reg(Register::R10),
+                            dst: dst.into(),
+                        });
+                    } else if dst.ty(self.symbol_table) == &ast::VarType::Uint {
                         body.push(Instruction::Cvttsd2si {
                             ty: AssemblyType::QuadWord,
                             src: src.into(),
@@ -893,13 +917,40 @@ impl<'a> CodeGen<'a> {
                     }
                 }
                 tacky::Instruction::IntToDouble { src, dst } => {
-                    body.push(Instruction::Cvtsi2sd {
-                        ty: src.ty(self.symbol_table).into(),
-                        src: src.into(),
-                        dst: dst.into(),
-                    });
+                    if src.ty(&self.symbol_table).size() == 1 {
+                        body.push(Instruction::Movsx {
+                            src_type: AssemblyType::Byte,
+                            dst_type: AssemblyType::LongWord,
+                            src: src.into(),
+                            dst: Operand::Reg(Register::R10),
+                        });
+                        body.push(Instruction::Cvtsi2sd {
+                            ty: AssemblyType::LongWord,
+                            src: Operand::Reg(Register::R10),
+                            dst: dst.into(),
+                        });
+                    } else {
+                        body.push(Instruction::Cvtsi2sd {
+                            ty: src.ty(self.symbol_table).into(),
+                            src: src.into(),
+                            dst: dst.into(),
+                        });
+                    }
                 }
                 tacky::Instruction::UintToDouble { src, dst } => match src.ty(self.symbol_table) {
+                    &ast::VarType::UChar => {
+                        body.push(Instruction::MovZeroExtend {
+                            src_type: AssemblyType::Byte,
+                            dst_type: AssemblyType::LongWord,
+                            src: src.into(),
+                            dst: Operand::Reg(Register::R10),
+                        });
+                        body.push(Instruction::Cvtsi2sd {
+                            ty: AssemblyType::LongWord,
+                            src: Operand::Reg(Register::R10),
+                            dst: dst.into(),
+                        });
+                    }
                     ast::VarType::Uint => {
                         body.push(Instruction::MovZeroExtend {
                             src_type: AssemblyType::LongWord,
