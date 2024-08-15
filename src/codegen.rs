@@ -20,6 +20,7 @@ pub struct Program {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AssemblyType {
+    Byte,
     LongWord,
     QuadWord,
     Double,
@@ -29,6 +30,7 @@ pub enum AssemblyType {
 impl AssemblyType {
     pub fn suffix(&self) -> &'static str {
         match self {
+            AssemblyType::Byte => "b",
             AssemblyType::LongWord => "l",
             AssemblyType::QuadWord => "q",
             AssemblyType::Double => "sd",
@@ -40,6 +42,9 @@ impl AssemblyType {
 impl<'a> From<&'a ast::VarType> for AssemblyType {
     fn from(ty: &'a ast::VarType) -> Self {
         match ty {
+            ast::VarType::Char => AssemblyType::Byte,
+            ast::VarType::SChar => AssemblyType::Byte,
+            ast::VarType::UChar => AssemblyType::Byte,
             ast::VarType::Int => AssemblyType::LongWord,
             ast::VarType::Uint => AssemblyType::LongWord,
             ast::VarType::Ulong => AssemblyType::QuadWord,
@@ -50,7 +55,6 @@ impl<'a> From<&'a ast::VarType> for AssemblyType {
                 size: ty.size(),
                 alignment: ty.alignment(),
             },
-            _ => todo!(),
         }
     }
 }
@@ -98,10 +102,14 @@ pub enum Instruction {
         dst: Operand,
     },
     Movsx {
+        src_type: AssemblyType,
+        dst_type: AssemblyType,
         src: Operand,
         dst: Operand,
     },
     MovZeroExtend {
+        src_type: AssemblyType,
+        dst_type: AssemblyType,
         src: Operand,
         dst: Operand,
     },
@@ -792,6 +800,8 @@ impl<'a> CodeGen<'a> {
                 }
                 tacky::Instruction::SignExtend { src, dst } => {
                     body.push(Instruction::Movsx {
+                        src_type: src.ty(self.symbol_table).into(),
+                        dst_type: dst.ty(self.symbol_table).into(),
                         src: src.into(),
                         dst: dst.into(),
                     });
@@ -805,6 +815,8 @@ impl<'a> CodeGen<'a> {
                 }
                 tacky::Instruction::ZeroExtend { src, dst } => {
                     body.push(Instruction::MovZeroExtend {
+                        src_type: src.ty(self.symbol_table).into(),
+                        dst_type: dst.ty(self.symbol_table).into(),
                         src: src.into(),
                         dst: dst.into(),
                     });
