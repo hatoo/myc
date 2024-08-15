@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use ecow::EcoString;
 
 use crate::{
-    ast::{self, Block, Initializer, VarType},
+    ast::{self, Block, Expression, Initializer, VarType},
     semantics::{
         self,
         type_check::{Attr, SymbolTable},
@@ -218,6 +218,27 @@ impl<'a> InstructionGenerator<'a> {
     fn copy_initializers(&mut self, inits: &[Initializer], name: EcoString, offset: &mut usize) {
         for init in inits {
             match init {
+                Initializer::SingleInit(Expression::String(data, ty @ VarType::Array { .. })) => {
+                    for &c in &data.data {
+                        let val = Val::Constant(ast::Const::UChar(c));
+                        self.instructions.push(Instruction::CopyToOffset {
+                            src: val,
+                            dst: name.clone(),
+                            offset: *offset,
+                        });
+                        *offset += 1;
+                    }
+
+                    for _ in 0..(ty.size() - data.data.len()) {
+                        let val = Val::Constant(ast::Const::UChar(0));
+                        self.instructions.push(Instruction::CopyToOffset {
+                            src: val,
+                            dst: name.clone(),
+                            offset: *offset,
+                        });
+                        *offset += 1;
+                    }
+                }
                 Initializer::SingleInit(exp) => {
                     let val = self.add_expression_and_convert(exp);
                     let size = val.ty(self.symbol_table).size();
@@ -241,6 +262,9 @@ impl<'a> InstructionGenerator<'a> {
         }
         if let Some(init) = &decl.init {
             match init {
+                ast::Initializer::SingleInit(Expression::String(..)) => {
+                    self.copy_initializers(&[init.clone()], decl.ident.data.clone(), &mut 0);
+                }
                 ast::Initializer::SingleInit(exp) => {
                     let val = self.add_expression_and_convert(exp);
                     self.instructions.push(Instruction::Copy {
