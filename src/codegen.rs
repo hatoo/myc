@@ -761,9 +761,8 @@ impl<'a> CodeGen<'a> {
 
                     let stack_len = stack_args.len();
                     for (arg, ty) in stack_args.into_iter().rev() {
-                        match ty {
-                            // TODO: better
-                            VarType::Char | VarType::SChar | VarType::UChar => {
+                        match ty.into() {
+                            AssemblyType::Byte => {
                                 body.push(Instruction::Mov {
                                     ty: AssemblyType::Byte,
                                     src: arg.into(),
@@ -771,7 +770,7 @@ impl<'a> CodeGen<'a> {
                                 });
                                 body.push(Instruction::Push(Operand::Reg(Register::Ax)));
                             }
-                            VarType::Int | VarType::Uint => {
+                            AssemblyType::LongWord => {
                                 body.push(Instruction::Mov {
                                     ty: AssemblyType::LongWord,
                                     src: arg.into(),
@@ -779,10 +778,10 @@ impl<'a> CodeGen<'a> {
                                 });
                                 body.push(Instruction::Push(Operand::Reg(Register::Ax)));
                             }
-                            VarType::Long | VarType::Ulong | VarType::Double => {
+                            AssemblyType::QuadWord | AssemblyType::Double => {
                                 body.push(Instruction::Push(arg.into()));
                             }
-                            _ => todo!(),
+                            AssemblyType::ByteArray { .. } => unreachable!(),
                         }
                     }
 
