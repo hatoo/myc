@@ -24,6 +24,8 @@ pub enum AssemblyType {
     LongWord,
     QuadWord,
     Double,
+    // Not used at all.
+    // TODO: Delete this variant
     ByteArray { size: usize, alignment: usize },
 }
 
