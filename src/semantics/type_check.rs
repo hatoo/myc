@@ -62,10 +62,7 @@ pub enum StaticInit {
     Zero(usize),
     Char(i8),
     UChar(u8),
-    String {
-        data: Vec<u8>,
-        null_terminated: bool,
-    },
+    String { data: Vec<u8>, pad: usize },
     Pointer(EcoString),
 }
 
@@ -92,10 +89,7 @@ impl StaticInit {
             StaticInit::Ulong(_) => 8,
             StaticInit::Double(_) => 8,
             StaticInit::Zero(size) => *size,
-            StaticInit::String {
-                data,
-                null_terminated,
-            } => data.len() + if *null_terminated { 1 } else { 0 },
+            StaticInit::String { data, pad } => data.len() + *pad,
             StaticInit::Pointer(_) => 8,
         }
     }
@@ -247,7 +241,7 @@ impl TypeChecker {
 
                 Ok(vec![StaticInit::String {
                     data: s.data.clone(),
-                    null_terminated: s.data.len() < *size,
+                    pad: size - s.data.len(),
                 }])
             }
             Initializer::SingleInit(exp) => {
@@ -303,7 +297,7 @@ impl TypeChecker {
 
                     Ok(StaticInit::String {
                         data: data.clone(),
-                        null_terminated: data.len() < *size,
+                        pad: size - data.len(),
                     })
                 }
                 ast::VarType::Pointer(ty) => {
@@ -322,7 +316,7 @@ impl TypeChecker {
                                 },
                                 init: StaticInit::String {
                                     data: data.clone(),
-                                    null_terminated: true,
+                                    pad: 1,
                                 },
                             },
                         );

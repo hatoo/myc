@@ -1828,15 +1828,12 @@ impl Display for StaticConstant {
             semantics::type_check::StaticInit::Char(c) => writeln!(f, ".byte {}", c)?,
             semantics::type_check::StaticInit::UChar(c) => writeln!(f, ".byte {}", c)?,
             semantics::type_check::StaticInit::Pointer(name) => writeln!(f, ".quad {}", name)?,
-            semantics::type_check::StaticInit::String {
-                data,
-                null_terminated,
-            } => {
+            semantics::type_check::StaticInit::String { data, pad } => {
                 for c in data {
                     writeln!(f, ".byte {}", c)?;
                 }
-                if *null_terminated {
-                    writeln!(f, ".byte 0")?;
+                if *pad > 0 {
+                    writeln!(f, ".zero {}", pad)?;
                 }
             }
         }
@@ -1865,6 +1862,7 @@ impl Display for StaticVariable {
             writeln!(f, ".data")?;
             writeln!(f, ".align {}", self.alignment)?;
             writeln!(f, "{}:", self.name)?;
+            // TODO
             for init in &self.init {
                 match init {
                     semantics::type_check::StaticInit::Int(x) => writeln!(f, ".long {}", x)?,
@@ -1878,7 +1876,20 @@ impl Display for StaticVariable {
                     semantics::type_check::StaticInit::Zero(size) => {
                         writeln!(f, ".zero {}", size)?;
                     }
-                    _ => todo!(),
+                    semantics::type_check::StaticInit::Char(c) => writeln!(f, ".byte {}", c)?,
+                    semantics::type_check::StaticInit::UChar(c) => writeln!(f, ".byte {}", c)?,
+                    semantics::type_check::StaticInit::Pointer(name) => {
+                        writeln!(f, ".quad {}", name)?
+                    }
+                    semantics::type_check::StaticInit::String { data, pad } => {
+                        for c in data {
+                            writeln!(f, ".byte {}", c)?;
+                        }
+
+                        if *pad > 0 {
+                            writeln!(f, ".zero {}", pad)?;
+                        }
+                    }
                 }
             }
         }

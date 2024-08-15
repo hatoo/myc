@@ -438,7 +438,7 @@ impl VarType {
             Self::Double => 8,
             Self::Pointer(_) => 8,
             Self::Array { element, .. } => {
-                if self.size() <= 16 {
+                if self.size() < 16 {
                     element.alignment()
                 } else {
                     16

@@ -807,7 +807,7 @@ impl<'a> InstructionGenerator<'a> {
                         ty: ty.clone(),
                         init: semantics::type_check::StaticInit::String {
                             data: data.data.clone(),
-                            null_terminated: true,
+                            pad: ty.size() - data.data.len(),
                         },
                     },
                 );
