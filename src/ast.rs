@@ -461,13 +461,7 @@ impl VarType {
     }
 
     pub fn is_signed(&self) -> bool {
-        match self {
-            Self::Int => true,
-            Self::Long => true,
-            Self::SChar => true,
-            Self::Char => true,
-            _ => false,
-        }
+        matches!(self, Self::Int | Self::Long | Self::SChar | Self::Char)
     }
 
     pub fn zero(&self) -> StaticInit {

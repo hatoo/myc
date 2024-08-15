@@ -524,38 +524,34 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
                     let mut s = Vec::new();
                     let mut iter = cap.get(1).unwrap().as_bytes().iter();
 
-                    loop {
-                        if let Some(&b) = iter.next() {
-                            if b == b'\\' {
-                                let c = match iter.next() {
-                                    Some(&b) => match b {
-                                        b'\'' => b'\'',
-                                        b'?' => b'?',
-                                        b'\\' => b'\\',
-                                        b'"' => b'"',
-                                        b'a' => b'\x07',
-                                        b'b' => b'\x08',
-                                        b'f' => b'\x0c',
-                                        b'n' => b'\n',
-                                        b'r' => b'\r',
-                                        b't' => b'\t',
-                                        b'v' => b'\x0b',
-                                        b'0' => b'\0',
-                                        _ => unreachable!(),
-                                    },
-                                    None => {
-                                        return Err(Error::Unexpected(Spanned {
-                                            data: b as char,
-                                            span: index + s.len()..index + s.len() + 1,
-                                        }))
-                                    }
-                                };
-                                s.push(c);
-                            } else {
-                                s.push(b);
-                            }
+                    while let Some(&b) = iter.next() {
+                        if b == b'\\' {
+                            let c = match iter.next() {
+                                Some(&b) => match b {
+                                    b'\'' => b'\'',
+                                    b'?' => b'?',
+                                    b'\\' => b'\\',
+                                    b'"' => b'"',
+                                    b'a' => b'\x07',
+                                    b'b' => b'\x08',
+                                    b'f' => b'\x0c',
+                                    b'n' => b'\n',
+                                    b'r' => b'\r',
+                                    b't' => b'\t',
+                                    b'v' => b'\x0b',
+                                    b'0' => b'\0',
+                                    _ => unreachable!(),
+                                },
+                                None => {
+                                    return Err(Error::Unexpected(Spanned {
+                                        data: b as char,
+                                        span: index + s.len()..index + s.len() + 1,
+                                    }))
+                                }
+                            };
+                            s.push(c);
                         } else {
-                            break;
+                            s.push(b);
                         }
                     }
 
