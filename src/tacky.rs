@@ -20,6 +20,7 @@ pub struct Program {
 pub enum TopLevelItem {
     Function(Function),
     StaticVariable(StaticVariable),
+    StaticConstant(StaticConstant),
 }
 
 #[derive(Debug)]
@@ -36,6 +37,13 @@ pub struct StaticVariable {
     pub name: EcoString,
     pub alignment: usize,
     pub init: Vec<semantics::type_check::StaticInit>,
+}
+
+#[derive(Debug)]
+pub struct StaticConstant {
+    pub name: EcoString,
+    pub ty: ast::VarType,
+    pub init: semantics::type_check::StaticInit,
 }
 
 #[derive(Debug)]
@@ -772,7 +780,21 @@ impl<'a> InstructionGenerator<'a> {
 
                 ExpResult::DereferencedPointer(dst)
             }
-            _ => todo!(),
+            ast::Expression::String(data, ty) => {
+                let name = self.new_label("tacky.string");
+                self.symbol_table.insert(
+                    name.clone(),
+                    semantics::type_check::Attr::Constant {
+                        ty: ty.clone(),
+                        init: semantics::type_check::StaticInit::String {
+                            data: data.data.clone(),
+                            null_terminated: true,
+                        },
+                    },
+                );
+
+                ExpResult::PlainOperand(Val::Var(name))
+            }
         }
     }
 
@@ -793,12 +815,22 @@ impl<'a> InstructionGenerator<'a> {
 
 pub fn gen_program(program: &ast::Program, symbol_table: &mut HashMap<EcoString, Attr>) -> Program {
     let mut generator = InstructionGenerator::new(symbol_table);
+
+    let functions: Vec<_> = program
+        .decls
+        .iter()
+        .filter_map(|f| match f {
+            ast::Declaration::FunDecl(f) => gen_function(&mut generator, f),
+            _ => None,
+        })
+        .map(TopLevelItem::Function)
+        .collect();
     Program {
         top_levels: generator
             .symbol_table
             .iter()
-            .filter_map(|(key, value)| {
-                if let Attr::Static { init, global, ty } = value {
+            .filter_map(|(key, value)| match value {
+                Attr::Static { init, global, ty } => {
                     let init = match init {
                         semantics::type_check::InitialValue::Initial(i) => i.clone(),
                         semantics::type_check::InitialValue::Tentative => vec![ty.zero()],
@@ -810,22 +842,15 @@ pub fn gen_program(program: &ast::Program, symbol_table: &mut HashMap<EcoString,
                         alignment: ty.alignment(),
                         init,
                     }))
-                } else {
-                    None
                 }
+                Attr::Constant { ty, init } => Some(TopLevelItem::StaticConstant(StaticConstant {
+                    name: key.clone(),
+                    ty: ty.clone(),
+                    init: init.clone(),
+                })),
+                _ => None,
             })
-            .collect::<Vec<_>>()
-            .into_iter()
-            .chain(
-                program
-                    .decls
-                    .iter()
-                    .filter_map(|f| match f {
-                        ast::Declaration::FunDecl(f) => gen_function(&mut generator, f),
-                        _ => None,
-                    })
-                    .map(TopLevelItem::Function),
-            )
+            .chain(functions.into_iter())
             .collect(),
     }
 }

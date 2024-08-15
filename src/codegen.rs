@@ -326,6 +326,7 @@ impl<'a> CodeGen<'a> {
                 tacky::TopLevelItem::Function(function) => {
                     TopLevel::Function(self.gen_function(function))
                 }
+                _ => todo!(),
             })
             .collect();
 
