@@ -634,7 +634,7 @@ impl TypeChecker {
             crate::ast::Expression::Unary { op, exp, ty } => {
                 match op.data {
                     ast::UnaryOp::Not => {
-                        self.check_expression(exp)?;
+                        self.check_expression_and_convert(exp)?;
                         *ty = ast::VarType::Int;
                     }
                     ast::UnaryOp::Complement => {

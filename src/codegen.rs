@@ -1743,6 +1743,7 @@ impl<'a> Display for SizedOperand<'a> {
         match &self.op {
             Operand::Imm(imm) => match self.ty {
                 // trucated anyway
+                AssemblyType::Byte => write!(f, "${}", *imm as i32)?,
                 AssemblyType::LongWord => write!(f, "${}", *imm as i32)?,
                 AssemblyType::QuadWord | AssemblyType::Double => write!(f, "${}", imm)?,
                 _ => unreachable!(),
@@ -2001,7 +2002,9 @@ impl Display for Instruction {
             } => {
                 writeln!(
                     f,
-                    "movslq {}, {}",
+                    "movs{}{} {}, {}",
+                    src_type.suffix(),
+                    dst_type.suffix(),
                     src.sized(src_type.clone()),
                     dst.sized(dst_type.clone())
                 )?;
