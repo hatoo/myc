@@ -762,6 +762,15 @@ impl<'a> CodeGen<'a> {
                     let stack_len = stack_args.len();
                     for (arg, ty) in stack_args.into_iter().rev() {
                         match ty {
+                            // TODO: better
+                            VarType::Char | VarType::SChar | VarType::UChar => {
+                                body.push(Instruction::Mov {
+                                    ty: AssemblyType::Byte,
+                                    src: arg.into(),
+                                    dst: Operand::Reg(Register::Ax),
+                                });
+                                body.push(Instruction::Push(Operand::Reg(Register::Ax)));
+                            }
                             VarType::Int | VarType::Uint => {
                                 body.push(Instruction::Mov {
                                     ty: AssemblyType::LongWord,
@@ -1658,9 +1667,29 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
                 src,
                 dst,
             } => {
-                if let Operand::Reg(_) = dst {
-                    new_insts.push(Instruction::Mov {
-                        ty: dst_type.clone(),
+                if src_type == AssemblyType::LongWord {
+                    if let Operand::Reg(_) = dst {
+                        new_insts.push(Instruction::Mov {
+                            ty: AssemblyType::LongWord,
+                            src,
+                            dst,
+                        });
+                    } else {
+                        new_insts.push(Instruction::Mov {
+                            ty: AssemblyType::LongWord,
+                            src,
+                            dst: Operand::Reg(Register::R11),
+                        });
+                        new_insts.push(Instruction::Mov {
+                            ty: AssemblyType::QuadWord,
+                            src: Operand::Reg(Register::R11),
+                            dst,
+                        });
+                    }
+                } else if let Operand::Reg(_) = dst {
+                    new_insts.push(Instruction::MovZeroExtend {
+                        src_type,
+                        dst_type,
                         src,
                         dst,
                     });
@@ -1668,10 +1697,16 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
                     new_insts.push(Instruction::Mov {
                         ty: src_type.clone(),
                         src,
+                        dst: Operand::Reg(Register::R10),
+                    });
+                    new_insts.push(Instruction::MovZeroExtend {
+                        src_type,
+                        dst_type,
+                        src: Operand::Reg(Register::R10),
                         dst: Operand::Reg(Register::R11),
                     });
                     new_insts.push(Instruction::Mov {
-                        ty: dst_type.clone(),
+                        ty: dst_type,
                         src: Operand::Reg(Register::R11),
                         dst,
                     });
@@ -1743,8 +1778,8 @@ impl<'a> Display for SizedOperand<'a> {
         match &self.op {
             Operand::Imm(imm) => match self.ty {
                 // trucated anyway
-                AssemblyType::Byte => write!(f, "${}", *imm as i32)?,
-                AssemblyType::LongWord => write!(f, "${}", *imm as i32)?,
+                AssemblyType::Byte => write!(f, "${}", *imm as u8)?,
+                AssemblyType::LongWord => write!(f, "${}", *imm as u32)?,
                 AssemblyType::QuadWord | AssemblyType::Double => write!(f, "${}", imm)?,
                 _ => unreachable!(),
             },
@@ -2020,7 +2055,21 @@ impl Display for Instruction {
                     dst.sized(dst_type.clone())
                 )?;
             }
-            Instruction::MovZeroExtend { .. } => unimplemented!(),
+            Instruction::MovZeroExtend {
+                src_type,
+                dst_type,
+                src,
+                dst,
+            } => {
+                writeln!(
+                    f,
+                    "movz{}{} {}, {}",
+                    src_type.suffix(),
+                    dst_type.suffix(),
+                    src.sized(src_type.clone()),
+                    dst.sized(dst_type.clone())
+                )?;
+            }
             Instruction::Div(ty, op) => {
                 writeln!(f, "div{} {}", ty.suffix(), op.sized(*ty))?;
             }
