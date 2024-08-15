@@ -93,9 +93,9 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
         Regex::new(r"^(([0-9]*\.[0-9]+|[0-9]+\.?)[Ee][+-]?[0-9]+|[0-9]*\.[0-9]+|[0-9]+\.)").unwrap()
     });
     static CHAR_RE: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r#"^'(([^'\\\n])|(\\['"?\\abfnrtv]))'"#).unwrap());
+        LazyLock::new(|| Regex::new(r#"^'(([^'\\\n])|(\\['"?\\abfnrtv0]))'"#).unwrap());
     static STRING_RE: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r#"^"((([^"\\\n])|(\\['"?\\abfnrtv]))*)""#).unwrap());
+        LazyLock::new(|| Regex::new(r#"^"((([^"\\\n])|(\\['"?\\abfnrtv0]))*)""#).unwrap());
 
     let mut tokens = Vec::new();
 
@@ -502,6 +502,7 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
                             b'r' => b'\r',
                             b't' => b'\t',
                             b'v' => b'\x0b',
+                            b'0' => b'\0',
                             _ => unreachable!(),
                         }
                     };
@@ -539,6 +540,7 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
                                         b'r' => b'\r',
                                         b't' => b'\t',
                                         b'v' => b'\x0b',
+                                        b'0' => b'\0',
                                         _ => unreachable!(),
                                     },
                                     None => {
