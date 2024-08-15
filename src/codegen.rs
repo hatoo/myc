@@ -20,6 +20,7 @@ pub struct Program {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AssemblyType {
+    Byte,
     LongWord,
     QuadWord,
     Double,
@@ -29,6 +30,7 @@ pub enum AssemblyType {
 impl AssemblyType {
     pub fn suffix(&self) -> &'static str {
         match self {
+            AssemblyType::Byte => "b",
             AssemblyType::LongWord => "l",
             AssemblyType::QuadWord => "q",
             AssemblyType::Double => "sd",
@@ -40,6 +42,9 @@ impl AssemblyType {
 impl<'a> From<&'a ast::VarType> for AssemblyType {
     fn from(ty: &'a ast::VarType) -> Self {
         match ty {
+            ast::VarType::Char => AssemblyType::Byte,
+            ast::VarType::SChar => AssemblyType::Byte,
+            ast::VarType::UChar => AssemblyType::Byte,
             ast::VarType::Int => AssemblyType::LongWord,
             ast::VarType::Uint => AssemblyType::LongWord,
             ast::VarType::Ulong => AssemblyType::QuadWord,
@@ -97,10 +102,14 @@ pub enum Instruction {
         dst: Operand,
     },
     Movsx {
+        src_type: AssemblyType,
+        dst_type: AssemblyType,
         src: Operand,
         dst: Operand,
     },
     MovZeroExtend {
+        src_type: AssemblyType,
+        dst_type: AssemblyType,
         src: Operand,
         dst: Operand,
     },
@@ -324,6 +333,13 @@ impl<'a> CodeGen<'a> {
                 }),
                 tacky::TopLevelItem::Function(function) => {
                     TopLevel::Function(self.gen_function(function))
+                }
+                tacky::TopLevelItem::StaticConstant(tacky::StaticConstant { name, ty, init }) => {
+                    TopLevel::StaticConstant(StaticConstant {
+                        name: name.clone(),
+                        alignment: ty.alignment(),
+                        init: init.clone(),
+                    })
                 }
             })
             .collect();
@@ -746,6 +762,15 @@ impl<'a> CodeGen<'a> {
                     let stack_len = stack_args.len();
                     for (arg, ty) in stack_args.into_iter().rev() {
                         match ty {
+                            // TODO: better
+                            VarType::Char | VarType::SChar | VarType::UChar => {
+                                body.push(Instruction::Mov {
+                                    ty: AssemblyType::Byte,
+                                    src: arg.into(),
+                                    dst: Operand::Reg(Register::Ax),
+                                });
+                                body.push(Instruction::Push(Operand::Reg(Register::Ax)));
+                            }
                             VarType::Int | VarType::Uint => {
                                 body.push(Instruction::Mov {
                                     ty: AssemblyType::LongWord,
@@ -790,32 +815,60 @@ impl<'a> CodeGen<'a> {
                 }
                 tacky::Instruction::SignExtend { src, dst } => {
                     body.push(Instruction::Movsx {
+                        src_type: src.ty(self.symbol_table).into(),
+                        dst_type: dst.ty(self.symbol_table).into(),
                         src: src.into(),
                         dst: dst.into(),
                     });
                 }
                 tacky::Instruction::Truncate { src, dst } => {
                     body.push(Instruction::Mov {
-                        ty: AssemblyType::LongWord,
+                        ty: dst.ty(self.symbol_table).into(),
                         src: src.into(),
                         dst: dst.into(),
                     });
                 }
                 tacky::Instruction::ZeroExtend { src, dst } => {
                     body.push(Instruction::MovZeroExtend {
+                        src_type: src.ty(self.symbol_table).into(),
+                        dst_type: dst.ty(self.symbol_table).into(),
                         src: src.into(),
                         dst: dst.into(),
                     });
                 }
                 tacky::Instruction::DoubleToInt { src, dst } => {
-                    body.push(Instruction::Cvttsd2si {
-                        ty: dst.ty(self.symbol_table).into(),
-                        src: src.into(),
-                        dst: dst.into(),
-                    });
+                    if dst.ty(self.symbol_table).size() == 1 {
+                        body.push(Instruction::Cvttsd2si {
+                            ty: AssemblyType::LongWord,
+                            src: src.into(),
+                            dst: Operand::Reg(Register::R10),
+                        });
+                        body.push(Instruction::Mov {
+                            ty: AssemblyType::Byte,
+                            src: Operand::Reg(Register::R10),
+                            dst: dst.into(),
+                        });
+                    } else {
+                        body.push(Instruction::Cvttsd2si {
+                            ty: dst.ty(self.symbol_table).into(),
+                            src: src.into(),
+                            dst: dst.into(),
+                        });
+                    }
                 }
                 tacky::Instruction::DoubleToUint { src, dst } => {
-                    if dst.ty(self.symbol_table) == &ast::VarType::Uint {
+                    if dst.ty(self.symbol_table) == &ast::VarType::UChar {
+                        body.push(Instruction::Cvttsd2si {
+                            ty: AssemblyType::LongWord,
+                            src: src.into(),
+                            dst: Operand::Reg(Register::R10),
+                        });
+                        body.push(Instruction::Mov {
+                            ty: AssemblyType::Byte,
+                            src: Operand::Reg(Register::R10),
+                            dst: dst.into(),
+                        });
+                    } else if dst.ty(self.symbol_table) == &ast::VarType::Uint {
                         body.push(Instruction::Cvttsd2si {
                             ty: AssemblyType::QuadWord,
                             src: src.into(),
@@ -879,15 +932,44 @@ impl<'a> CodeGen<'a> {
                     }
                 }
                 tacky::Instruction::IntToDouble { src, dst } => {
-                    body.push(Instruction::Cvtsi2sd {
-                        ty: src.ty(self.symbol_table).into(),
-                        src: src.into(),
-                        dst: dst.into(),
-                    });
+                    if src.ty(&self.symbol_table).size() == 1 {
+                        body.push(Instruction::Movsx {
+                            src_type: AssemblyType::Byte,
+                            dst_type: AssemblyType::LongWord,
+                            src: src.into(),
+                            dst: Operand::Reg(Register::R10),
+                        });
+                        body.push(Instruction::Cvtsi2sd {
+                            ty: AssemblyType::LongWord,
+                            src: Operand::Reg(Register::R10),
+                            dst: dst.into(),
+                        });
+                    } else {
+                        body.push(Instruction::Cvtsi2sd {
+                            ty: src.ty(self.symbol_table).into(),
+                            src: src.into(),
+                            dst: dst.into(),
+                        });
+                    }
                 }
                 tacky::Instruction::UintToDouble { src, dst } => match src.ty(self.symbol_table) {
+                    &ast::VarType::UChar => {
+                        body.push(Instruction::MovZeroExtend {
+                            src_type: AssemblyType::Byte,
+                            dst_type: AssemblyType::LongWord,
+                            src: src.into(),
+                            dst: Operand::Reg(Register::R10),
+                        });
+                        body.push(Instruction::Cvtsi2sd {
+                            ty: AssemblyType::LongWord,
+                            src: Operand::Reg(Register::R10),
+                            dst: dst.into(),
+                        });
+                    }
                     ast::VarType::Uint => {
                         body.push(Instruction::MovZeroExtend {
+                            src_type: AssemblyType::LongWord,
+                            dst_type: AssemblyType::QuadWord,
                             src: src.into(),
                             dst: Operand::Reg(Register::R10),
                         });
@@ -1172,7 +1254,10 @@ fn pseudo_to_stack(
                             }
                         }
                     }
-                    _ => todo!(),
+                    semantics::type_check::Attr::Constant { .. } => {
+                        *operand = Operand::Data(name.clone())
+                    }
+                    semantics::type_check::Attr::Fun { .. } => todo!(),
                 },
             }
         }
@@ -1212,11 +1297,11 @@ fn pseudo_to_stack(
             Instruction::Call(op) => {
                 remove_pseudo(op);
             }
-            Instruction::Movsx { src, dst } => {
+            Instruction::Movsx { src, dst, .. } => {
                 remove_pseudo(src);
                 remove_pseudo(dst);
             }
-            Instruction::MovZeroExtend { src, dst } => {
+            Instruction::MovZeroExtend { src, dst, .. } => {
                 remove_pseudo(src);
                 remove_pseudo(dst);
             }
@@ -1284,48 +1369,60 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
                 });
             }
             Instruction::Movsx {
+                src_type,
+                dst_type,
                 src: src @ Operand::Imm(_),
                 dst: dst @ (Operand::Memory(..) | Operand::Data(_)),
             } => {
                 new_insts.push(Instruction::Mov {
-                    ty: AssemblyType::LongWord,
+                    ty: src_type.clone(),
                     src,
                     dst: Operand::Reg(Register::R10),
                 });
                 new_insts.push(Instruction::Movsx {
+                    src_type: src_type.clone(),
+                    dst_type: dst_type.clone(),
                     src: Operand::Reg(Register::R10),
                     dst: Operand::Reg(Register::R11),
                 });
                 new_insts.push(Instruction::Mov {
-                    ty: AssemblyType::QuadWord,
+                    ty: dst_type.clone(),
                     src: Operand::Reg(Register::R11),
                     dst,
                 });
             }
             Instruction::Movsx {
+                src_type,
+                dst_type,
                 src: src @ Operand::Imm(_),
                 dst,
             } => {
                 new_insts.push(Instruction::Mov {
-                    ty: AssemblyType::LongWord,
+                    ty: src_type.clone(),
                     src,
                     dst: Operand::Reg(Register::R10),
                 });
                 new_insts.push(Instruction::Movsx {
+                    src_type: src_type.clone(),
+                    dst_type: dst_type.clone(),
                     src: Operand::Reg(Register::R10),
                     dst,
                 });
             }
             Instruction::Movsx {
+                src_type,
+                dst_type,
                 src,
                 dst: dst @ (Operand::Memory(..) | Operand::Data(_)),
             } => {
                 new_insts.push(Instruction::Movsx {
+                    src_type: src_type.clone(),
+                    dst_type: dst_type.clone(),
                     src,
                     dst: Operand::Reg(Register::R10),
                 });
                 new_insts.push(Instruction::Mov {
-                    ty: AssemblyType::QuadWord,
+                    ty: dst_type.clone(),
                     src: Operand::Reg(Register::R10),
                     dst,
                 });
@@ -1490,7 +1587,7 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
                 new_insts.push(Instruction::Cmp(ty, Operand::Reg(Register::R10), rhs));
             }
             Instruction::Cmp(ty, lhs, rhs) => match ty {
-                AssemblyType::LongWord => {
+                AssemblyType::LongWord | AssemblyType::Byte => {
                     if matches!(rhs, Operand::Imm(_)) {
                         new_insts.push(Instruction::Mov {
                             ty,
@@ -1564,21 +1661,52 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
                     dst: Operand::Memory(Register::SP, 0),
                 });
             }
-            Instruction::MovZeroExtend { src, dst } => {
-                if let Operand::Reg(_) = dst {
-                    new_insts.push(Instruction::Mov {
-                        ty: AssemblyType::LongWord,
+            Instruction::MovZeroExtend {
+                src_type,
+                dst_type,
+                src,
+                dst,
+            } => {
+                if src_type == AssemblyType::LongWord {
+                    if let Operand::Reg(_) = dst {
+                        new_insts.push(Instruction::Mov {
+                            ty: AssemblyType::LongWord,
+                            src,
+                            dst,
+                        });
+                    } else {
+                        new_insts.push(Instruction::Mov {
+                            ty: AssemblyType::LongWord,
+                            src,
+                            dst: Operand::Reg(Register::R11),
+                        });
+                        new_insts.push(Instruction::Mov {
+                            ty: AssemblyType::QuadWord,
+                            src: Operand::Reg(Register::R11),
+                            dst,
+                        });
+                    }
+                } else if let Operand::Reg(_) = dst {
+                    new_insts.push(Instruction::MovZeroExtend {
+                        src_type,
+                        dst_type,
                         src,
                         dst,
                     });
                 } else {
                     new_insts.push(Instruction::Mov {
-                        ty: AssemblyType::LongWord,
+                        ty: src_type.clone(),
                         src,
+                        dst: Operand::Reg(Register::R10),
+                    });
+                    new_insts.push(Instruction::MovZeroExtend {
+                        src_type,
+                        dst_type,
+                        src: Operand::Reg(Register::R10),
                         dst: Operand::Reg(Register::R11),
                     });
                     new_insts.push(Instruction::Mov {
-                        ty: AssemblyType::QuadWord,
+                        ty: dst_type,
                         src: Operand::Reg(Register::R11),
                         dst,
                     });
@@ -1650,11 +1778,13 @@ impl<'a> Display for SizedOperand<'a> {
         match &self.op {
             Operand::Imm(imm) => match self.ty {
                 // trucated anyway
-                AssemblyType::LongWord => write!(f, "${}", *imm as i32)?,
+                AssemblyType::Byte => write!(f, "${}", *imm as u8)?,
+                AssemblyType::LongWord => write!(f, "${}", *imm as u32)?,
                 AssemblyType::QuadWord | AssemblyType::Double => write!(f, "${}", imm)?,
                 _ => unreachable!(),
             },
             Operand::Reg(reg) => match self.ty {
+                AssemblyType::Byte => write!(f, "{}", RegisterSize::Byte(reg))?,
                 AssemblyType::LongWord => write!(f, "{}", RegisterSize::Dword(reg))?,
                 AssemblyType::QuadWord | AssemblyType::Double => {
                     write!(f, "{}", RegisterSize::Qword(reg))?
@@ -1720,7 +1850,7 @@ impl Display for StaticConstant {
         writeln!(f, ".section .rodata")?;
         writeln!(f, ".align {}", self.alignment)?;
         writeln!(f, "{}:", self.name)?;
-        match self.init {
+        match &self.init {
             semantics::type_check::StaticInit::Int(x) => writeln!(f, ".long {}", x)?,
             semantics::type_check::StaticInit::Uint(x) => writeln!(f, ".long {}", x)?,
             semantics::type_check::StaticInit::Long(x) => writeln!(f, ".quad {}", x)?,
@@ -1729,7 +1859,18 @@ impl Display for StaticConstant {
                 writeln!(f, ".quad {}", d.to_bits())?;
                 writeln!(f, "# {:+e}", d)?;
             }
-            _ => todo!(),
+            semantics::type_check::StaticInit::Zero(size) => writeln!(f, ".zero {}", size)?,
+            semantics::type_check::StaticInit::Char(c) => writeln!(f, ".byte {}", c)?,
+            semantics::type_check::StaticInit::UChar(c) => writeln!(f, ".byte {}", c)?,
+            semantics::type_check::StaticInit::Pointer(name) => writeln!(f, ".quad {}", name)?,
+            semantics::type_check::StaticInit::String { data, pad } => {
+                for c in data {
+                    writeln!(f, ".byte {}", c)?;
+                }
+                if *pad > 0 {
+                    writeln!(f, ".zero {}", pad)?;
+                }
+            }
         }
         Ok(())
     }
@@ -1756,6 +1897,7 @@ impl Display for StaticVariable {
             writeln!(f, ".data")?;
             writeln!(f, ".align {}", self.alignment)?;
             writeln!(f, "{}:", self.name)?;
+            // TODO
             for init in &self.init {
                 match init {
                     semantics::type_check::StaticInit::Int(x) => writeln!(f, ".long {}", x)?,
@@ -1768,6 +1910,20 @@ impl Display for StaticVariable {
                     }
                     semantics::type_check::StaticInit::Zero(size) => {
                         writeln!(f, ".zero {}", size)?;
+                    }
+                    semantics::type_check::StaticInit::Char(c) => writeln!(f, ".byte {}", c)?,
+                    semantics::type_check::StaticInit::UChar(c) => writeln!(f, ".byte {}", c)?,
+                    semantics::type_check::StaticInit::Pointer(name) => {
+                        writeln!(f, ".quad {}", name)?
+                    }
+                    semantics::type_check::StaticInit::String { data, pad } => {
+                        for c in data {
+                            writeln!(f, ".byte {}", c)?;
+                        }
+
+                        if *pad > 0 {
+                            writeln!(f, ".zero {}", pad)?;
+                        }
                     }
                 }
             }
@@ -1835,7 +1991,7 @@ impl Display for Instruction {
                 AssemblyType::QuadWord | AssemblyType::Double => {
                     writeln!(f, "cqo")?;
                 }
-                AssemblyType::ByteArray { .. } => unimplemented!(),
+                AssemblyType::ByteArray { .. } | AssemblyType::Byte => unimplemented!(),
             },
             Instruction::Idiv(ty, op) => {
                 writeln!(f, "idiv{} {}", ty.suffix(), op.sized(*ty))?;
@@ -1884,15 +2040,36 @@ impl Display for Instruction {
                     writeln!(f, "call *{}", op.sized(AssemblyType::QuadWord))?;
                 }
             }
-            Instruction::Movsx { src, dst } => {
+            Instruction::Movsx {
+                src_type,
+                dst_type,
+                src,
+                dst,
+            } => {
                 writeln!(
                     f,
-                    "movslq {}, {}",
-                    src.sized(AssemblyType::LongWord),
-                    dst.sized(AssemblyType::QuadWord)
+                    "movs{}{} {}, {}",
+                    src_type.suffix(),
+                    dst_type.suffix(),
+                    src.sized(src_type.clone()),
+                    dst.sized(dst_type.clone())
                 )?;
             }
-            Instruction::MovZeroExtend { .. } => unimplemented!(),
+            Instruction::MovZeroExtend {
+                src_type,
+                dst_type,
+                src,
+                dst,
+            } => {
+                writeln!(
+                    f,
+                    "movz{}{} {}, {}",
+                    src_type.suffix(),
+                    dst_type.suffix(),
+                    src.sized(src_type.clone()),
+                    dst.sized(dst_type.clone())
+                )?;
+            }
             Instruction::Div(ty, op) => {
                 writeln!(f, "div{} {}", ty.suffix(), op.sized(*ty))?;
             }

@@ -100,6 +100,9 @@ fn main() {
                         v.init
                     );
                 }
+                myc::tacky::TopLevelItem::StaticConstant(s) => {
+                    println!("const {} = {:?}", s.name, s.init)
+                }
             }
         }
         return;

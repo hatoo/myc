@@ -43,6 +43,18 @@ pub enum Initializer {
 impl Initializer {
     pub fn zero(ty: &VarType) -> Self {
         match ty {
+            VarType::Char => Self::SingleInit(Expression::Constant(Spanned {
+                data: Const::Char(0),
+                span: 0..0,
+            })),
+            VarType::SChar => Self::SingleInit(Expression::Constant(Spanned {
+                data: Const::Char(0),
+                span: 0..0,
+            })),
+            VarType::UChar => Self::SingleInit(Expression::Constant(Spanned {
+                data: Const::UChar(0),
+                span: 0..0,
+            })),
             VarType::Int => Self::SingleInit(Expression::Constant(Spanned {
                 data: Const::Int(0),
                 span: 0..0,
@@ -150,6 +162,8 @@ pub enum Statement {
 
 #[derive(Debug, Clone, Copy)]
 pub enum Const {
+    Char(i8),
+    UChar(u8),
     Int(i32),
     Long(i64),
     Uint(u32),
@@ -160,6 +174,8 @@ pub enum Const {
 impl Const {
     pub fn get_int(&self) -> i32 {
         match self {
+            Self::Char(i) => *i as i32,
+            Self::UChar(i) => *i as i32,
             Self::Int(i) => *i,
             Self::Uint(i) => *i as i32,
             Self::Long(i) => *i as i32,
@@ -169,6 +185,8 @@ impl Const {
     }
     pub fn get_uint(&self) -> u32 {
         match self {
+            Self::Char(i) => *i as u32,
+            Self::UChar(i) => *i as u32,
             Self::Int(i) => *i as u32,
             Self::Uint(i) => *i,
             Self::Long(i) => *i as u32,
@@ -178,6 +196,8 @@ impl Const {
     }
     pub fn get_long(&self) -> i64 {
         match self {
+            Self::Char(i) => *i as i64,
+            Self::UChar(i) => *i as i64,
             Self::Int(i) => *i as i64,
             Self::Uint(i) => *i as i64,
             Self::Long(i) => *i,
@@ -187,6 +207,8 @@ impl Const {
     }
     pub fn get_ulong(&self) -> u64 {
         match self {
+            Self::Char(i) => *i as u64,
+            Self::UChar(i) => *i as u64,
             Self::Int(i) => *i as u64,
             Self::Uint(i) => *i as u64,
             Self::Long(i) => *i as u64,
@@ -196,6 +218,8 @@ impl Const {
     }
     pub fn get_double(&self) -> f64 {
         match self {
+            Self::Char(i) => *i as f64,
+            Self::UChar(i) => *i as f64,
             Self::Int(i) => *i as f64,
             Self::Uint(i) => *i as f64,
             Self::Long(i) => *i as f64,
@@ -206,6 +230,9 @@ impl Const {
 
     pub fn get_static_init(&self, ty: &VarType) -> Option<StaticInit> {
         match ty {
+            VarType::Char => Some(StaticInit::Char(self.get_int() as i8)),
+            VarType::SChar => Some(StaticInit::Char(self.get_int() as i8)),
+            VarType::UChar => Some(StaticInit::UChar(self.get_uint() as u8)),
             VarType::Int => Some(StaticInit::Int(self.get_int())),
             VarType::Uint => Some(StaticInit::Uint(self.get_uint())),
             VarType::Long => Some(StaticInit::Long(self.get_long())),
@@ -266,6 +293,7 @@ pub enum Expression {
         index: Box<Expression>,
         ty: VarType,
     },
+    String(Spanned<Vec<u8>>, VarType),
 }
 
 impl Expression {
@@ -279,6 +307,7 @@ impl Expression {
                 Const::Uint(_) => &VarType::Uint,
                 Const::Ulong(_) => &VarType::Ulong,
                 Const::Double(_) => &VarType::Double,
+                _ => todo!(),
             },
             Self::Unary { ty, .. } => ty,
             Self::Binary { ty, .. } => ty,
@@ -296,6 +325,7 @@ impl Expression {
             },
             Self::AddrOf { ty, .. } => ty,
             Self::Subscript { ty, .. } => ty,
+            Self::String(_, ty) => ty,
         }
     }
 
@@ -322,7 +352,7 @@ impl Expression {
     pub fn is_lvalue(&self) -> bool {
         matches!(
             self,
-            Self::Var(_, _) | Self::Dereference(_) | Self::Subscript { .. }
+            Self::Var(_, _) | Self::Dereference(_) | Self::Subscript { .. } | Self::String(..)
         )
     }
 }
@@ -345,6 +375,7 @@ impl HasSpan for Expression {
             Self::Dereference(exp) => exp.span(),
             Self::AddrOf { exp, .. } => exp.span(),
             Self::Subscript { array, index, .. } => array.span().start..index.span().end,
+            Self::String(s, _) => s.span.clone(),
         }
     }
 }
@@ -367,6 +398,9 @@ impl Ty {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VarType {
+    Char,
+    SChar,
+    UChar,
     Int,
     Long,
     Uint,
@@ -379,6 +413,9 @@ pub enum VarType {
 impl VarType {
     pub fn size(&self) -> usize {
         match self {
+            Self::Char => 1,
+            Self::SChar => 1,
+            Self::UChar => 1,
             Self::Int => 4,
             Self::Uint => 4,
             Self::Long => 8,
@@ -391,6 +428,9 @@ impl VarType {
 
     pub fn alignment(&self) -> usize {
         match self {
+            Self::Char => 1,
+            Self::SChar => 1,
+            Self::UChar => 1,
             Self::Int => 4,
             Self::Uint => 4,
             Self::Long => 8,
@@ -398,7 +438,7 @@ impl VarType {
             Self::Double => 8,
             Self::Pointer(_) => 8,
             Self::Array { element, .. } => {
-                if self.size() <= 16 {
+                if self.size() < 16 {
                     element.alignment()
                 } else {
                     16
@@ -408,18 +448,25 @@ impl VarType {
     }
 
     pub fn is_integer(&self) -> bool {
-        matches!(self, Self::Int | Self::Uint | Self::Long | Self::Ulong)
+        matches!(
+            self,
+            Self::Int
+                | Self::Uint
+                | Self::Long
+                | Self::Ulong
+                | Self::Char
+                | Self::SChar
+                | Self::UChar
+        )
     }
 
     pub fn is_signed(&self) -> bool {
         match self {
             Self::Int => true,
-            Self::Uint => false,
             Self::Long => true,
-            Self::Ulong => false,
-            Self::Double => false,
-            Self::Pointer(_) => false,
-            Self::Array { .. } => false,
+            Self::SChar => true,
+            Self::Char => true,
+            _ => false,
         }
     }
 
@@ -433,6 +480,10 @@ impl VarType {
 
     pub fn is_array(&self) -> bool {
         matches!(self, Self::Array { .. })
+    }
+
+    pub fn is_character(&self) -> bool {
+        matches!(self, Self::Char | Self::SChar | Self::UChar)
     }
 }
 
@@ -536,6 +587,7 @@ pub enum ExpectedToken {
 }
 
 enum TypeSpecifier {
+    Char,
     Int,
     Long,
     Unsigned,
@@ -567,8 +619,8 @@ pub enum Error {
     NotVarType(std::ops::Range<usize>),
     #[error("Variable type isn't allowed here")]
     NotFunType(std::ops::Range<usize>),
-    #[error("Float can't be used as array length")]
-    FloatAsArrayLength(std::ops::Range<usize>),
+    #[error("Array length must be a constant integer")]
+    BadArrayLength(std::ops::Range<usize>),
 }
 
 impl MayHasSpan for Error {
@@ -585,7 +637,7 @@ impl MayHasSpan for Error {
             Error::UnexpectedSpecifier(spanned) => Some(spanned.span.clone()),
             Error::NotVarType(span) => Some(span.clone()),
             Error::NotFunType(span) => Some(span.clone()),
-            Error::FloatAsArrayLength(span) => Some(span.clone()),
+            Error::BadArrayLength(span) => Some(span.clone()),
         }
     }
 }
@@ -595,6 +647,7 @@ fn solve_type_specifier(ty: &[Spanned<TypeSpecifier>]) -> Result<VarType, Error>
 
     let mut int = false;
     let mut long = false;
+    let mut char = false;
     let mut signed = false;
     let mut unsigned = false;
 
@@ -610,14 +663,20 @@ fn solve_type_specifier(ty: &[Spanned<TypeSpecifier>]) -> Result<VarType, Error>
 
     for s in ty {
         match s.data {
+            TypeSpecifier::Char => {
+                if int || long || char {
+                    return Err(Error::ConflictingSpecifier(s.span.clone()));
+                }
+                char = true;
+            }
             TypeSpecifier::Int => {
-                if int {
+                if int || char {
                     return Err(Error::ConflictingSpecifier(s.span.clone()));
                 }
                 int = true;
             }
             TypeSpecifier::Long => {
-                if long {
+                if char || long {
                     return Err(Error::ConflictingSpecifier(s.span.clone()));
                 }
                 long = true;
@@ -640,16 +699,37 @@ fn solve_type_specifier(ty: &[Spanned<TypeSpecifier>]) -> Result<VarType, Error>
         }
     }
 
-    if long {
-        if unsigned {
-            Ok(VarType::Ulong)
-        } else {
-            Ok(VarType::Long)
+    let base_ty = match (char, int, long) {
+        (true, _, _) => VarType::Char,
+        (_, _, true) => VarType::Long,
+        _ => VarType::Int,
+    };
+
+    match base_ty {
+        VarType::Char => {
+            if unsigned {
+                Ok(VarType::UChar)
+            } else if signed {
+                Ok(VarType::SChar)
+            } else {
+                Ok(VarType::Char)
+            }
         }
-    } else if unsigned {
-        Ok(VarType::Uint)
-    } else {
-        Ok(VarType::Int)
+        VarType::Long => {
+            if unsigned {
+                Ok(VarType::Ulong)
+            } else {
+                Ok(VarType::Long)
+            }
+        }
+        VarType::Int => {
+            if unsigned {
+                Ok(VarType::Uint)
+            } else {
+                Ok(VarType::Int)
+            }
+        }
+        _ => unreachable!(),
     }
 }
 
@@ -1095,8 +1175,8 @@ impl<'a> Parser<'a> {
         let c = self.expect_constant()?;
         let index = match c.data {
             Constant::Integer { value, .. } => value as usize,
-            Constant::Float(_) => return Err(Error::FloatAsArrayLength(c.span.clone())),
-            _ => todo!(),
+            Constant::Char(c) => c as usize,
+            _ => return Err(Error::BadArrayLength(c.span.clone())),
         };
         let end = self.expect(Token::CloseSquareBracket)?.span.end;
 
@@ -1183,6 +1263,11 @@ impl<'a> Parser<'a> {
 
         while let Some(s) = self.peek() {
             match &s.data {
+                Token::Char => {
+                    ty.push(s.clone().map(|_| TypeSpecifier::Char));
+                    end = s.span.end;
+                    self.advance();
+                }
                 Token::Int => {
                     ty.push(s.clone().map(|_| TypeSpecifier::Int));
                     end = s.span.end;
@@ -1297,6 +1382,10 @@ impl<'a> Parser<'a> {
         loop {
             if let Some(s) = self.peek() {
                 match &s.data {
+                    Token::Char => {
+                        ty.push(s.clone().map(|_| TypeSpecifier::Char));
+                        self.advance();
+                    }
                     Token::Int => {
                         ty.push(s.clone().map(|_| TypeSpecifier::Int));
                         self.advance();
@@ -1413,7 +1502,40 @@ impl<'a> Parser<'a> {
                         self.advance();
                         Ok(Expression::Constant(constant))
                     }
-                    _ => todo!(),
+                    Constant::Char(value) => {
+                        let constant = token.clone().map(|_| Const::Int(*value as _));
+                        self.advance();
+                        Ok(Expression::Constant(constant))
+                    }
+                    Constant::String(value) => {
+                        let start = token.span.start;
+                        let mut end = token.span.end;
+                        let mut s = value.clone();
+                        self.advance();
+                        // adjacent string literals must be concatenated
+                        while let Some(Spanned {
+                            data: Token::Constant(Constant::String(s2)),
+                            span,
+                        }) = self.peek()
+                        {
+                            s.extend(s2);
+                            end = span.end;
+                            self.advance();
+                        }
+
+                        let len = s.len();
+
+                        Ok(Expression::String(
+                            Spanned {
+                                data: s,
+                                span: start..end,
+                            },
+                            VarType::Array {
+                                element: Box::new(VarType::Char),
+                                size: len + 1,
+                            },
+                        ))
+                    }
                 },
                 Token::OpenParen => {
                     self.advance();

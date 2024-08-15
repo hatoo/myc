@@ -11,6 +11,7 @@ pub type SymbolTable = HashMap<EcoString, Attr>;
 
 #[derive(Debug, Default)]
 pub struct TypeChecker {
+    pub tmp_string_count: usize,
     pub sym_table: SymbolTable,
 }
 
@@ -26,6 +27,10 @@ pub enum Attr {
         init: InitialValue,
         global: bool,
     },
+    Constant {
+        ty: ast::VarType,
+        init: StaticInit,
+    },
     Local(ast::VarType),
 }
 
@@ -35,6 +40,7 @@ impl Attr {
             Attr::Fun { ty, .. } => &ty.ret,
             Attr::Static { ty, .. } => ty,
             Attr::Local(ty) => ty,
+            Attr::Constant { ty, .. } => ty,
         }
     }
 }
@@ -46,7 +52,7 @@ pub enum InitialValue {
     NoInitializer,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum StaticInit {
     Int(i32),
     Long(i64),
@@ -54,6 +60,10 @@ pub enum StaticInit {
     Ulong(u64),
     Double(f64),
     Zero(usize),
+    Char(i8),
+    UChar(u8),
+    String { data: Vec<u8>, pad: usize },
+    Pointer(EcoString),
 }
 
 impl StaticInit {
@@ -71,57 +81,16 @@ impl StaticInit {
 
     pub fn size(&self) -> usize {
         match self {
+            StaticInit::Char(_) => 1,
+            StaticInit::UChar(_) => 1,
             StaticInit::Int(_) => 4,
             StaticInit::Uint(_) => 4,
             StaticInit::Long(_) => 8,
             StaticInit::Ulong(_) => 8,
             StaticInit::Double(_) => 8,
             StaticInit::Zero(size) => *size,
-        }
-    }
-
-    pub fn from_const_expr(target: &ast::VarType, exp: &Expression) -> Result<Self, Error> {
-        if let ast::Expression::Constant(Spanned { data, .. }) = exp {
-            data.get_static_init(target)
-                .ok_or_else(|| Error::IncompatibleTypes(exp.span()))
-        } else {
-            Err(Error::IncompatibleTypes(exp.span()))
-        }
-    }
-
-    pub fn from_initializer(
-        target: &ast::VarType,
-        inits: &Initializer,
-    ) -> Result<Vec<Self>, Error> {
-        match inits {
-            Initializer::SingleInit(exp) => {
-                if let ast::VarType::Array { .. } = target {
-                    return Err(Error::IncompatibleTypes(exp.span()));
-                }
-
-                Ok(vec![Self::from_const_expr(target, exp)?])
-            }
-            Initializer::CompoundInit(inits) => {
-                if let ast::VarType::Array { element, size } = target {
-                    if inits.len() > *size {
-                        return Err(Error::IncompatibleTypes(0..0));
-                    }
-                    let mut res = Vec::new();
-
-                    for init in inits {
-                        res.extend(Self::from_initializer(element, init)?);
-                    }
-
-                    let filled = res.iter().map(|init| init.size()).sum::<usize>();
-                    if filled < target.size() {
-                        res.push(StaticInit::Zero(target.size() - filled));
-                    }
-
-                    Ok(res)
-                } else {
-                    Err(Error::IncompatibleTypes(0..0))
-                }
-            }
+            StaticInit::String { data, pad } => data.len() + *pad,
+            StaticInit::Pointer(_) => 8,
         }
     }
 }
@@ -176,9 +145,17 @@ fn common_pointer_type<'a>(
     }
 }
 
-fn common_type(ty0: ast::VarType, ty1: ast::VarType) -> ast::VarType {
+fn common_type(mut ty0: ast::VarType, mut ty1: ast::VarType) -> ast::VarType {
     if ty0 == ast::VarType::Double || ty1 == ast::VarType::Double {
         return ast::VarType::Double;
+    }
+
+    if ty0.is_character() {
+        ty0 = ast::VarType::Int;
+    }
+
+    if ty1.is_character() {
+        ty1 = ast::VarType::Int;
     }
 
     if ty0 == ty1 {
@@ -235,6 +212,124 @@ impl TypeChecker {
         }
 
         Ok(())
+    }
+
+    fn tmp_string(&mut self) -> EcoString {
+        let s = format!("string.{}", self.tmp_string_count);
+        self.tmp_string_count += 1;
+        s.into()
+    }
+
+    fn static_init_from_initializer(
+        &mut self,
+        target: &ast::VarType,
+        inits: &Initializer,
+    ) -> Result<Vec<StaticInit>, Error> {
+        match inits {
+            Initializer::SingleInit(Expression::String(s, _)) if target.is_array() => {
+                let ast::VarType::Array { element, size } = target else {
+                    unreachable!()
+                };
+
+                if !element.is_character() {
+                    return Err(Error::IncompatibleTypes(0..0));
+                }
+
+                if size < &s.data.len() {
+                    return Err(Error::IncompatibleTypes(0..0));
+                }
+
+                Ok(vec![StaticInit::String {
+                    data: s.data.clone(),
+                    pad: size - s.data.len(),
+                }])
+            }
+            Initializer::SingleInit(exp) => {
+                if let ast::VarType::Array { .. } = target {
+                    return Err(Error::IncompatibleTypes(exp.span()));
+                }
+
+                Ok(vec![self.static_init(target, exp)?])
+            }
+            Initializer::CompoundInit(inits) => {
+                if let ast::VarType::Array { element, size } = target {
+                    if inits.len() > *size {
+                        return Err(Error::IncompatibleTypes(0..0));
+                    }
+                    let mut res = Vec::new();
+
+                    for init in inits {
+                        res.extend(self.static_init_from_initializer(element, init)?);
+                    }
+
+                    let filled = res.iter().map(|init| init.size()).sum::<usize>();
+                    if filled < target.size() {
+                        res.push(StaticInit::Zero(target.size() - filled));
+                    }
+
+                    Ok(res)
+                } else {
+                    Err(Error::IncompatibleTypes(0..0))
+                }
+            }
+        }
+    }
+
+    fn static_init(
+        &mut self,
+        target: &ast::VarType,
+        exp: &Expression,
+    ) -> Result<StaticInit, Error> {
+        match exp {
+            ast::Expression::Constant(Spanned { data, .. }) => data
+                .get_static_init(target)
+                .ok_or_else(|| Error::IncompatibleTypes(exp.span())),
+
+            ast::Expression::String(Spanned { data, .. }, _) => match target {
+                ast::VarType::Array { element, size } => {
+                    if !element.is_character() {
+                        return Err(Error::IncompatibleTypes(exp.span()));
+                    }
+
+                    if data.len() > *size {
+                        return Err(Error::IncompatibleTypes(exp.span()));
+                    }
+
+                    Ok(StaticInit::String {
+                        data: data.clone(),
+                        pad: size - data.len(),
+                    })
+                }
+                ast::VarType::Pointer(ty) => {
+                    if let ast::Ty::Var(ty) = ty.as_ref() {
+                        if ty != &ast::VarType::Char {
+                            return Err(Error::IncompatibleTypes(exp.span()));
+                        }
+
+                        let s = self.tmp_string();
+                        self.sym_table.insert(
+                            s.clone(),
+                            Attr::Constant {
+                                ty: ast::VarType::Array {
+                                    element: Box::new(ty.clone()),
+                                    size: data.len() + 1,
+                                },
+                                init: StaticInit::String {
+                                    data: data.clone(),
+                                    pad: 1,
+                                },
+                            },
+                        );
+
+                        Ok(StaticInit::Pointer(s))
+                    } else {
+                        Err(Error::IncompatibleTypes(exp.span()))
+                    }
+                }
+                _ => Err(Error::IncompatibleTypes(exp.span())),
+            },
+            _ => Err(Error::IncompatibleTypes(exp.span())),
+        }
     }
 
     fn check_fun_decl(&mut self, fun_decl: &mut crate::ast::FunDecl) -> Result<(), Error> {
@@ -338,7 +433,7 @@ impl TypeChecker {
         } = decl;
 
         let mut init = match init {
-            Some(init) => InitialValue::Initial(StaticInit::from_initializer(ty, init)?),
+            Some(init) => InitialValue::Initial(self.static_init_from_initializer(ty, init)?),
             None => {
                 if storage_class == &Some(crate::ast::StorageClass::Extern) {
                     InitialValue::NoInitializer
@@ -380,7 +475,7 @@ impl TypeChecker {
                     init = InitialValue::Tentative;
                 }
             }
-            Some(Attr::Local(_)) => {
+            Some(Attr::Local(_)) | Some(Attr::Constant { .. }) => {
                 unreachable!()
             }
             None => {}
@@ -420,6 +515,7 @@ impl TypeChecker {
                                 return Err(Error::IncompatibleTypes(ident.span.clone()));
                             }
                         }
+                        Attr::Constant { .. } => unreachable!(),
                     },
                     Entry::Vacant(v) => {
                         v.insert(Attr::Static {
@@ -432,7 +528,9 @@ impl TypeChecker {
             }
             Some(crate::ast::StorageClass::Static) => {
                 let init = match init {
-                    Some(init) => InitialValue::Initial(StaticInit::from_initializer(ty, init)?),
+                    Some(init) => {
+                        InitialValue::Initial(self.static_init_from_initializer(ty, init)?)
+                    }
                     None => InitialValue::Initial(vec![ty.zero()]),
                 };
                 self.sym_table.insert(
@@ -463,14 +561,6 @@ impl TypeChecker {
     ) -> Result<(), Error> {
         let span = init.may_span();
         match (target, init) {
-            (_, ast::Initializer::SingleInit(e)) => {
-                if target.is_array() {
-                    return Err(Error::IncompatibleTypes(e.span()));
-                }
-                self.check_expression_and_convert(e)?;
-                convert_by_assignment(e, target)?;
-                Ok(())
-            }
             (ast::VarType::Array { element, size }, ast::Initializer::CompoundInit(list)) => {
                 if list.len() > *size {
                     return Err(Error::IncompatibleTypes(span.unwrap()));
@@ -484,6 +574,28 @@ impl TypeChecker {
                     list.push(ast::Initializer::zero(element));
                 }
 
+                Ok(())
+            }
+            (
+                ast::VarType::Array { element, size },
+                ast::Initializer::SingleInit(Expression::String(s, ty)),
+            ) => {
+                if !element.is_character() {
+                    return Err(Error::IncompatibleTypes(span.unwrap()));
+                }
+                if s.data.len() > *size {
+                    return Err(Error::IncompatibleTypes(span.unwrap()));
+                }
+
+                *ty = target.clone();
+                Ok(())
+            }
+            (_, ast::Initializer::SingleInit(e)) => {
+                if target.is_array() {
+                    return Err(Error::IncompatibleTypes(e.span()));
+                }
+                self.check_expression_and_convert(e)?;
+                convert_by_assignment(e, target)?;
                 Ok(())
             }
 
@@ -507,13 +619,16 @@ impl TypeChecker {
                     *ty = target.clone();
                     Ok(target.clone())
                 }
+                Some(Attr::Constant { .. }) => {
+                    unreachable!()
+                }
                 None => Err(Error::IncompatibleTypes(name.span.clone())),
             },
             crate::ast::Expression::Constant(_) => Ok(exp.ty().clone()),
             crate::ast::Expression::Unary { op, exp, ty } => {
                 match op.data {
                     ast::UnaryOp::Not => {
-                        self.check_expression(exp)?;
+                        self.check_expression_and_convert(exp)?;
                         *ty = ast::VarType::Int;
                     }
                     ast::UnaryOp::Complement => {
@@ -521,11 +636,19 @@ impl TypeChecker {
                         if *ty == ast::VarType::Double || ty.is_pointer() {
                             return Err(Error::IncompatibleTypes(exp.span()));
                         }
+                        if ty.is_character() {
+                            *ty = ast::VarType::Int;
+                            convert_to(exp, &ast::VarType::Int);
+                        }
                     }
                     ast::UnaryOp::Negate => {
                         *ty = self.check_expression(exp)?;
                         if ty.is_pointer() {
                             return Err(Error::IncompatibleTypes(exp.span()));
+                        }
+                        if ty.is_character() {
+                            *ty = ast::VarType::Int;
+                            convert_to(exp, &ast::VarType::Int);
                         }
                     }
                 }
@@ -774,6 +897,7 @@ impl TypeChecker {
 
                 Ok(ty.clone())
             }
+            ast::Expression::String(_, ty) => Ok(ty.clone()),
         }
     }
 

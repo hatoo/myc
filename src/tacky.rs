@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use ecow::EcoString;
 
 use crate::{
-    ast::{self, Block, Initializer, VarType},
+    ast::{self, Block, Expression, Initializer, VarType},
     semantics::{
         self,
         type_check::{Attr, SymbolTable},
@@ -20,6 +20,7 @@ pub struct Program {
 pub enum TopLevelItem {
     Function(Function),
     StaticVariable(StaticVariable),
+    StaticConstant(StaticConstant),
 }
 
 #[derive(Debug)]
@@ -36,6 +37,13 @@ pub struct StaticVariable {
     pub name: EcoString,
     pub alignment: usize,
     pub init: Vec<semantics::type_check::StaticInit>,
+}
+
+#[derive(Debug)]
+pub struct StaticConstant {
+    pub name: EcoString,
+    pub ty: ast::VarType,
+    pub init: semantics::type_check::StaticInit,
 }
 
 #[derive(Debug)]
@@ -161,6 +169,8 @@ impl Val {
                 ast::Const::Uint(_) => &ast::VarType::Uint,
                 ast::Const::Ulong(_) => &ast::VarType::Ulong,
                 ast::Const::Double(_) => &ast::VarType::Double,
+                ast::Const::Char(_) => &ast::VarType::Char,
+                ast::Const::UChar(_) => &ast::VarType::UChar,
             },
             Val::Var(var) => symbol_table[var].ty(),
         }
@@ -217,6 +227,27 @@ impl<'a> InstructionGenerator<'a> {
     fn copy_initializers(&mut self, inits: &[Initializer], name: EcoString, offset: &mut usize) {
         for init in inits {
             match init {
+                Initializer::SingleInit(Expression::String(data, ty @ VarType::Array { .. })) => {
+                    for &c in &data.data {
+                        let val = Val::Constant(ast::Const::UChar(c));
+                        self.instructions.push(Instruction::CopyToOffset {
+                            src: val,
+                            dst: name.clone(),
+                            offset: *offset,
+                        });
+                        *offset += 1;
+                    }
+
+                    for _ in 0..(ty.size() - data.data.len()) {
+                        let val = Val::Constant(ast::Const::UChar(0));
+                        self.instructions.push(Instruction::CopyToOffset {
+                            src: val,
+                            dst: name.clone(),
+                            offset: *offset,
+                        });
+                        *offset += 1;
+                    }
+                }
                 Initializer::SingleInit(exp) => {
                     let val = self.add_expression_and_convert(exp);
                     let size = val.ty(self.symbol_table).size();
@@ -240,6 +271,9 @@ impl<'a> InstructionGenerator<'a> {
         }
         if let Some(init) = &decl.init {
             match init {
+                ast::Initializer::SingleInit(Expression::String(..)) => {
+                    self.copy_initializers(&[init.clone()], decl.ident.data.clone(), &mut 0);
+                }
                 ast::Initializer::SingleInit(exp) => {
                     let val = self.add_expression_and_convert(exp);
                     self.instructions.push(Instruction::Copy {
@@ -641,7 +675,13 @@ impl<'a> InstructionGenerator<'a> {
                 let val = self.add_expression_and_convert(exp);
                 match (exp.ty(), target) {
                     (from, to) if from == to => ExpResult::PlainOperand(val),
-                    (ast::VarType::Double, to @ (ast::VarType::Int | ast::VarType::Long)) => {
+                    (
+                        ast::VarType::Double,
+                        to @ (ast::VarType::Int
+                        | ast::VarType::Long
+                        | ast::VarType::Char
+                        | ast::VarType::SChar),
+                    ) => {
                         let dst = self.make_tmp_local(to.clone());
                         self.instructions.push(Instruction::DoubleToInt {
                             src: val,
@@ -649,7 +689,10 @@ impl<'a> InstructionGenerator<'a> {
                         });
                         ExpResult::PlainOperand(dst)
                     }
-                    (ast::VarType::Double, to @ (ast::VarType::Uint | ast::VarType::Ulong)) => {
+                    (
+                        ast::VarType::Double,
+                        to @ (ast::VarType::Uint | ast::VarType::Ulong | ast::VarType::UChar),
+                    ) => {
                         let dst = self.make_tmp_local(to.clone());
                         self.instructions.push(Instruction::DoubleToUint {
                             src: val,
@@ -657,7 +700,13 @@ impl<'a> InstructionGenerator<'a> {
                         });
                         ExpResult::PlainOperand(dst)
                     }
-                    (ast::VarType::Int | ast::VarType::Long, ast::VarType::Double) => {
+                    (
+                        ast::VarType::Int
+                        | ast::VarType::Long
+                        | ast::VarType::Char
+                        | ast::VarType::SChar,
+                        ast::VarType::Double,
+                    ) => {
                         let dst = self.make_tmp_local(ast::VarType::Double);
                         self.instructions.push(Instruction::IntToDouble {
                             src: val,
@@ -665,7 +714,10 @@ impl<'a> InstructionGenerator<'a> {
                         });
                         ExpResult::PlainOperand(dst)
                     }
-                    (ast::VarType::Uint | ast::VarType::Ulong, ast::VarType::Double) => {
+                    (
+                        ast::VarType::Uint | ast::VarType::Ulong | ast::VarType::UChar,
+                        ast::VarType::Double,
+                    ) => {
                         let dst = self.make_tmp_local(ast::VarType::Double);
                         self.instructions.push(Instruction::UintToDouble {
                             src: val,
@@ -747,6 +799,21 @@ impl<'a> InstructionGenerator<'a> {
 
                 ExpResult::DereferencedPointer(dst)
             }
+            ast::Expression::String(data, ty) => {
+                let name = self.new_label("tacky.string");
+                self.symbol_table.insert(
+                    name.clone(),
+                    semantics::type_check::Attr::Constant {
+                        ty: ty.clone(),
+                        init: semantics::type_check::StaticInit::String {
+                            data: data.data.clone(),
+                            pad: ty.size() - data.data.len(),
+                        },
+                    },
+                );
+
+                ExpResult::PlainOperand(Val::Var(name))
+            }
         }
     }
 
@@ -767,12 +834,22 @@ impl<'a> InstructionGenerator<'a> {
 
 pub fn gen_program(program: &ast::Program, symbol_table: &mut HashMap<EcoString, Attr>) -> Program {
     let mut generator = InstructionGenerator::new(symbol_table);
+
+    let functions: Vec<_> = program
+        .decls
+        .iter()
+        .filter_map(|f| match f {
+            ast::Declaration::FunDecl(f) => gen_function(&mut generator, f),
+            _ => None,
+        })
+        .map(TopLevelItem::Function)
+        .collect();
     Program {
         top_levels: generator
             .symbol_table
             .iter()
-            .filter_map(|(key, value)| {
-                if let Attr::Static { init, global, ty } = value {
+            .filter_map(|(key, value)| match value {
+                Attr::Static { init, global, ty } => {
                     let init = match init {
                         semantics::type_check::InitialValue::Initial(i) => i.clone(),
                         semantics::type_check::InitialValue::Tentative => vec![ty.zero()],
@@ -784,22 +861,15 @@ pub fn gen_program(program: &ast::Program, symbol_table: &mut HashMap<EcoString,
                         alignment: ty.alignment(),
                         init,
                     }))
-                } else {
-                    None
                 }
+                Attr::Constant { ty, init } => Some(TopLevelItem::StaticConstant(StaticConstant {
+                    name: key.clone(),
+                    ty: ty.clone(),
+                    init: init.clone(),
+                })),
+                _ => None,
             })
-            .collect::<Vec<_>>()
-            .into_iter()
-            .chain(
-                program
-                    .decls
-                    .iter()
-                    .filter_map(|f| match f {
-                        ast::Declaration::FunDecl(f) => gen_function(&mut generator, f),
-                        _ => None,
-                    })
-                    .map(TopLevelItem::Function),
-            )
+            .chain(functions.into_iter())
             .collect(),
     }
 }
