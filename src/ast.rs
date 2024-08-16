@@ -1215,11 +1215,19 @@ impl<'a> Parser<'a> {
     fn parse_param_list(&mut self) -> Result<Vec<ParamInfo>, Error> {
         let mut params = Vec::new();
         self.expect(Token::OpenParen)?;
+
+        if self
+            .atomic(|s| {
+                s.expect(Token::Void)?;
+                s.expect(Token::CloseParen)?;
+                Ok(())
+            })
+            .is_ok()
+        {
+            return Ok(params);
+        }
+
         loop {
-            if self.expect(Token::Void).is_ok() {
-                self.expect(Token::CloseParen)?;
-                break;
-            }
             params.push(self.parse_param()?);
             if self.expect(Token::Comma).is_err() {
                 self.expect(Token::CloseParen)?;
@@ -1479,10 +1487,25 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_declaration(&mut self) -> Result<Declaration, Error> {
-        if let Ok(decl) = self.atomic(|s| s.parse_var_decl()) {
-            Ok(Declaration::VarDecl(decl))
-        } else {
-            Ok(Declaration::FunDecl(self.parse_fun_decl()?))
+        let index = self.index;
+        match self.parse_var_decl() {
+            Ok(decl) => Ok(Declaration::VarDecl(decl)),
+            Err(var_err) => {
+                let var_decl_fail = self.index;
+                self.index = index;
+                match self.parse_fun_decl() {
+                    Ok(decl) => Ok(Declaration::FunDecl(decl)),
+                    Err(fun_err) => {
+                        let fun_decl_fail = self.index;
+                        if var_decl_fail > fun_decl_fail {
+                            self.index = var_decl_fail;
+                            Err(var_err)
+                        } else {
+                            Err(fun_err)
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -1631,17 +1654,17 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_cast_exp(&mut self) -> Result<Expression, Error> {
-        if let Ok(Spanned { data, .. }) = self.expect(Token::OpenParen) {
-            let ty = self.parse_type_name()?;
-            self.expect(Token::CloseParen)?;
-            let exp = self.parse_cast_exp()?;
+        self.atomic(|s| {
+            s.expect(Token::OpenParen)?;
+            let ty = s.parse_type_name()?;
+            s.expect(Token::CloseParen)?;
+            let exp = s.parse_cast_exp()?;
             Ok(Expression::Cast {
                 target: ty,
                 exp: Box::new(exp),
             })
-        } else {
-            self.parse_unary_exp()
-        }
+        })
+        .or_else(|_| self.parse_unary_exp())
     }
 
     fn parse_unary_exp(&mut self) -> Result<Expression, Error> {
@@ -1661,7 +1684,7 @@ impl<'a> Parser<'a> {
                 }
                 Token::Ampersands => {
                     self.advance();
-                    let exp = self.parse_unary_exp()?;
+                    let exp = self.parse_cast_exp()?;
                     Ok(Expression::AddrOf {
                         exp: Box::new(exp),
                         // Fixed in type check pass
@@ -1670,22 +1693,21 @@ impl<'a> Parser<'a> {
                 }
                 Token::Asterisk => {
                     self.advance();
-                    let exp = self.parse_unary_exp()?;
+                    let exp = self.parse_cast_exp()?;
                     Ok(Expression::Dereference(Box::new(exp)))
                 }
                 Token::Sizeof => {
                     self.advance();
-                    if let Ok(s) = self.expect(Token::OpenParen) {
-                        let start = s.span.start;
+                    if let Ok(exp) = self.atomic(|s| s.parse_unary_exp()) {
+                        Ok(Expression::Sizeof(Box::new(exp)))
+                    } else {
+                        let start = self.expect(Token::OpenParen)?.span.start;
                         let ty = self.parse_type_name()?;
                         let end = self.expect(Token::CloseParen)?.span.end;
                         Ok(Expression::SizeofType(Spanned {
                             data: ty,
                             span: start..end,
                         }))
-                    } else {
-                        let exp = self.parse_unary_exp()?;
-                        Ok(Expression::Sizeof(Box::new(exp)))
                     }
                 }
                 _ => self.parse_postfix_exp(),
