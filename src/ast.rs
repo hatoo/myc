@@ -84,6 +84,7 @@ impl Initializer {
 
                 Self::CompoundInit(inits)
             }
+            _ => todo!(),
         }
     }
 }
@@ -246,6 +247,7 @@ impl Const {
                 _ => None,
             },
             VarType::Array { .. } => None,
+            _ => todo!(),
         }
     }
 }
@@ -328,6 +330,7 @@ impl Expression {
             Self::AddrOf { ty, .. } => ty,
             Self::Subscript { ty, .. } => ty,
             Self::String(_, ty) => ty,
+            _ => todo!(),
         }
     }
 
@@ -378,6 +381,8 @@ impl HasSpan for Expression {
             Self::AddrOf { exp, .. } => exp.span(),
             Self::Subscript { array, index, .. } => array.span().start..index.span().end,
             Self::String(s, _) => s.span.clone(),
+            Self::Sizeof(exp) => exp.span(),
+            Self::SizeofType(ty) => ty.span.clone(),
         }
     }
 }
@@ -426,6 +431,7 @@ impl VarType {
             Self::Double => 8,
             Self::Pointer(_) => 8,
             Self::Array { element, size } => element.size() * size,
+            _ => todo!(),
         }
     }
 
@@ -447,6 +453,7 @@ impl VarType {
                     16
                 }
             }
+            _ => todo!(),
         }
     }
 

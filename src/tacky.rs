@@ -312,8 +312,11 @@ impl<'a> InstructionGenerator<'a> {
     fn add_statement(&mut self, statement: &ast::Statement) {
         match statement {
             ast::Statement::Return(expression) => {
+                todo!()
+                /*
                 let val = self.add_expression_and_convert(expression);
                 self.instructions.push(Instruction::Return(val));
+                */
             }
             ast::Statement::Expression(exp) => {
                 self.add_expression(exp);
@@ -826,6 +829,7 @@ impl<'a> InstructionGenerator<'a> {
 
                 ExpResult::PlainOperand(Val::Var(name))
             }
+            _ => todo!(),
         }
     }
 
@@ -891,7 +895,7 @@ fn gen_function(generator: &mut InstructionGenerator, function: &ast::FunDecl) -
         for block_item in &block.0 {
             generator.add_block_item(block_item);
         }
-        generator.add_statement(&ast::Statement::Return(ast::Expression::Constant(
+        generator.add_statement(&ast::Statement::Return(Some(ast::Expression::Constant(
             Spanned {
                 data: if function.ty.ret == VarType::Double {
                     ast::Const::Double(0.0)
@@ -900,7 +904,7 @@ fn gen_function(generator: &mut InstructionGenerator, function: &ast::FunDecl) -
                 },
                 span: 0..0,
             },
-        )));
+        ))));
         Some(Function {
             global: if let Attr::Fun { global, .. } = generator.symbol_table[&function.name.data] {
                 global

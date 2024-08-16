@@ -901,6 +901,7 @@ impl TypeChecker {
                 Ok(ty.clone())
             }
             ast::Expression::String(_, ty) => Ok(ty.clone()),
+            _ => todo!(),
         }
     }
 
@@ -928,9 +929,12 @@ impl TypeChecker {
     ) -> Result<(), Error> {
         match stmt {
             crate::ast::Statement::Return(exp) => {
+                todo!()
+                /*
                 self.check_expression_and_convert(exp)?;
                 convert_by_assignment(exp, ret_type)?;
                 Ok(())
+                */
             }
             crate::ast::Statement::Expression(exp) => {
                 self.check_expression(exp)?;

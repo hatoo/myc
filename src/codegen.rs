@@ -57,6 +57,7 @@ impl<'a> From<&'a ast::VarType> for AssemblyType {
                 size: ty.size(),
                 alignment: ty.alignment(),
             },
+            _ => todo!(),
         }
     }
 }
