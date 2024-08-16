@@ -124,7 +124,7 @@ pub enum ForInit {
 
 #[derive(Debug)]
 pub enum Statement {
-    Return(Expression),
+    Return(Option<Expression>),
     Expression(Expression),
     If {
         condition: Expression,
@@ -294,6 +294,8 @@ pub enum Expression {
         ty: VarType,
     },
     String(Spanned<Vec<u8>>, VarType),
+    Sizeof(Box<Expression>),
+    SizeofType(Spanned<VarType>),
 }
 
 impl Expression {
@@ -398,6 +400,7 @@ impl Ty {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VarType {
+    Void,
     Char,
     SChar,
     UChar,
@@ -581,6 +584,7 @@ pub enum ExpectedToken {
 }
 
 enum TypeSpecifier {
+    Void,
     Char,
     Int,
     Long,
@@ -655,8 +659,21 @@ fn solve_type_specifier(ty: &[Spanned<TypeSpecifier>]) -> Result<VarType, Error>
         return Ok(VarType::Double);
     }
 
+    if matches!(
+        ty,
+        [Spanned {
+            data: TypeSpecifier::Void,
+            ..
+        }]
+    ) {
+        return Ok(VarType::Void);
+    }
+
     for s in ty {
         match s.data {
+            TypeSpecifier::Void => {
+                return Err(Error::ConflictingSpecifier(s.span.clone()));
+            }
             TypeSpecifier::Char => {
                 if int || long || char {
                     return Err(Error::ConflictingSpecifier(s.span.clone()));
@@ -986,9 +1003,9 @@ impl<'a> Parser<'a> {
                 ..
             }) => {
                 self.advance();
-                let expr = self.parse_expression(0)?;
+                let expr = self.atomic(|s| s.parse_expression(0));
                 self.expect(Token::SemiColon)?;
-                Ok(Statement::Return(expr))
+                Ok(Statement::Return(expr.ok()))
             }
             Some(Spanned {
                 data: Token::SemiColon,
@@ -1257,6 +1274,11 @@ impl<'a> Parser<'a> {
 
         while let Some(s) = self.peek() {
             match &s.data {
+                Token::Void => {
+                    ty.push(s.clone().map(|_| TypeSpecifier::Void));
+                    end = s.span.end;
+                    self.advance();
+                }
                 Token::Char => {
                     ty.push(s.clone().map(|_| TypeSpecifier::Char));
                     end = s.span.end;
@@ -1376,6 +1398,10 @@ impl<'a> Parser<'a> {
         loop {
             if let Some(s) = self.peek() {
                 match &s.data {
+                    Token::Void => {
+                        ty.push(s.clone().map(|_| TypeSpecifier::Void));
+                        self.advance();
+                    }
                     Token::Char => {
                         ty.push(s.clone().map(|_| TypeSpecifier::Char));
                         self.advance();
@@ -1597,6 +1623,20 @@ impl<'a> Parser<'a> {
         Ok(exp)
     }
 
+    fn parse_cast_exp(&mut self) -> Result<Expression, Error> {
+        if let Ok(Spanned { data, .. }) = self.expect(Token::OpenParen) {
+            let ty = self.parse_type_name()?;
+            self.expect(Token::CloseParen)?;
+            let exp = self.parse_cast_exp()?;
+            Ok(Expression::Cast {
+                target: ty,
+                exp: Box::new(exp),
+            })
+        } else {
+            self.parse_unary_exp()
+        }
+    }
+
     fn parse_unary_exp(&mut self) -> Result<Expression, Error> {
         if let Some(token) = self.peek() {
             match &token.data {
@@ -1604,7 +1644,7 @@ impl<'a> Parser<'a> {
                     let op = UnaryOp::try_from(&token.data).unwrap();
                     let op = token.clone().map(|_| op);
                     self.advance();
-                    let exp = self.parse_unary_exp()?;
+                    let exp = self.parse_cast_exp()?;
                     Ok(Expression::Unary {
                         op,
                         exp: Box::new(exp),
@@ -1626,20 +1666,19 @@ impl<'a> Parser<'a> {
                     let exp = self.parse_unary_exp()?;
                     Ok(Expression::Dereference(Box::new(exp)))
                 }
-                Token::OpenParen => {
-                    if let Ok(cast) = self.atomic(|s| {
-                        s.advance();
-                        let ty = s.parse_cast_target()?;
-                        s.expect(Token::CloseParen)?;
-                        let exp = s.parse_unary_exp()?;
-                        Ok(Expression::Cast {
-                            target: ty,
-                            exp: Box::new(exp),
-                        })
-                    }) {
-                        Ok(cast)
+                Token::Sizeof => {
+                    self.advance();
+                    if let Ok(s) = self.expect(Token::OpenParen) {
+                        let start = s.span.start;
+                        let ty = self.parse_type_name()?;
+                        let end = self.expect(Token::CloseParen)?.span.end;
+                        Ok(Expression::SizeofType(Spanned {
+                            data: ty,
+                            span: start..end,
+                        }))
                     } else {
-                        self.parse_postfix_exp()
+                        let exp = self.parse_unary_exp()?;
+                        Ok(Expression::Sizeof(Box::new(exp)))
                     }
                 }
                 _ => self.parse_postfix_exp(),
@@ -1715,7 +1754,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_cast_target(&mut self) -> Result<VarType, Error> {
+    fn parse_type_name(&mut self) -> Result<VarType, Error> {
         let base_type = self.parse_type_specifiers()?;
         if let Ok(decl) = self.atomic(|s| s.parse_abstract_declarator()) {
             let span = decl.span.clone();
@@ -1732,7 +1771,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_expression(&mut self, min_prec: usize) -> Result<Expression, Error> {
-        let mut left = self.parse_unary_exp()?;
+        let mut left = self.parse_cast_exp()?;
         loop {
             let Some(token) = self.peek() else {
                 break;
