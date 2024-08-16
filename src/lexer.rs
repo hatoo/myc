@@ -63,6 +63,7 @@ pub enum Token {
     Unsigned,
     Double,
     Char,
+    Sizeof,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -245,6 +246,7 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
                     "unsigned" => Token::Unsigned,
                     "double" => Token::Double,
                     "char" => Token::Char,
+                    "sizeof" => Token::Sizeof,
                     _ => Token::Ident(EcoString::from(ident)),
                 };
                 tokens.push(Spanned {
