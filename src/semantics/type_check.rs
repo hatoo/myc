@@ -709,10 +709,10 @@ impl TypeChecker {
                             convert_to(lhs, &cty);
                             convert_to(rhs, &cty);
                             *ty = cty;
-                        } else if tyl.is_pointer() && tyr.is_integer() {
+                        } else if tyl.is_pointer_to_complete() && tyr.is_integer() {
                             convert_to(rhs, &VarType::Long);
                             *ty = tyl.clone();
-                        } else if tyl.is_integer() && tyr.is_pointer() {
+                        } else if tyl.is_integer() && tyr.is_pointer_to_complete() {
                             convert_to(lhs, &VarType::Long);
                             *ty = tyr.clone();
                         } else {
@@ -725,10 +725,13 @@ impl TypeChecker {
                             convert_to(lhs, &cty);
                             convert_to(rhs, &cty);
                             *ty = cty;
-                        } else if tyl.is_pointer() && tyr.is_integer() {
+                        } else if tyl.is_pointer_to_complete() && tyr.is_integer() {
                             convert_to(rhs, &VarType::Long);
                             *ty = tyl.clone();
-                        } else if tyl.is_pointer() && tyr.is_pointer() && tyl == tyr {
+                        } else if tyl.is_pointer_to_complete()
+                            && tyr.is_pointer_to_complete()
+                            && tyl == tyr
+                        {
                             *ty = ast::VarType::Long;
                         } else {
                             return Err(Error::IncompatibleTypes(exp.span()));
