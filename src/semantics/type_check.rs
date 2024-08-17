@@ -225,6 +225,38 @@ fn convert_by_assignment(exp: &mut ast::Expression, ty: &ast::VarType) -> Result
     Err(Error::IncompatibleTypes(exp.span()))
 }
 
+fn validate_fun_type(ty: &ast::FunType) -> Result<(), ()> {
+    for ty in &ty.params {
+        validate_var_type(ty)?;
+    }
+
+    validate_var_type(&ty.ret)?;
+
+    Ok(())
+}
+
+fn validate_var_type(ty: &ast::VarType) -> Result<(), ()> {
+    match ty {
+        VarType::Array { element, .. } => {
+            if !element.is_complete() {
+                return Err(());
+            }
+            validate_var_type(&element)?;
+        }
+        VarType::Pointer(ty) => match ty.as_ref() {
+            ast::Ty::Fun(ty) => {
+                validate_fun_type(ty)?;
+            }
+            ast::Ty::Var(ty) => {
+                validate_var_type(ty)?;
+            }
+        },
+        _ => {}
+    }
+
+    Ok(())
+}
+
 impl TypeChecker {
     pub fn check_program(&mut self, program: &mut crate::ast::Program) -> Result<(), Error> {
         for decl in &mut program.decls {
@@ -364,6 +396,8 @@ impl TypeChecker {
             ty,
         } = fun_decl;
 
+        validate_fun_type(ty).map_err(|_| Error::IncompatibleTypes(name.span.clone()))?;
+
         if ty.ret.is_array() {
             return Err(Error::IncompatibleTypes(name.span.clone()));
         }
@@ -455,6 +489,8 @@ impl TypeChecker {
             ty,
         } = decl;
 
+        validate_var_type(ty).map_err(|_| Error::IncompatibleTypes(ident.span.clone()))?;
+
         let mut init = match init {
             Some(init) => InitialValue::Initial(self.static_init_from_initializer(ty, init)?),
             None => {
@@ -522,6 +558,8 @@ impl TypeChecker {
             storage_class,
             ty,
         } = decl;
+
+        validate_var_type(ty).map_err(|_| Error::IncompatibleTypes(ident.span.clone()))?;
 
         match storage_class {
             Some(crate::ast::StorageClass::Extern) => {
@@ -857,6 +895,7 @@ impl TypeChecker {
                 _ => Err(Error::IncompatibleTypes(name.span.clone())),
             },
             crate::ast::Expression::Cast { target, exp } => {
+                validate_var_type(target).map_err(|_| Error::IncompatibleTypes(exp.span()))?;
                 let ty = self.check_expression_and_convert(exp)?;
 
                 if (target.is_pointer() && ty == VarType::Double)
@@ -930,7 +969,14 @@ impl TypeChecker {
                 Ok(ty.clone())
             }
             ast::Expression::String(_, ty) => Ok(ty.clone()),
-            _ => todo!(),
+            ast::Expression::Sizeof(exp) => {
+                self.check_expression(exp)?;
+                Ok(ast::VarType::Int)
+            }
+            ast::Expression::SizeofType(ty) => {
+                validate_var_type(&ty.data).map_err(|_| Error::IncompatibleTypes(exp.span()))?;
+                Ok(ast::VarType::Int)
+            }
         }
     }
 
