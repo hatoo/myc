@@ -493,6 +493,20 @@ impl VarType {
     pub fn is_scalar(&self) -> bool {
         !matches!(self, Self::Void | Self::Array { .. })
     }
+
+    pub fn is_complete(&self) -> bool {
+        self != &Self::Void
+    }
+
+    pub fn is_pointer_to_complete(&self) -> bool {
+        match self {
+            Self::Pointer(ty) => match ty.as_ref() {
+                Ty::Var(ty) => ty.is_complete(),
+                Ty::Fun(_) => true,
+            },
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
