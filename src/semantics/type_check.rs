@@ -832,9 +832,9 @@ impl TypeChecker {
                 then_branch,
                 else_branch,
             } => {
-                self.check_expression(condition)?;
-                let tyl = self.check_expression(then_branch)?;
-                let tyr = self.check_expression(else_branch)?;
+                self.check_expression_and_convert(condition)?;
+                let tyl = self.check_expression_and_convert(then_branch)?;
+                let tyr = self.check_expression_and_convert(else_branch)?;
 
                 let cty = if tyl.is_pointer() || tyr.is_pointer() {
                     if let Some(cty) = common_pointer_type(then_branch, else_branch) {

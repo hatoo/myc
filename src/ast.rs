@@ -330,7 +330,8 @@ impl Expression {
             Self::AddrOf { ty, .. } => ty,
             Self::Subscript { ty, .. } => ty,
             Self::String(_, ty) => ty,
-            _ => todo!(),
+            Self::Sizeof(_) => &VarType::Int,
+            Self::SizeofType(_) => &VarType::Int,
         }
     }
 
