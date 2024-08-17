@@ -143,6 +143,14 @@ fn common_pointer_type<'a>(
         Some(ty1)
     } else if e1.is_null_pointer_constant() {
         Some(ty0)
+    } else if ty0 == &ast::VarType::Pointer(Box::new(ast::Ty::Var(ast::VarType::Void)))
+        && ty1.is_pointer()
+    {
+        Some(ty0)
+    } else if ty1 == &ast::VarType::Pointer(Box::new(ast::Ty::Var(ast::VarType::Void)))
+        && ty0.is_pointer()
+    {
+        Some(ty1)
     } else {
         None
     }
@@ -198,6 +206,18 @@ fn convert_by_assignment(exp: &mut ast::Expression, ty: &ast::VarType) -> Result
     }
 
     if exp.is_null_pointer_constant() && ty.is_pointer() {
+        convert_to(exp, ty);
+        return Ok(());
+    }
+
+    if ty == &ast::VarType::Pointer(Box::new(ast::Ty::Var(ast::VarType::Void))) && ety.is_pointer()
+    {
+        convert_to(exp, ty);
+        return Ok(());
+    }
+
+    if ty.is_pointer() && ety == &ast::VarType::Pointer(Box::new(ast::Ty::Var(ast::VarType::Void)))
+    {
         convert_to(exp, ty);
         return Ok(());
     }
@@ -631,7 +651,9 @@ impl TypeChecker {
             crate::ast::Expression::Unary { op, exp, ty } => {
                 match op.data {
                     ast::UnaryOp::Not => {
-                        self.check_expression_and_convert(exp)?;
+                        if !self.check_expression_and_convert(exp)?.is_scalar() {
+                            return Err(Error::IncompatibleTypes(exp.span()));
+                        }
                         *ty = ast::VarType::Int;
                     }
                     ast::UnaryOp::Complement => {
@@ -832,10 +854,6 @@ impl TypeChecker {
                 _ => Err(Error::IncompatibleTypes(name.span.clone())),
             },
             crate::ast::Expression::Cast { target, exp } => {
-                if let VarType::Array { .. } = target {
-                    return Err(Error::IncompatibleTypes(exp.span()));
-                }
-
                 let ty = self.check_expression_and_convert(exp)?;
 
                 if (target.is_pointer() && ty == VarType::Double)
@@ -844,7 +862,15 @@ impl TypeChecker {
                     return Err(Error::IncompatibleTypes(exp.span()));
                 }
 
-                Ok(target.clone())
+                if target == &VarType::Void {
+                    Ok(target.clone())
+                } else if !target.is_scalar() {
+                    Err(Error::IncompatibleTypes(exp.span()))
+                } else if !ty.is_scalar() {
+                    Err(Error::IncompatibleTypes(exp.span()))
+                } else {
+                    Ok(target.clone())
+                }
             }
             crate::ast::Expression::Dereference(exp) => {
                 let ty = self.check_expression_and_convert(exp)?;
@@ -928,14 +954,19 @@ impl TypeChecker {
         ret_type: &ast::VarType,
     ) -> Result<(), Error> {
         match stmt {
-            crate::ast::Statement::Return(exp) => {
-                todo!()
-                /*
-                self.check_expression_and_convert(exp)?;
-                convert_by_assignment(exp, ret_type)?;
-                Ok(())
-                */
-            }
+            crate::ast::Statement::Return(exp) => match (ret_type, exp) {
+                (ast::VarType::Void, Some(exp)) => {
+                    return Err(Error::IncompatibleTypes(exp.span()));
+                }
+                (ast::VarType::Void, None) => Ok(()),
+                (ret_type, Some(exp)) => {
+                    self.check_expression_and_convert(exp)?;
+                    convert_by_assignment(exp, ret_type)?;
+                    Ok(())
+                }
+                // todo span
+                _ => Err(Error::IncompatibleTypes(0..0)),
+            },
             crate::ast::Statement::Expression(exp) => {
                 self.check_expression(exp)?;
                 Ok(())

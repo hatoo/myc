@@ -489,6 +489,10 @@ impl VarType {
     pub fn is_character(&self) -> bool {
         matches!(self, Self::Char | Self::SChar | Self::UChar)
     }
+
+    pub fn is_scalar(&self) -> bool {
+        !matches!(self, Self::Void | Self::Array { .. })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
