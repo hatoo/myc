@@ -1017,7 +1017,7 @@ impl TypeChecker {
                     }
                 }
 
-                Ok(ast::VarType::Int)
+                Ok(ast::VarType::Ulong)
             }
             ast::Expression::SizeofType(ty) => {
                 if !ty.data.is_complete() {
@@ -1030,7 +1030,7 @@ impl TypeChecker {
                     }
                 }
                 validate_var_type(&ty.data).map_err(|_| Error::IncompatibleTypes(exp.span()))?;
-                Ok(ast::VarType::Int)
+                Ok(ast::VarType::Ulong)
             }
         }
     }

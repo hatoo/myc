@@ -57,7 +57,15 @@ impl<'a> From<&'a ast::VarType> for AssemblyType {
                 size: ty.size(),
                 alignment: ty.alignment(),
             },
-            _ => todo!(),
+            ast::VarType::Void => {
+                println!("Custom backtrace: {}", std::backtrace::Backtrace::capture());
+
+                println!(
+                    "Custom backtrace: {}",
+                    std::backtrace::Backtrace::force_capture()
+                );
+                unreachable!()
+            }
         }
     }
 }
@@ -399,25 +407,27 @@ impl<'a> CodeGen<'a> {
 
         for inst in &function.body {
             match inst {
-                tacky::Instruction::Return(val) => {
-                    if let Some(val) = val {
-                        if ty.ret == VarType::Double {
-                            body.push(Instruction::Mov {
-                                ty: AssemblyType::Double,
-                                src: val.into(),
-                                dst: Operand::Reg(Register::Xmm(0)),
-                            });
-                            body.push(Instruction::Ret);
-                        } else {
-                            body.push(Instruction::Mov {
-                                ty: ty.ret.clone().into(),
-                                src: val.into(),
-                                dst: Operand::Reg(Register::Ax),
-                            });
-                            body.push(Instruction::Ret);
-                        }
+                tacky::Instruction::Return(val) => match (val, &ty.ret) {
+                    (Some(val), VarType::Double) => {
+                        body.push(Instruction::Mov {
+                            ty: AssemblyType::Double,
+                            src: val.into(),
+                            dst: Operand::Reg(Register::Xmm(0)),
+                        });
+                        body.push(Instruction::Ret);
                     }
-                }
+                    (Some(val), _) => {
+                        body.push(Instruction::Mov {
+                            ty: ty.ret.clone().into(),
+                            src: val.into(),
+                            dst: Operand::Reg(Register::Ax),
+                        });
+                        body.push(Instruction::Ret);
+                    }
+                    (None, _) => {
+                        body.push(Instruction::Ret);
+                    }
+                },
                 tacky::Instruction::Unary { op, src, dst } => {
                     let src_ty = src.ty(self.symbol_table);
                     let dst_ty = dst.ty(self.symbol_table);

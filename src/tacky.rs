@@ -915,16 +915,17 @@ fn gen_function(generator: &mut InstructionGenerator, function: &ast::FunDecl) -
         for block_item in &block.0 {
             generator.add_block_item(block_item);
         }
-        generator.add_statement(&ast::Statement::Return(Some(ast::Expression::Constant(
-            Spanned {
-                data: if function.ty.ret == VarType::Double {
-                    ast::Const::Double(0.0)
-                } else {
-                    ast::Const::Int(0)
-                },
+        generator.add_statement(&ast::Statement::Return(match function.ty.ret {
+            ast::VarType::Void => None,
+            ast::VarType::Double => Some(ast::Expression::Constant(Spanned {
+                data: ast::Const::Double(0.0),
                 span: 0..0,
-            },
-        ))));
+            })),
+            _ => Some(ast::Expression::Constant(Spanned {
+                data: ast::Const::Int(0),
+                span: 0..0,
+            })),
+        }));
         Some(Function {
             global: if let Attr::Fun { global, .. } = generator.symbol_table[&function.name.data] {
                 global
