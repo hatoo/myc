@@ -76,7 +76,7 @@ pub enum Instruction {
         src: Val,
         dst: Val,
     },
-    Return(Val),
+    Return(Option<Val>),
     Unary {
         op: UnaryOp,
         src: Val,
@@ -117,7 +117,7 @@ pub enum Instruction {
     FunCall {
         name: EcoString,
         args: Vec<Val>,
-        dst: Val,
+        dst: Option<Val>,
     },
     AddPtr {
         ptr: Val,
@@ -312,8 +312,12 @@ impl<'a> InstructionGenerator<'a> {
     fn add_statement(&mut self, statement: &ast::Statement) {
         match statement {
             ast::Statement::Return(expression) => {
-                let val = self.add_expression_and_convert(expression);
-                self.instructions.push(Instruction::Return(val));
+                if let Some(exp) = expression {
+                    let val = self.add_expression_and_convert(exp);
+                    self.instructions.push(Instruction::Return(Some(val)));
+                } else {
+                    self.instructions.push(Instruction::Return(None));
+                }
             }
             ast::Statement::Expression(exp) => {
                 self.add_expression(exp);
@@ -656,22 +660,31 @@ impl<'a> InstructionGenerator<'a> {
                     dst: else_label.clone(),
                 });
                 let v1 = self.add_expression_and_convert(then_branch);
-                self.instructions.push(Instruction::Copy {
-                    src: v1,
-                    dst: dst.clone(),
-                });
+                if then_branch.ty() != &ast::VarType::Void {
+                    self.instructions.push(Instruction::Copy {
+                        src: v1,
+                        dst: dst.clone(),
+                    });
+                }
                 self.instructions.push(Instruction::Jump(end_label.clone()));
                 self.instructions.push(Instruction::Label(else_label));
                 let v2 = self.add_expression_and_convert(else_branch);
-                self.instructions.push(Instruction::Copy {
-                    src: v2,
-                    dst: dst.clone(),
-                });
+                if else_branch.ty() != &ast::VarType::Void {
+                    self.instructions.push(Instruction::Copy {
+                        src: v2,
+                        dst: dst.clone(),
+                    });
+                }
                 self.instructions.push(Instruction::Label(end_label));
                 ExpResult::PlainOperand(dst)
             }
             ast::Expression::FunctionCall { name, args, ty } => {
-                let dst = self.make_tmp_local(ty.clone());
+                let dst = if ty == &ast::VarType::Void {
+                    None
+                } else {
+                    Some(self.make_tmp_local(ty.clone()))
+                };
+                self.make_tmp_local(ty.clone());
                 let args = args
                     .iter()
                     .map(|arg| self.add_expression_and_convert(arg))
@@ -681,11 +694,14 @@ impl<'a> InstructionGenerator<'a> {
                     args,
                     dst: dst.clone(),
                 });
-                ExpResult::PlainOperand(dst)
+                ExpResult::PlainOperand(dst.unwrap_or(Val::Var("DUMMY_VAR".into())))
             }
             ast::Expression::Cast { target, exp } => {
                 let val = self.add_expression_and_convert(exp);
                 match (exp.ty(), target) {
+                    (_, ast::VarType::Void) => {
+                        ExpResult::PlainOperand(Val::Var("DUMMY_VAR".into()))
+                    }
                     (from, to) if from == to => ExpResult::PlainOperand(val),
                     (
                         ast::VarType::Double,
@@ -826,6 +842,14 @@ impl<'a> InstructionGenerator<'a> {
 
                 ExpResult::PlainOperand(Val::Var(name))
             }
+            ast::Expression::Sizeof(exp) => {
+                let size = exp.ty().size();
+                ExpResult::PlainOperand(Val::Constant(ast::Const::Ulong(size as _)))
+            }
+            ast::Expression::SizeofType(ty) => {
+                let size = ty.data.size();
+                ExpResult::PlainOperand(Val::Constant(ast::Const::Ulong(size as _)))
+            }
         }
     }
 
@@ -891,16 +915,17 @@ fn gen_function(generator: &mut InstructionGenerator, function: &ast::FunDecl) -
         for block_item in &block.0 {
             generator.add_block_item(block_item);
         }
-        generator.add_statement(&ast::Statement::Return(ast::Expression::Constant(
-            Spanned {
-                data: if function.ty.ret == VarType::Double {
-                    ast::Const::Double(0.0)
-                } else {
-                    ast::Const::Int(0)
-                },
+        generator.add_statement(&ast::Statement::Return(match function.ty.ret {
+            ast::VarType::Void => None,
+            ast::VarType::Double => Some(ast::Expression::Constant(Spanned {
+                data: ast::Const::Double(0.0),
                 span: 0..0,
-            },
-        )));
+            })),
+            _ => Some(ast::Expression::Constant(Spanned {
+                data: ast::Const::Int(0),
+                span: 0..0,
+            })),
+        }));
         Some(Function {
             global: if let Attr::Fun { global, .. } = generator.symbol_table[&function.name.data] {
                 global

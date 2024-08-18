@@ -85,7 +85,12 @@ impl VarResolver {
 
     fn resolve_statement(&mut self, stmt: &mut ast::Statement) -> Result<(), Error> {
         match stmt {
-            ast::Statement::Return(decl) => self.resolve_expression(decl),
+            ast::Statement::Return(decl) => {
+                if let Some(decl) = decl {
+                    self.resolve_expression(decl)?;
+                }
+                Ok(())
+            }
             ast::Statement::Expression(exp) => self.resolve_expression(exp),
             ast::Statement::If {
                 condition,
@@ -350,6 +355,11 @@ impl VarResolver {
                 Ok(())
             }
             ast::Expression::String(..) => Ok(()),
+            ast::Expression::Sizeof(exp) => {
+                self.resolve_expression(exp)?;
+                Ok(())
+            }
+            ast::Expression::SizeofType(..) => Ok(()),
         }
     }
 }

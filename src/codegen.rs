@@ -57,6 +57,15 @@ impl<'a> From<&'a ast::VarType> for AssemblyType {
                 size: ty.size(),
                 alignment: ty.alignment(),
             },
+            ast::VarType::Void => {
+                println!("Custom backtrace: {}", std::backtrace::Backtrace::capture());
+
+                println!(
+                    "Custom backtrace: {}",
+                    std::backtrace::Backtrace::force_capture()
+                );
+                unreachable!()
+            }
         }
     }
 }
@@ -398,15 +407,16 @@ impl<'a> CodeGen<'a> {
 
         for inst in &function.body {
             match inst {
-                tacky::Instruction::Return(val) => {
-                    if ty.ret == VarType::Double {
+                tacky::Instruction::Return(val) => match (val, &ty.ret) {
+                    (Some(val), VarType::Double) => {
                         body.push(Instruction::Mov {
                             ty: AssemblyType::Double,
                             src: val.into(),
                             dst: Operand::Reg(Register::Xmm(0)),
                         });
                         body.push(Instruction::Ret);
-                    } else {
+                    }
+                    (Some(val), _) => {
                         body.push(Instruction::Mov {
                             ty: ty.ret.clone().into(),
                             src: val.into(),
@@ -414,7 +424,10 @@ impl<'a> CodeGen<'a> {
                         });
                         body.push(Instruction::Ret);
                     }
-                }
+                    (None, _) => {
+                        body.push(Instruction::Ret);
+                    }
+                },
                 tacky::Instruction::Unary { op, src, dst } => {
                     let src_ty = src.ty(self.symbol_table);
                     let dst_ty = dst.ty(self.symbol_table);
@@ -800,18 +813,20 @@ impl<'a> CodeGen<'a> {
                         });
                     }
 
-                    if ty.ret == VarType::Double {
-                        body.push(Instruction::Mov {
-                            ty: AssemblyType::Double,
-                            src: Operand::Reg(Register::Xmm(0)),
-                            dst: dst.into(),
-                        });
-                    } else {
-                        body.push(Instruction::Mov {
-                            ty: ty.ret.clone().into(),
-                            src: Operand::Reg(Register::Ax),
-                            dst: dst.into(),
-                        });
+                    if let Some(dst) = dst {
+                        if ty.ret == VarType::Double {
+                            body.push(Instruction::Mov {
+                                ty: AssemblyType::Double,
+                                src: Operand::Reg(Register::Xmm(0)),
+                                dst: dst.into(),
+                            });
+                        } else {
+                            body.push(Instruction::Mov {
+                                ty: ty.ret.clone().into(),
+                                src: Operand::Reg(Register::Ax),
+                                dst: dst.into(),
+                            });
+                        }
                     }
                 }
                 tacky::Instruction::SignExtend { src, dst } => {

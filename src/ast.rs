@@ -84,6 +84,7 @@ impl Initializer {
 
                 Self::CompoundInit(inits)
             }
+            _ => todo!(),
         }
     }
 }
@@ -124,7 +125,7 @@ pub enum ForInit {
 
 #[derive(Debug)]
 pub enum Statement {
-    Return(Expression),
+    Return(Option<Expression>),
     Expression(Expression),
     If {
         condition: Expression,
@@ -246,6 +247,7 @@ impl Const {
                 _ => None,
             },
             VarType::Array { .. } => None,
+            _ => todo!(),
         }
     }
 }
@@ -294,6 +296,8 @@ pub enum Expression {
         ty: VarType,
     },
     String(Spanned<Vec<u8>>, VarType),
+    Sizeof(Box<Expression>),
+    SizeofType(Spanned<VarType>),
 }
 
 impl Expression {
@@ -326,6 +330,8 @@ impl Expression {
             Self::AddrOf { ty, .. } => ty,
             Self::Subscript { ty, .. } => ty,
             Self::String(_, ty) => ty,
+            Self::Sizeof(_) => &VarType::Ulong,
+            Self::SizeofType(_) => &VarType::Ulong,
         }
     }
 
@@ -376,6 +382,8 @@ impl HasSpan for Expression {
             Self::AddrOf { exp, .. } => exp.span(),
             Self::Subscript { array, index, .. } => array.span().start..index.span().end,
             Self::String(s, _) => s.span.clone(),
+            Self::Sizeof(exp) => exp.span(),
+            Self::SizeofType(ty) => ty.span.clone(),
         }
     }
 }
@@ -398,6 +406,7 @@ impl Ty {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VarType {
+    Void,
     Char,
     SChar,
     UChar,
@@ -423,6 +432,7 @@ impl VarType {
             Self::Double => 8,
             Self::Pointer(_) => 8,
             Self::Array { element, size } => element.size() * size,
+            _ => todo!(),
         }
     }
 
@@ -444,6 +454,7 @@ impl VarType {
                     16
                 }
             }
+            _ => todo!(),
         }
     }
 
@@ -478,6 +489,24 @@ impl VarType {
 
     pub fn is_character(&self) -> bool {
         matches!(self, Self::Char | Self::SChar | Self::UChar)
+    }
+
+    pub fn is_scalar(&self) -> bool {
+        !matches!(self, Self::Void | Self::Array { .. })
+    }
+
+    pub fn is_complete(&self) -> bool {
+        self != &Self::Void
+    }
+
+    pub fn is_pointer_to_complete(&self) -> bool {
+        match self {
+            Self::Pointer(ty) => match ty.as_ref() {
+                Ty::Var(ty) => ty.is_complete(),
+                Ty::Fun(_) => true,
+            },
+            _ => false,
+        }
     }
 }
 
@@ -581,6 +610,7 @@ pub enum ExpectedToken {
 }
 
 enum TypeSpecifier {
+    Void,
     Char,
     Int,
     Long,
@@ -655,8 +685,21 @@ fn solve_type_specifier(ty: &[Spanned<TypeSpecifier>]) -> Result<VarType, Error>
         return Ok(VarType::Double);
     }
 
+    if matches!(
+        ty,
+        [Spanned {
+            data: TypeSpecifier::Void,
+            ..
+        }]
+    ) {
+        return Ok(VarType::Void);
+    }
+
     for s in ty {
         match s.data {
+            TypeSpecifier::Void => {
+                return Err(Error::ConflictingSpecifier(s.span.clone()));
+            }
             TypeSpecifier::Char => {
                 if int || long || char {
                     return Err(Error::ConflictingSpecifier(s.span.clone()));
@@ -986,9 +1029,9 @@ impl<'a> Parser<'a> {
                 ..
             }) => {
                 self.advance();
-                let expr = self.parse_expression(0)?;
+                let expr = self.atomic(|s| s.parse_expression(0));
                 self.expect(Token::SemiColon)?;
-                Ok(Statement::Return(expr))
+                Ok(Statement::Return(expr.ok()))
             }
             Some(Spanned {
                 data: Token::SemiColon,
@@ -1191,11 +1234,19 @@ impl<'a> Parser<'a> {
     fn parse_param_list(&mut self) -> Result<Vec<ParamInfo>, Error> {
         let mut params = Vec::new();
         self.expect(Token::OpenParen)?;
+
+        if self
+            .atomic(|s| {
+                s.expect(Token::Void)?;
+                s.expect(Token::CloseParen)?;
+                Ok(())
+            })
+            .is_ok()
+        {
+            return Ok(params);
+        }
+
         loop {
-            if self.expect(Token::Void).is_ok() {
-                self.expect(Token::CloseParen)?;
-                break;
-            }
             params.push(self.parse_param()?);
             if self.expect(Token::Comma).is_err() {
                 self.expect(Token::CloseParen)?;
@@ -1257,6 +1308,11 @@ impl<'a> Parser<'a> {
 
         while let Some(s) = self.peek() {
             match &s.data {
+                Token::Void => {
+                    ty.push(s.clone().map(|_| TypeSpecifier::Void));
+                    end = s.span.end;
+                    self.advance();
+                }
                 Token::Char => {
                     ty.push(s.clone().map(|_| TypeSpecifier::Char));
                     end = s.span.end;
@@ -1376,6 +1432,10 @@ impl<'a> Parser<'a> {
         loop {
             if let Some(s) = self.peek() {
                 match &s.data {
+                    Token::Void => {
+                        ty.push(s.clone().map(|_| TypeSpecifier::Void));
+                        self.advance();
+                    }
                     Token::Char => {
                         ty.push(s.clone().map(|_| TypeSpecifier::Char));
                         self.advance();
@@ -1446,10 +1506,25 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_declaration(&mut self) -> Result<Declaration, Error> {
-        if let Ok(decl) = self.atomic(|s| s.parse_var_decl()) {
-            Ok(Declaration::VarDecl(decl))
-        } else {
-            Ok(Declaration::FunDecl(self.parse_fun_decl()?))
+        let index = self.index;
+        match self.parse_var_decl() {
+            Ok(decl) => Ok(Declaration::VarDecl(decl)),
+            Err(var_err) => {
+                let var_decl_fail = self.index;
+                self.index = index;
+                match self.parse_fun_decl() {
+                    Ok(decl) => Ok(Declaration::FunDecl(decl)),
+                    Err(fun_err) => {
+                        let fun_decl_fail = self.index;
+                        if var_decl_fail > fun_decl_fail {
+                            self.index = var_decl_fail;
+                            Err(var_err)
+                        } else {
+                            Err(fun_err)
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -1597,6 +1672,20 @@ impl<'a> Parser<'a> {
         Ok(exp)
     }
 
+    fn parse_cast_exp(&mut self) -> Result<Expression, Error> {
+        self.atomic(|s| {
+            s.expect(Token::OpenParen)?;
+            let ty = s.parse_type_name()?;
+            s.expect(Token::CloseParen)?;
+            let exp = s.parse_cast_exp()?;
+            Ok(Expression::Cast {
+                target: ty,
+                exp: Box::new(exp),
+            })
+        })
+        .or_else(|_| self.parse_unary_exp())
+    }
+
     fn parse_unary_exp(&mut self) -> Result<Expression, Error> {
         if let Some(token) = self.peek() {
             match &token.data {
@@ -1604,7 +1693,7 @@ impl<'a> Parser<'a> {
                     let op = UnaryOp::try_from(&token.data).unwrap();
                     let op = token.clone().map(|_| op);
                     self.advance();
-                    let exp = self.parse_unary_exp()?;
+                    let exp = self.parse_cast_exp()?;
                     Ok(Expression::Unary {
                         op,
                         exp: Box::new(exp),
@@ -1614,7 +1703,7 @@ impl<'a> Parser<'a> {
                 }
                 Token::Ampersands => {
                     self.advance();
-                    let exp = self.parse_unary_exp()?;
+                    let exp = self.parse_cast_exp()?;
                     Ok(Expression::AddrOf {
                         exp: Box::new(exp),
                         // Fixed in type check pass
@@ -1623,23 +1712,21 @@ impl<'a> Parser<'a> {
                 }
                 Token::Asterisk => {
                     self.advance();
-                    let exp = self.parse_unary_exp()?;
+                    let exp = self.parse_cast_exp()?;
                     Ok(Expression::Dereference(Box::new(exp)))
                 }
-                Token::OpenParen => {
-                    if let Ok(cast) = self.atomic(|s| {
-                        s.advance();
-                        let ty = s.parse_cast_target()?;
-                        s.expect(Token::CloseParen)?;
-                        let exp = s.parse_unary_exp()?;
-                        Ok(Expression::Cast {
-                            target: ty,
-                            exp: Box::new(exp),
-                        })
-                    }) {
-                        Ok(cast)
+                Token::Sizeof => {
+                    self.advance();
+                    if let Ok(exp) = self.atomic(|s| s.parse_unary_exp()) {
+                        Ok(Expression::Sizeof(Box::new(exp)))
                     } else {
-                        self.parse_postfix_exp()
+                        let start = self.expect(Token::OpenParen)?.span.start;
+                        let ty = self.parse_type_name()?;
+                        let end = self.expect(Token::CloseParen)?.span.end;
+                        Ok(Expression::SizeofType(Spanned {
+                            data: ty,
+                            span: start..end,
+                        }))
                     }
                 }
                 _ => self.parse_postfix_exp(),
@@ -1715,7 +1802,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_cast_target(&mut self) -> Result<VarType, Error> {
+    fn parse_type_name(&mut self) -> Result<VarType, Error> {
         let base_type = self.parse_type_specifiers()?;
         if let Ok(decl) = self.atomic(|s| s.parse_abstract_declarator()) {
             let span = decl.span.clone();
@@ -1732,7 +1819,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_expression(&mut self, min_prec: usize) -> Result<Expression, Error> {
-        let mut left = self.parse_unary_exp()?;
+        let mut left = self.parse_cast_exp()?;
         loop {
             let Some(token) = self.peek() else {
                 break;
