@@ -60,6 +60,7 @@ impl<'a> From<&'a ast::VarType> for AssemblyType {
             ast::VarType::Void => {
                 unreachable!()
             }
+            _ => todo!(),
         }
     }
 }

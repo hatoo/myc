@@ -70,6 +70,7 @@ impl VarResolver {
             match decl {
                 ast::Declaration::VarDecl(decl) => self.resolve_var_decl_file_scope(decl)?,
                 ast::Declaration::FunDecl(decl) => self.resolve_fun_decl(decl, true)?,
+                _ => todo!(),
             }
         }
         self.scopes.pop().unwrap();
@@ -164,6 +165,7 @@ impl VarResolver {
         match decl {
             ast::Declaration::VarDecl(decl) => self.resolve_var_decl_local(decl),
             ast::Declaration::FunDecl(decl) => self.resolve_fun_decl(decl, false),
+            _ => todo!(),
         }
     }
     fn resolve_fun_decl(&mut self, decl: &mut ast::FunDecl, file_scope: bool) -> Result<(), Error> {
@@ -360,6 +362,7 @@ impl VarResolver {
                 Ok(())
             }
             ast::Expression::SizeofType(..) => Ok(()),
+            _ => todo!(),
         }
     }
 }

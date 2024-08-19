@@ -217,6 +217,7 @@ impl<'a> InstructionGenerator<'a> {
                     self.add_var_declaration(decl);
                 }
                 ast::Declaration::FunDecl(_) => {}
+                _ => todo!(),
             },
             ast::BlockItem::Statement(stmt) => {
                 self.add_statement(stmt);
@@ -850,6 +851,7 @@ impl<'a> InstructionGenerator<'a> {
                 let size = ty.data.size();
                 ExpResult::PlainOperand(Val::Constant(ast::Const::Ulong(size as _)))
             }
+            _ => todo!(),
         }
     }
 

@@ -356,6 +356,7 @@ impl Expression {
             Self::String(_, ty) => ty,
             Self::Sizeof(_) => &VarType::Ulong,
             Self::SizeofType(_) => &VarType::Ulong,
+            _ => todo!(),
         }
     }
 
@@ -408,6 +409,7 @@ impl HasSpan for Expression {
             Self::String(s, _) => s.span.clone(),
             Self::Sizeof(exp) => exp.span(),
             Self::SizeofType(ty) => ty.span.clone(),
+            _ => todo!(),
         }
     }
 }
@@ -1563,11 +1565,23 @@ impl<'a> Parser<'a> {
                     Ok(decl) => Ok(Declaration::FunDecl(decl)),
                     Err(fun_err) => {
                         let fun_decl_fail = self.index;
-                        if var_decl_fail > fun_decl_fail {
-                            self.index = var_decl_fail;
-                            Err(var_err)
-                        } else {
-                            Err(fun_err)
+                        self.index = index;
+                        match self.parse_struct_decl() {
+                            Ok(decl) => Ok(Declaration::StructDecl(decl)),
+                            Err(struct_err) => {
+                                let struct_decl_fail = self.index;
+                                self.index = index;
+                                if var_decl_fail > fun_decl_fail && var_decl_fail > struct_decl_fail
+                                {
+                                    Err(var_err)
+                                } else if fun_decl_fail > var_decl_fail
+                                    && fun_decl_fail > struct_decl_fail
+                                {
+                                    Err(fun_err)
+                                } else {
+                                    Err(struct_err)
+                                }
+                            }
                         }
                     }
                 }
@@ -1989,14 +2003,18 @@ impl<'a> Parser<'a> {
     fn parse_struct_decl(&mut self) -> Result<StructDecl, Error> {
         self.expect(Token::Struct)?;
         let tag = self.expect_ident()?;
-        self.expect(Token::OpenBrace)?;
-        let member_decls = self.many1(|s| s.parse_struct_member())?;
-        self.expect(Token::CloseBrace)?;
+
+        let member_decls = self.atomic(|s| {
+            s.expect(Token::OpenBrace)?;
+            let member_decls = s.many1(|s| s.parse_struct_member())?;
+            s.expect(Token::CloseBrace)?;
+            Ok(member_decls)
+        });
         self.expect(Token::SemiColon)?;
 
         Ok(StructDecl {
             tag: tag.data,
-            member_decls,
+            member_decls: member_decls.unwrap_or_default(),
         })
     }
 
@@ -2004,6 +2022,7 @@ impl<'a> Parser<'a> {
         let ty = self.parse_type_specifiers()?;
         let decl = self.parse_declarator()?;
         let (ident, ty, _) = process_declarator(decl, ty)?;
+        self.expect(Token::SemiColon)?;
 
         let ty = match ty {
             Ty::Fun(_) => return Err(Error::NotVarType(ident.span.clone())),

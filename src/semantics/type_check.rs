@@ -270,6 +270,7 @@ impl TypeChecker {
             match decl {
                 crate::ast::Declaration::VarDecl(decl) => self.check_var_decl_file(decl)?,
                 crate::ast::Declaration::FunDecl(decl) => self.check_fun_decl(decl)?,
+                _ => todo!(),
             }
         }
 
@@ -485,6 +486,7 @@ impl TypeChecker {
                 }
                 self.check_fun_decl(decl)
             }
+            _ => todo!(),
         }
     }
 
@@ -1032,6 +1034,7 @@ impl TypeChecker {
                 validate_var_type(&ty.data).map_err(|_| Error::IncompatibleTypes(exp.span()))?;
                 Ok(ast::VarType::Ulong)
             }
+            _ => todo!(),
         }
     }
 
