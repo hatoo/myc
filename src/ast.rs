@@ -76,7 +76,7 @@ impl Initializer {
                 span: 0..0,
             })),
             VarType::Pointer(_) => Self::SingleInit(Expression::Constant(Spanned {
-                data: Const::Long(0),
+                data: Const::Ulong(0),
                 span: 0..0,
             })),
             VarType::Array { element, size } => {
