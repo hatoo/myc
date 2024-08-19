@@ -58,12 +58,6 @@ impl<'a> From<&'a ast::VarType> for AssemblyType {
                 alignment: ty.alignment(),
             },
             ast::VarType::Void => {
-                println!("Custom backtrace: {}", std::backtrace::Backtrace::capture());
-
-                println!(
-                    "Custom backtrace: {}",
-                    std::backtrace::Backtrace::force_capture()
-                );
                 unreachable!()
             }
         }
