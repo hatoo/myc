@@ -15,6 +15,7 @@ pub struct Program {
 pub enum Declaration {
     VarDecl(VarDecl),
     FunDecl(FunDecl),
+    StructDecl(StructDecl),
 }
 
 #[derive(Debug)]
@@ -32,6 +33,18 @@ pub struct FunDecl {
     pub body: Option<Block>,
     pub ty: FunType,
     pub storage_class: Option<StorageClass>,
+}
+
+#[derive(Debug)]
+pub struct StructDecl {
+    pub tag: EcoString,
+    pub member_decls: Vec<MemberDecl>,
+}
+
+#[derive(Debug)]
+pub struct MemberDecl {
+    pub member_name: EcoString,
+    pub ty: VarType,
 }
 
 #[derive(Debug, Clone)]
@@ -298,6 +311,16 @@ pub enum Expression {
     String(Spanned<Vec<u8>>, VarType),
     Sizeof(Box<Expression>),
     SizeofType(Spanned<VarType>),
+    Dot {
+        structure: Box<Expression>,
+        member: Spanned<EcoString>,
+        ty: VarType,
+    },
+    Arrow {
+        pointer: Box<Expression>,
+        member: Spanned<EcoString>,
+        ty: VarType,
+    },
 }
 
 impl Expression {
@@ -418,6 +441,7 @@ pub enum VarType {
     Double,
     Pointer(Box<Ty>),
     Array { element: Box<VarType>, size: usize },
+    Structure(EcoString),
 }
 
 impl VarType {
@@ -618,6 +642,7 @@ enum TypeSpecifier {
     Unsigned,
     Signed,
     Double,
+    Struct(EcoString),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -696,6 +721,14 @@ fn solve_type_specifier(ty: &[Spanned<TypeSpecifier>]) -> Result<VarType, Error>
         return Ok(VarType::Void);
     }
 
+    if let [Spanned {
+        data: TypeSpecifier::Struct(tag),
+        ..
+    }] = ty
+    {
+        return Ok(VarType::Structure(tag.clone()));
+    }
+
     for s in ty {
         match s.data {
             TypeSpecifier::Void => {
@@ -732,6 +765,9 @@ fn solve_type_specifier(ty: &[Spanned<TypeSpecifier>]) -> Result<VarType, Error>
                 unsigned = true;
             }
             TypeSpecifier::Double => {
+                return Err(Error::BadTypeSpecifier(s.span.clone()));
+            }
+            TypeSpecifier::Struct(_) => {
                 return Err(Error::BadTypeSpecifier(s.span.clone()));
             }
         }
@@ -904,7 +940,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /*
     fn expect_ident(&mut self) -> Result<Spanned<EcoString>, Error> {
         if let Some(spanned) = self.tokens.get(self.index) {
             if let Token::Ident(t) = &spanned.data {
@@ -920,7 +955,7 @@ impl<'a> Parser<'a> {
             Err(Error::UnexpectedEof)
         }
     }
-    */
+
     fn expect_constant(&mut self) -> Result<Spanned<Constant>, Error> {
         if let Some(spanned) = self.tokens.get(self.index) {
             if let Token::Constant(c) = &spanned.data {
@@ -1344,6 +1379,12 @@ impl<'a> Parser<'a> {
                     end = s.span.end;
                     self.advance();
                 }
+                Token::Struct => {
+                    self.advance();
+                    let tag = self.expect_ident()?;
+                    end = tag.span.end;
+                    ty.push(tag.map(TypeSpecifier::Struct));
+                }
                 Token::Static => {
                     if storage_class.is_some() {
                         return Err(Error::ConflictingSpecifier(s.span.clone()));
@@ -1460,6 +1501,11 @@ impl<'a> Parser<'a> {
                     Token::Double => {
                         ty.push(s.clone().map(|_| TypeSpecifier::Double));
                         self.advance();
+                    }
+                    Token::Struct => {
+                        self.advance();
+                        let tag = self.expect_ident()?;
+                        ty.push(tag.map(TypeSpecifier::Struct));
                     }
                     _ => {
                         if ty.is_empty() {
@@ -1660,17 +1706,69 @@ impl<'a> Parser<'a> {
 
     fn parse_postfix_exp(&mut self) -> Result<Expression, Error> {
         let mut exp = self.parse_primary_exp()?;
-        let subscriptions = self.many0(|s| s.parse_square_exp());
+        let postfixes = self.many0(|s| s.parse_postfix_op());
 
-        for sub in subscriptions {
-            exp = Expression::Subscript {
-                array: Box::new(exp),
-                index: Box::new(sub),
-                ty: VarType::Int,
-            };
+        for op in postfixes {
+            match op {
+                PostfixOp::Subscript(index) => {
+                    exp = Expression::Subscript {
+                        array: Box::new(exp),
+                        index: Box::new(index),
+                        ty: VarType::Int,
+                    };
+                }
+                PostfixOp::Dot(ident) => {
+                    exp = Expression::Dot {
+                        structure: Box::new(exp),
+                        member: ident,
+                        ty: VarType::Int,
+                    };
+                }
+                PostfixOp::Arrow(ident) => {
+                    exp = Expression::Arrow {
+                        pointer: Box::new(exp),
+                        member: ident,
+                        ty: VarType::Int,
+                    }
+                }
+            }
         }
 
         Ok(exp)
+    }
+
+    fn parse_postfix_op(&mut self) -> Result<PostfixOp, Error> {
+        match self.peek() {
+            Some(Spanned {
+                data: Token::OpenSquareBracket,
+                ..
+            }) => {
+                self.advance();
+                let exp = self.parse_expression(0)?;
+                self.expect(Token::CloseSquareBracket)?;
+                Ok(PostfixOp::Subscript(exp))
+            }
+            Some(Spanned {
+                data: Token::Dot, ..
+            }) => {
+                self.advance();
+                let ident = self.expect_ident()?;
+                Ok(PostfixOp::Dot(ident))
+            }
+            Some(Spanned {
+                data: Token::Arrow, ..
+            }) => {
+                self.advance();
+                let ident = self.expect_ident()?;
+                Ok(PostfixOp::Arrow(ident))
+            }
+            Some(tok) => Err(Error::Unexpected(
+                tok.clone(),
+                // todo
+                ExpectedToken::Ident,
+            )),
+            None => Err(Error::UnexpectedEof),
+        }
     }
 
     fn parse_cast_exp(&mut self) -> Result<Expression, Error> {
@@ -1887,4 +1985,40 @@ impl<'a> Parser<'a> {
         }
         Ok(left)
     }
+
+    fn parse_struct_decl(&mut self) -> Result<StructDecl, Error> {
+        self.expect(Token::Struct)?;
+        let tag = self.expect_ident()?;
+        self.expect(Token::OpenBrace)?;
+        let member_decls = self.many1(|s| s.parse_struct_member())?;
+        self.expect(Token::CloseBrace)?;
+        self.expect(Token::SemiColon)?;
+
+        Ok(StructDecl {
+            tag: tag.data,
+            member_decls,
+        })
+    }
+
+    fn parse_struct_member(&mut self) -> Result<MemberDecl, Error> {
+        let ty = self.parse_type_specifiers()?;
+        let decl = self.parse_declarator()?;
+        let (ident, ty, _) = process_declarator(decl, ty)?;
+
+        let ty = match ty {
+            Ty::Fun(_) => return Err(Error::NotVarType(ident.span.clone())),
+            Ty::Var(ty) => ty,
+        };
+
+        Ok(MemberDecl {
+            member_name: ident.data,
+            ty,
+        })
+    }
+}
+
+enum PostfixOp {
+    Subscript(Expression),
+    Dot(Spanned<EcoString>),
+    Arrow(Spanned<EcoString>),
 }
