@@ -103,8 +103,6 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
     let mut index = 0;
 
     while index < src.len() {
-        // TODO: Support utf-8
-
         let c = src[index];
         match c {
             _ if c.is_ascii_whitespace() => {
