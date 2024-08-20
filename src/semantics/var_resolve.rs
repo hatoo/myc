@@ -9,10 +9,7 @@ use crate::{
 #[derive(Debug, Default)]
 pub struct VarResolver {
     var_counter: usize,
-    scopes: Vec<(
-        HashMap<EcoString, VarInfo>,
-        HashMap<EcoString, ast::StructDecl>,
-    )>,
+    scopes: Vec<(HashMap<EcoString, VarInfo>, HashMap<EcoString, EcoString>)>,
 }
 
 #[derive(Debug, Clone)]
@@ -66,10 +63,10 @@ impl VarResolver {
         None
     }
 
-    fn lookup_struct(&self, ident: &EcoString) -> Option<&StructDecl> {
-        for (_, scope_struct) in self.scopes.iter().rev() {
-            if let Some(struct_decl) = scope_struct.get(ident) {
-                return Some(struct_decl);
+    fn lookup_struct(&self, ident: &EcoString) -> Option<(bool, &EcoString)> {
+        for (i, (_, scope_struct)) in self.scopes.iter().rev().enumerate() {
+            if let Some(new_name) = scope_struct.get(ident) {
+                return Some((i == 0, new_name));
             }
         }
         None
@@ -87,7 +84,7 @@ impl VarResolver {
         &mut self.scopes.last_mut().unwrap().0
     }
 
-    fn current_scope_struct(&mut self) -> &mut HashMap<EcoString, ast::StructDecl> {
+    fn current_scope_struct(&mut self) -> &mut HashMap<EcoString, EcoString> {
         &mut self.scopes.last_mut().unwrap().1
     }
 
@@ -97,7 +94,7 @@ impl VarResolver {
             match decl {
                 ast::Declaration::VarDecl(decl) => self.resolve_var_decl_file_scope(decl)?,
                 ast::Declaration::FunDecl(decl) => self.resolve_fun_decl(decl, true)?,
-                _ => todo!(),
+                ast::Declaration::StructDecl(decl) => self.resolve_structure_declaration(decl)?,
             }
         }
         self.pop();
@@ -192,7 +189,7 @@ impl VarResolver {
         match decl {
             ast::Declaration::VarDecl(decl) => self.resolve_var_decl_local(decl),
             ast::Declaration::FunDecl(decl) => self.resolve_fun_decl(decl, false),
-            _ => todo!(),
+            ast::Declaration::StructDecl(decl) => self.resolve_structure_declaration(decl),
         }
     }
     fn resolve_fun_decl(&mut self, decl: &mut ast::FunDecl, file_scope: bool) -> Result<(), Error> {
@@ -201,8 +198,10 @@ impl VarResolver {
             params,
             body,
             storage_class,
-            ty: _,
+            ty,
         } = decl;
+
+        self.resolve_fun_type(ty, name.span.clone())?;
 
         if !file_scope && storage_class == &Some(ast::StorageClass::Static) {
             return Err(Error::StaticFunInBlock(name.clone()));
@@ -258,8 +257,10 @@ impl VarResolver {
             ident,
             init: _,
             storage_class: _,
-            ty: _,
+            ty,
         } = decl;
+
+        self.resolve_var_type(ty, ident.span.clone())?;
 
         self.current_scope_var().insert(
             ident.data.clone(),
@@ -276,8 +277,10 @@ impl VarResolver {
             ident,
             init,
             storage_class,
-            ty: _,
+            ty,
         } = decl;
+
+        self.resolve_var_type(ty, ident.span.clone())?;
 
         if let Some(var) = self.current_scope_var().get(&ident.data) {
             if !(var.has_linkage && storage_class == &Some(ast::StorageClass::Extern)) {
@@ -366,7 +369,8 @@ impl VarResolver {
                     Err(Error::UndeclaredFunction(exp.clone()))
                 }
             }
-            ast::Expression::Cast { target: _, exp } => {
+            ast::Expression::Cast { target, exp } => {
+                self.resolve_var_type(target, exp.span())?;
                 self.resolve_expression(exp)?;
                 Ok(())
             }
@@ -389,7 +393,14 @@ impl VarResolver {
                 Ok(())
             }
             ast::Expression::SizeofType(..) => Ok(()),
-            _ => todo!(),
+            ast::Expression::Dot { structure, .. } => {
+                self.resolve_expression(structure)?;
+                Ok(())
+            }
+            ast::Expression::Arrow { pointer, .. } => {
+                self.resolve_expression(pointer)?;
+                Ok(())
+            }
         }
     }
 
@@ -413,8 +424,8 @@ impl VarResolver {
     ) -> Result<(), Error> {
         match ty {
             ast::VarType::Structure(name) => {
-                if let Some(struct_decl) = self.lookup_struct(name) {
-                    *ty = VarType::Structure(struct_decl.tag.clone());
+                if let Some((_, new_name)) = self.lookup_struct(name) {
+                    *ty = VarType::Structure(new_name.clone());
                     Ok(())
                 } else {
                     Err(Error::VariableNotDeclared(Spanned {
@@ -433,5 +444,27 @@ impl VarResolver {
             }
             _ => Ok(()),
         }
+    }
+
+    fn resolve_structure_declaration(&mut self, decl: &mut StructDecl) -> Result<(), Error> {
+        let StructDecl { tag, member_decls } = decl;
+
+        match self.lookup_struct(tag) {
+            None | Some((false, _)) => {
+                let new_name = self.new_var(tag);
+                *tag = new_name.clone();
+                self.current_scope_struct()
+                    .insert(tag.clone(), new_name.clone());
+            }
+            Some((true, prev)) => {
+                *tag = prev.clone();
+            }
+        }
+
+        for member_decl in member_decls {
+            self.resolve_var_type(&mut member_decl.ty, 0..0 /* todo */)?;
+        }
+
+        Ok(())
     }
 }
