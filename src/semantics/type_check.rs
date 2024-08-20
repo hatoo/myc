@@ -1,5 +1,5 @@
 use std::{
-    collections::{hash_map::Entry, HashMap},
+    collections::{hash_map::Entry, HashMap, HashSet},
     fmt::Display,
 };
 
@@ -7,6 +7,7 @@ use ecow::EcoString;
 
 use crate::{
     ast::{self, Expression, Initializer, VarType},
+    math::round_up,
     span::{HasSpan, MayHasSpan, Spanned},
 };
 
@@ -35,6 +36,18 @@ pub enum Attr {
         init: StaticInit,
     },
     Local(ast::VarType),
+    Struct {
+        alignment: usize,
+        size: usize,
+        members: HashMap<EcoString, StructMember>,
+    },
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct StructMember {
+    name: EcoString,
+    ty: ast::VarType,
+    offset: usize,
 }
 
 impl Attr {
@@ -44,6 +57,7 @@ impl Attr {
             Attr::Static { ty, .. } => ty,
             Attr::Local(ty) => ty,
             Attr::Constant { ty, .. } => ty,
+            _ => todo!(),
         }
     }
 }
@@ -1159,6 +1173,54 @@ impl TypeChecker {
             }
             crate::ast::Statement::Null => Ok(()),
         }
+    }
+
+    fn check_struct_decl(&mut self, decl: &ast::StructDecl) -> Result<(), Error> {
+        if decl.member_decls.is_empty() {
+            return Ok(());
+        }
+
+        self.validate_struct_definition(decl)?;
+
+        let mut members = HashMap::new();
+
+        let mut struct_size = 0;
+        let mut struct_align = 0;
+        for member in &decl.member_decls {
+            let align = member.ty.alignment();
+            let offset = round_up(struct_size, align);
+
+            members.insert(
+                member.name.clone(),
+                StructMember {
+                    name: member.name.clone(),
+                    offset,
+                    ty: member.ty.clone(),
+                },
+            );
+        }
+
+        todo!()
+    }
+
+    fn validate_struct_definition(&self, decl: &ast::StructDecl) -> Result<(), Error> {
+        if self.sym_table.contains_key(&decl.tag) {
+            todo!()
+        }
+
+        let mut member_names = HashSet::new();
+
+        for member in &decl.member_decls {
+            if member_names.insert(member.name.clone()) {
+                todo!()
+            }
+
+            if validate_var_type(&member.ty).is_err() {
+                todo!()
+            }
+        }
+
+        Ok(())
     }
 }
 
