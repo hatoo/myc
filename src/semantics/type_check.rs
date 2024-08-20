@@ -66,6 +66,20 @@ impl SymbolTable {
             ty => Ok(ty.alignment()),
         }
     }
+
+    pub fn type_is_complete(&self, ty: &ast::VarType) -> bool {
+        match ty {
+            ast::VarType::Void => false,
+            ast::VarType::Structure(tag) => {
+                if let Some(Attr::Struct { .. }) = self.get(tag) {
+                    true
+                } else {
+                    false
+                }
+            }
+            _ => true,
+        }
+    }
 }
 
 #[derive(Debug, Default)]

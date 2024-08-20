@@ -519,7 +519,7 @@ impl VarType {
     }
 
     pub fn is_scalar(&self) -> bool {
-        !matches!(self, Self::Void | Self::Array { .. })
+        !matches!(self, Self::Void | Self::Array { .. } | Self::Structure(_))
     }
 
     pub fn is_complete(&self) -> bool {
