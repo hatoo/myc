@@ -3,13 +3,16 @@ use std::collections::HashMap;
 use ecow::EcoString;
 
 use crate::{
-    ast::{self, Expression},
+    ast::{self, Expression, StructDecl, VarType},
     span::{HasSpan, Spanned},
 };
 #[derive(Debug, Default)]
 pub struct VarResolver {
     var_counter: usize,
-    scopes: Vec<HashMap<EcoString, VarInfo>>,
+    scopes: Vec<(
+        HashMap<EcoString, VarInfo>,
+        HashMap<EcoString, ast::StructDecl>,
+    )>,
 }
 
 #[derive(Debug, Clone)]
@@ -30,6 +33,8 @@ pub enum Error {
     UndeclaredFunction(Expression),
     #[error("Static function declaration in block scope: {0}")]
     StaticFunInBlock(Spanned<EcoString>),
+    #[error("Struct not declared: {0}")]
+    StructNotDeclared(Spanned<EcoString>),
 }
 
 impl HasSpan for Error {
@@ -40,6 +45,7 @@ impl HasSpan for Error {
             Error::InvalidLValue(exp) => exp.span(),
             Error::UndeclaredFunction(exp) => exp.span(),
             Error::StaticFunInBlock(ident) => ident.span.clone(),
+            Error::StructNotDeclared(ident) => ident.span.clone(),
         }
     }
 }
@@ -51,21 +57,42 @@ impl VarResolver {
         var
     }
 
-    fn lookup(&self, ident: &EcoString) -> Option<&VarInfo> {
-        for scope in self.scopes.iter().rev() {
-            if let Some(var_info) = scope.get(ident) {
+    fn lookup_var(&self, ident: &EcoString) -> Option<&VarInfo> {
+        for (scope_var, _) in self.scopes.iter().rev() {
+            if let Some(var_info) = scope_var.get(ident) {
                 return Some(var_info);
             }
         }
         None
     }
 
-    fn current_scope(&mut self) -> &mut HashMap<EcoString, VarInfo> {
-        self.scopes.last_mut().unwrap()
+    fn lookup_struct(&self, ident: &EcoString) -> Option<&StructDecl> {
+        for (_, scope_struct) in self.scopes.iter().rev() {
+            if let Some(struct_decl) = scope_struct.get(ident) {
+                return Some(struct_decl);
+            }
+        }
+        None
+    }
+
+    fn push(&mut self) {
+        self.scopes.push(Default::default());
+    }
+
+    fn pop(&mut self) {
+        self.scopes.pop().unwrap();
+    }
+
+    fn current_scope_var(&mut self) -> &mut HashMap<EcoString, VarInfo> {
+        &mut self.scopes.last_mut().unwrap().0
+    }
+
+    fn current_scope_struct(&mut self) -> &mut HashMap<EcoString, ast::StructDecl> {
+        &mut self.scopes.last_mut().unwrap().1
     }
 
     pub fn resolve_program(&mut self, program: &mut ast::Program) -> Result<(), Error> {
-        self.scopes.push(HashMap::new());
+        self.push();
         for decl in &mut program.decls {
             match decl {
                 ast::Declaration::VarDecl(decl) => self.resolve_var_decl_file_scope(decl)?,
@@ -73,7 +100,7 @@ impl VarResolver {
                 _ => todo!(),
             }
         }
-        self.scopes.pop().unwrap();
+        self.pop();
         Ok(())
     }
 
@@ -107,11 +134,11 @@ impl VarResolver {
             }
             ast::Statement::Null => Ok(()),
             ast::Statement::Compound(stmts) => {
-                self.scopes.push(HashMap::new());
+                self.push();
                 for block_item in &mut stmts.0 {
                     self.resolve_block_item(block_item)?;
                 }
-                self.scopes.pop().unwrap();
+                self.pop();
                 Ok(())
             }
             ast::Statement::Break { .. } => Ok(()),
@@ -137,7 +164,7 @@ impl VarResolver {
                 body,
                 ..
             } => {
-                self.scopes.push(HashMap::new());
+                self.push();
                 if let Some(for_init) = init {
                     match for_init {
                         ast::ForInit::VarDecl(decl) => {
@@ -155,7 +182,7 @@ impl VarResolver {
                     self.resolve_expression(step)?;
                 }
                 self.resolve_statement(body)?;
-                self.scopes.pop().unwrap();
+                self.pop();
                 Ok(())
             }
         }
@@ -183,12 +210,12 @@ impl VarResolver {
 
         if let Some(VarInfo {
             has_linkage: false, ..
-        }) = self.current_scope().get(&name.data)
+        }) = self.current_scope_var().get(&name.data)
         {
             return Err(Error::VariableAlreadyDeclared(name.clone()));
         }
 
-        self.current_scope().insert(
+        self.current_scope_var().insert(
             name.data.clone(),
             VarInfo {
                 new_name: name.data.clone(),
@@ -196,12 +223,12 @@ impl VarResolver {
             },
         );
 
-        self.scopes.push(HashMap::new());
+        self.push();
 
         for param in params {
             let unique_name = self.new_var(&param.data);
             if self
-                .current_scope()
+                .current_scope_var()
                 .insert(
                     param.data.clone(),
                     VarInfo {
@@ -222,7 +249,7 @@ impl VarResolver {
             }
         }
 
-        self.scopes.pop().unwrap();
+        self.pop();
         Ok(())
     }
 
@@ -234,7 +261,7 @@ impl VarResolver {
             ty: _,
         } = decl;
 
-        self.current_scope().insert(
+        self.current_scope_var().insert(
             ident.data.clone(),
             VarInfo {
                 new_name: ident.data.clone(),
@@ -252,14 +279,14 @@ impl VarResolver {
             ty: _,
         } = decl;
 
-        if let Some(var) = self.current_scope().get(&ident.data) {
+        if let Some(var) = self.current_scope_var().get(&ident.data) {
             if !(var.has_linkage && storage_class == &Some(ast::StorageClass::Extern)) {
                 return Err(Error::VariableAlreadyDeclared(ident.clone()));
             }
         }
 
         if storage_class == &Some(ast::StorageClass::Extern) {
-            self.current_scope().insert(
+            self.current_scope_var().insert(
                 ident.data.clone(),
                 VarInfo {
                     new_name: ident.data.clone(),
@@ -269,7 +296,7 @@ impl VarResolver {
             Ok(())
         } else {
             let unique_name = self.new_var(&ident.data);
-            self.current_scope().insert(
+            self.current_scope_var().insert(
                 ident.data.clone(),
                 VarInfo {
                     new_name: unique_name.clone(),
@@ -306,7 +333,7 @@ impl VarResolver {
                 Ok(())
             }
             ast::Expression::Var(var, ..) => {
-                if let Some(unique_name) = self.lookup(&var.data) {
+                if let Some(unique_name) = self.lookup_var(&var.data) {
                     var.data = unique_name.new_name.clone();
                     Ok(())
                 } else {
@@ -329,7 +356,7 @@ impl VarResolver {
                 Ok(())
             }
             ast::Expression::FunctionCall { name, args, .. } => {
-                if let Some(var_info) = self.lookup(&name.data) {
+                if let Some(var_info) = self.lookup_var(&name.data) {
                     name.data = var_info.new_name.clone();
                     for arg in args {
                         self.resolve_expression(arg)?;
@@ -363,6 +390,48 @@ impl VarResolver {
             }
             ast::Expression::SizeofType(..) => Ok(()),
             _ => todo!(),
+        }
+    }
+
+    fn resolve_fun_type(
+        &mut self,
+        ty: &mut ast::FunType,
+        span: std::ops::Range<usize>,
+    ) -> Result<(), Error> {
+        for arg in &mut ty.params {
+            self.resolve_var_type(arg, span.clone())?;
+        }
+        self.resolve_var_type(&mut ty.ret, span)?;
+
+        Ok(())
+    }
+
+    fn resolve_var_type(
+        &mut self,
+        ty: &mut ast::VarType,
+        span: std::ops::Range<usize>,
+    ) -> Result<(), Error> {
+        match ty {
+            ast::VarType::Structure(name) => {
+                if let Some(struct_decl) = self.lookup_struct(name) {
+                    *ty = VarType::Structure(struct_decl.tag.clone());
+                    Ok(())
+                } else {
+                    Err(Error::VariableNotDeclared(Spanned {
+                        data: name.clone(),
+                        span,
+                    }))
+                }
+            }
+            ast::VarType::Pointer(inner) => match inner.as_mut() {
+                ast::Ty::Fun(ty) => self.resolve_fun_type(ty, span),
+                ast::Ty::Var(ty) => self.resolve_var_type(ty, span),
+            },
+            ast::VarType::Array { element, .. } => {
+                self.resolve_var_type(element.as_mut(), span)?;
+                Ok(())
+            }
+            _ => Ok(()),
         }
     }
 }

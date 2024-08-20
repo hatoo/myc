@@ -43,7 +43,7 @@ pub struct StructDecl {
 
 #[derive(Debug)]
 pub struct MemberDecl {
-    pub member_name: EcoString,
+    pub name: EcoString,
     pub ty: VarType,
 }
 
@@ -2030,7 +2030,7 @@ impl<'a> Parser<'a> {
         };
 
         Ok(MemberDecl {
-            member_name: ident.data,
+            name: ident.data,
             ty,
         })
     }
