@@ -7,7 +7,7 @@ use std::{
 use ecow::EcoString;
 
 use crate::{
-    ast::{self, Expression, Initializer, VarType},
+    ast::{self, Expression, Initializer, Ty, VarType},
     math::round_up,
     span::{HasSpan, MayHasSpan, Spanned},
 };
@@ -1103,7 +1103,50 @@ impl TypeChecker {
                     .map_err(|_| Error::IncompatibleTypes(exp.span()))?;
                 Ok(ast::BaseType::Ulong.into())
             }
-            _ => todo!(),
+            ast::Expression::Dot {
+                structure,
+                member,
+                ty,
+            } => {
+                let structure_ty = self.check_expression_and_convert(structure)?;
+                if let ast::VarType::Struct(s) = structure_ty {
+                    let Attr::Struct { members, .. } = &self.sym_table[&s.data] else {
+                        unreachable!()
+                    };
+                    if let Some(member) = members.get(&member.data) {
+                        *ty = member.ty.clone();
+                        Ok(ty.clone())
+                    } else {
+                        Err(Error::IncompatibleTypes(exp.span()))
+                    }
+                } else {
+                    Err(Error::IncompatibleTypes(exp.span()))
+                }
+            }
+            ast::Expression::Arrow {
+                pointer,
+                member,
+                ty,
+            } => {
+                if let VarType::Pointer(box_ty) = self.check_expression_and_convert(pointer)? {
+                    let s = if let Ty::Var(VarType::Struct(s)) = box_ty.as_ref() {
+                        s
+                    } else {
+                        return Err(Error::IncompatibleTypes(exp.span()));
+                    };
+                    let Attr::Struct { members, .. } = &self.sym_table[&s.data] else {
+                        unreachable!()
+                    };
+                    if let Some(member) = members.get(&member.data) {
+                        *ty = member.ty.clone();
+                        Ok(ty.clone())
+                    } else {
+                        Err(Error::IncompatibleTypes(exp.span()))
+                    }
+                } else {
+                    Err(Error::IncompatibleTypes(exp.span()))
+                }
+            }
         }
     }
 
