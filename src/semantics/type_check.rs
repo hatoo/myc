@@ -36,7 +36,7 @@ impl SymbolTable {
                 let element_size = self.type_size(element)?;
                 Ok(element_size * size)
             }
-            ast::VarType::Structure(name) => {
+            ast::VarType::Struct(name) => {
                 let Some(Attr::Struct { size, .. }) = self.get(name) else {
                     todo!()
                 };
@@ -56,7 +56,7 @@ impl SymbolTable {
                     Ok(16)
                 }
             }
-            ast::VarType::Structure(name) => {
+            ast::VarType::Struct(name) => {
                 let Some(Attr::Struct { alignment, .. }) = self.get(name) else {
                     todo!()
                 };
@@ -70,7 +70,7 @@ impl SymbolTable {
     pub fn type_is_complete(&self, ty: &ast::VarType) -> bool {
         match ty {
             ast::VarType::Void => false,
-            ast::VarType::Structure(tag) => {
+            ast::VarType::Struct(tag) => {
                 if let Some(Attr::Struct { .. }) = self.get(tag) {
                     true
                 } else {
@@ -1290,7 +1290,7 @@ impl TypeChecker {
                     self.validate_var_type(ty)?;
                 }
             },
-            VarType::Structure(tag) => {
+            VarType::Struct(tag) => {
                 if !matches!(self.sym_table.get(tag), Some(Attr::Struct { .. })) {
                     return Err(());
                 }

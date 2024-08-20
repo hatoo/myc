@@ -6,7 +6,7 @@ use std::{
     sync::Arc,
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Spanned<T> {
     pub data: T,
     pub span: Range<usize>,

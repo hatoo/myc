@@ -201,7 +201,7 @@ impl VarResolver {
             ty,
         } = decl;
 
-        self.resolve_fun_type(ty, name.span.clone())?;
+        self.resolve_fun_type(ty)?;
 
         if !file_scope && storage_class == &Some(ast::StorageClass::Static) {
             return Err(Error::StaticFunInBlock(name.clone()));
@@ -260,7 +260,7 @@ impl VarResolver {
             ty,
         } = decl;
 
-        self.resolve_var_type(ty, ident.span.clone())?;
+        self.resolve_var_type(ty)?;
 
         self.current_scope_var().insert(
             ident.data.clone(),
@@ -280,7 +280,7 @@ impl VarResolver {
             ty,
         } = decl;
 
-        self.resolve_var_type(ty, ident.span.clone())?;
+        self.resolve_var_type(ty)?;
 
         if let Some(var) = self.current_scope_var().get(&ident.data) {
             if !(var.has_linkage && storage_class == &Some(ast::StorageClass::Extern)) {
@@ -370,7 +370,7 @@ impl VarResolver {
                 }
             }
             ast::Expression::Cast { target, exp } => {
-                self.resolve_var_type(target, exp.span())?;
+                self.resolve_var_type(target)?;
                 self.resolve_expression(exp)?;
                 Ok(())
             }
@@ -404,42 +404,31 @@ impl VarResolver {
         }
     }
 
-    fn resolve_fun_type(
-        &mut self,
-        ty: &mut ast::FunType,
-        span: std::ops::Range<usize>,
-    ) -> Result<(), Error> {
+    fn resolve_fun_type(&mut self, ty: &mut ast::FunType) -> Result<(), Error> {
         for arg in &mut ty.params {
-            self.resolve_var_type(arg, span.clone())?;
+            self.resolve_var_type(arg)?;
         }
-        self.resolve_var_type(&mut ty.ret, span)?;
+        self.resolve_var_type(&mut ty.ret)?;
 
         Ok(())
     }
 
-    fn resolve_var_type(
-        &mut self,
-        ty: &mut ast::VarType,
-        span: std::ops::Range<usize>,
-    ) -> Result<(), Error> {
+    fn resolve_var_type(&mut self, ty: &mut ast::VarType) -> Result<(), Error> {
         match ty {
-            ast::VarType::Structure(name) => {
-                if let Some((_, new_name)) = self.lookup_struct(name) {
-                    *ty = VarType::Structure(new_name.clone());
+            ast::VarType::Struct(name) => {
+                if let Some((_, new_name)) = self.lookup_struct(&name.data) {
+                    name.data = new_name.clone();
                     Ok(())
                 } else {
-                    Err(Error::VariableNotDeclared(Spanned {
-                        data: name.clone(),
-                        span,
-                    }))
+                    Err(Error::VariableNotDeclared(name.clone()))
                 }
             }
             ast::VarType::Pointer(inner) => match inner.as_mut() {
-                ast::Ty::Fun(ty) => self.resolve_fun_type(ty, span),
-                ast::Ty::Var(ty) => self.resolve_var_type(ty, span),
+                ast::Ty::Fun(ty) => self.resolve_fun_type(ty),
+                ast::Ty::Var(ty) => self.resolve_var_type(ty),
             },
             ast::VarType::Array { element, .. } => {
-                self.resolve_var_type(element.as_mut(), span)?;
+                self.resolve_var_type(element.as_mut())?;
                 Ok(())
             }
             _ => Ok(()),
@@ -462,7 +451,7 @@ impl VarResolver {
         }
 
         for member_decl in member_decls {
-            self.resolve_var_type(&mut member_decl.ty, 0..0 /* todo */)?;
+            self.resolve_var_type(&mut member_decl.ty)?;
         }
 
         Ok(())
