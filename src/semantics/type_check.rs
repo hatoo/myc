@@ -37,13 +37,15 @@ impl SymbolTable {
                 Ok(element_size * size)
             }
             ast::VarType::Struct(name) => {
-                let Some(Attr::Struct { size, .. }) = self.get(name) else {
-                    todo!()
+                let Some(Attr::Struct { size, .. }) = self.get(&name.data) else {
+                    return Err(Error::IncompatibleTypes(name.span.clone()));
                 };
 
                 Ok(*size)
             }
-            ty => Ok(ty.size()),
+            ast::VarType::Pointer(_) => Ok(8),
+            ast::VarType::Base(base) => Ok(base.size()),
+            ast::VarType::Void => panic!("Get size of void"),
         }
     }
 
@@ -57,13 +59,15 @@ impl SymbolTable {
                 }
             }
             ast::VarType::Struct(name) => {
-                let Some(Attr::Struct { alignment, .. }) = self.get(name) else {
-                    todo!()
+                let Some(Attr::Struct { alignment, .. }) = self.get(&name.data) else {
+                    return Err(Error::IncompatibleTypes(name.span.clone()));
                 };
 
                 Ok(*alignment)
             }
-            ty => Ok(ty.alignment()),
+            ast::VarType::Pointer(_) => Ok(8),
+            ast::VarType::Base(base) => Ok(base.alignment()),
+            ast::VarType::Void => panic!("Get alignment of void"),
         }
     }
 
@@ -71,7 +75,7 @@ impl SymbolTable {
         match ty {
             ast::VarType::Void => false,
             ast::VarType::Struct(tag) => {
-                if let Some(Attr::Struct { .. }) = self.get(tag) {
+                if let Some(Attr::Struct { .. }) = self.get(&tag.data) {
                     true
                 } else {
                     false

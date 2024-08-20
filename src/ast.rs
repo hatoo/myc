@@ -462,6 +462,10 @@ impl BaseType {
                 | Self::UChar
         )
     }
+
+    pub fn is_character(&self) -> bool {
+        matches!(self, Self::Char | Self::SChar | Self::UChar)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -483,6 +487,22 @@ impl VarType {
     pub fn is_integer(&self) -> bool {
         if let Self::Base(base) = self {
             base.is_integer()
+        } else {
+            false
+        }
+    }
+
+    pub fn is_pointer(&self) -> bool {
+        matches!(self, Self::Pointer(_))
+    }
+
+    pub fn is_array(&self) -> bool {
+        matches!(self, Self::Array { .. })
+    }
+
+    pub fn is_character(&self) -> bool {
+        if let Self::Base(base) = self {
+            base.is_character()
         } else {
             false
         }
