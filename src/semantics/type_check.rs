@@ -1281,7 +1281,7 @@ impl TypeChecker {
     fn validate_var_type(&self, ty: &ast::VarType) -> Result<(), ()> {
         match ty {
             VarType::Array { element, .. } => {
-                if !element.is_complete() {
+                if !self.sym_table.type_is_complete(element) {
                     return Err(());
                 }
                 self.validate_var_type(&element)?;
@@ -1295,7 +1295,7 @@ impl TypeChecker {
                 }
             },
             VarType::Struct(tag) => {
-                if !matches!(self.sym_table.get(tag), Some(Attr::Struct { .. })) {
+                if !matches!(self.sym_table.get(&tag.data), Some(Attr::Struct { .. })) {
                     return Err(());
                 }
             }
