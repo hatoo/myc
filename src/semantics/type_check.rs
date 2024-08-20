@@ -298,48 +298,13 @@ fn convert_by_assignment(exp: &mut ast::Expression, ty: &ast::VarType) -> Result
     Err(Error::IncompatibleTypes(exp.span()))
 }
 
-fn validate_fun_type(ty: &ast::FunType) -> Result<(), ()> {
-    for ty in &ty.params {
-        if ty == &ast::VarType::Void {
-            return Err(());
-        }
-        validate_var_type(ty)?;
-    }
-
-    validate_var_type(&ty.ret)?;
-
-    Ok(())
-}
-
-fn validate_var_type(ty: &ast::VarType) -> Result<(), ()> {
-    match ty {
-        VarType::Array { element, .. } => {
-            if !element.is_complete() {
-                return Err(());
-            }
-            validate_var_type(&element)?;
-        }
-        VarType::Pointer(ty) => match ty.as_ref() {
-            ast::Ty::Fun(ty) => {
-                validate_fun_type(ty)?;
-            }
-            ast::Ty::Var(ty) => {
-                validate_var_type(ty)?;
-            }
-        },
-        _ => {}
-    }
-
-    Ok(())
-}
-
 impl TypeChecker {
     pub fn check_program(&mut self, program: &mut crate::ast::Program) -> Result<(), Error> {
         for decl in &mut program.decls {
             match decl {
                 crate::ast::Declaration::VarDecl(decl) => self.check_var_decl_file(decl)?,
                 crate::ast::Declaration::FunDecl(decl) => self.check_fun_decl(decl)?,
-                _ => todo!(),
+                crate::ast::Declaration::StructDecl(decl) => self.check_struct_decl(decl)?,
             }
         }
 
@@ -473,7 +438,8 @@ impl TypeChecker {
             ty,
         } = fun_decl;
 
-        validate_fun_type(ty).map_err(|_| Error::IncompatibleTypes(name.span.clone()))?;
+        self.validate_fun_type(ty)
+            .map_err(|_| Error::IncompatibleTypes(name.span.clone()))?;
 
         if ty.ret.is_array() {
             return Err(Error::IncompatibleTypes(name.span.clone()));
@@ -567,7 +533,8 @@ impl TypeChecker {
             ty,
         } = decl;
 
-        validate_var_type(ty).map_err(|_| Error::IncompatibleTypes(ident.span.clone()))?;
+        self.validate_var_type(ty)
+            .map_err(|_| Error::IncompatibleTypes(ident.span.clone()))?;
         if ty == &ast::VarType::Void {
             return Err(Error::IncompatibleTypes(ident.span.clone()));
         }
@@ -586,7 +553,7 @@ impl TypeChecker {
         let mut global = storage_class != &Some(crate::ast::StorageClass::Static);
 
         match self.sym_table.get(&ident.data) {
-            Some(Attr::Fun { .. }) => {
+            Some(Attr::Fun { .. } | Attr::Struct { .. }) => {
                 return Err(Error::IncompatibleTypes(ident.span.clone()));
             }
             Some(Attr::Static {
@@ -640,7 +607,8 @@ impl TypeChecker {
             ty,
         } = decl;
 
-        validate_var_type(ty).map_err(|_| Error::IncompatibleTypes(ident.span.clone()))?;
+        self.validate_var_type(ty)
+            .map_err(|_| Error::IncompatibleTypes(ident.span.clone()))?;
         if ty == &ast::VarType::Void {
             return Err(Error::IncompatibleTypes(ident.span.clone()));
         }
@@ -652,7 +620,7 @@ impl TypeChecker {
                 }
                 match self.sym_table.entry(ident.data.clone()) {
                     Entry::Occupied(o) => match o.get() {
-                        Attr::Fun { .. } => {
+                        Attr::Fun { .. } | Attr::Struct { .. } => {
                             return Err(Error::IncompatibleTypes(ident.span.clone()));
                         }
                         Attr::Local(ty0) | Attr::Static { ty: ty0, .. } => {
@@ -764,7 +732,7 @@ impl TypeChecker {
                     *ty = target.clone();
                     Ok(target.clone())
                 }
-                Some(Attr::Constant { .. }) => {
+                Some(Attr::Constant { .. } | Attr::Struct { .. }) => {
                     unreachable!()
                 }
                 None => Err(Error::IncompatibleTypes(name.span.clone())),
@@ -992,7 +960,8 @@ impl TypeChecker {
                 _ => Err(Error::IncompatibleTypes(name.span.clone())),
             },
             crate::ast::Expression::Cast { target, exp } => {
-                validate_var_type(target).map_err(|_| Error::IncompatibleTypes(exp.span()))?;
+                self.validate_var_type(target)
+                    .map_err(|_| Error::IncompatibleTypes(exp.span()))?;
                 let ty = self.check_expression_and_convert(exp)?;
 
                 if (target.is_pointer() && ty == VarType::Double)
@@ -1100,7 +1069,8 @@ impl TypeChecker {
                         return Err(Error::IncompatibleTypes(exp.span()));
                     }
                 }
-                validate_var_type(&ty.data).map_err(|_| Error::IncompatibleTypes(exp.span()))?;
+                self.validate_var_type(&ty.data)
+                    .map_err(|_| Error::IncompatibleTypes(exp.span()))?;
                 Ok(ast::VarType::Ulong)
             }
             _ => todo!(),
@@ -1282,10 +1252,50 @@ impl TypeChecker {
                 todo!()
             }
 
-            if validate_var_type(&member.ty).is_err() {
+            if self.validate_var_type(&member.ty).is_err() {
                 todo!()
             }
         }
+
+        Ok(())
+    }
+
+    fn validate_var_type(&self, ty: &ast::VarType) -> Result<(), ()> {
+        match ty {
+            VarType::Array { element, .. } => {
+                if !element.is_complete() {
+                    return Err(());
+                }
+                self.validate_var_type(&element)?;
+            }
+            VarType::Pointer(ty) => match ty.as_ref() {
+                ast::Ty::Fun(ty) => {
+                    self.validate_fun_type(ty)?;
+                }
+                ast::Ty::Var(ty) => {
+                    self.validate_var_type(ty)?;
+                }
+            },
+            VarType::Structure(tag) => {
+                if !matches!(self.sym_table.get(tag), Some(Attr::Struct { .. })) {
+                    return Err(());
+                }
+            }
+            _ => {}
+        }
+
+        Ok(())
+    }
+
+    fn validate_fun_type(&self, ty: &ast::FunType) -> Result<(), ()> {
+        for ty in &ty.params {
+            if ty == &ast::VarType::Void {
+                return Err(());
+            }
+            self.validate_var_type(ty)?;
+        }
+
+        self.validate_var_type(&ty.ret)?;
 
         Ok(())
     }
