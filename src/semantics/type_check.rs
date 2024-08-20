@@ -1,6 +1,7 @@
 use std::{
     collections::{hash_map::Entry, HashMap, HashSet},
     fmt::Display,
+    ops::DerefMut,
 };
 
 use ecow::EcoString;
@@ -11,7 +12,61 @@ use crate::{
     span::{HasSpan, MayHasSpan, Spanned},
 };
 
-pub type SymbolTable = HashMap<EcoString, Attr>;
+#[derive(Debug, Default)]
+pub struct SymbolTable(pub HashMap<EcoString, Attr>);
+
+impl std::ops::Deref for SymbolTable {
+    type Target = HashMap<EcoString, Attr>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for SymbolTable {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl SymbolTable {
+    pub fn type_size(&self, ty: &ast::VarType) -> Result<usize, Error> {
+        match ty {
+            ast::VarType::Array { element, size } => {
+                let element_size = self.type_size(element)?;
+                Ok(element_size * size)
+            }
+            ast::VarType::Structure(name) => {
+                let Some(Attr::Struct { size, .. }) = self.get(name) else {
+                    todo!()
+                };
+
+                Ok(*size)
+            }
+            ty => Ok(ty.size()),
+        }
+    }
+
+    pub fn type_alignment(&self, ty: &ast::VarType) -> Result<usize, Error> {
+        match ty {
+            ast::VarType::Array { element, .. } => {
+                if self.type_size(ty)? < 16 {
+                    self.type_alignment(element)
+                } else {
+                    Ok(16)
+                }
+            }
+            ast::VarType::Structure(name) => {
+                let Some(Attr::Struct { alignment, .. }) = self.get(name) else {
+                    todo!()
+                };
+
+                Ok(*alignment)
+            }
+            ty => Ok(ty.alignment()),
+        }
+    }
+}
 
 #[derive(Debug, Default)]
 pub struct TypeChecker {
@@ -1187,7 +1242,7 @@ impl TypeChecker {
         let mut struct_size = 0;
         let mut struct_align = 0;
         for member in &decl.member_decls {
-            let align = member.ty.alignment();
+            let align = self.sym_table.type_alignment(&member.ty)?;
             let offset = round_up(struct_size, align);
 
             members.insert(
@@ -1198,9 +1253,21 @@ impl TypeChecker {
                     ty: member.ty.clone(),
                 },
             );
-        }
 
-        todo!()
+            struct_size = offset + self.sym_table.type_size(&member.ty)?;
+            struct_align = std::cmp::max(struct_align, align);
+        }
+        struct_size = round_up(struct_size, struct_align);
+
+        self.sym_table.insert(
+            decl.tag.clone(),
+            Attr::Struct {
+                members,
+                size: struct_size,
+                alignment: struct_align,
+            },
+        );
+        Ok(())
     }
 
     fn validate_struct_definition(&self, decl: &ast::StructDecl) -> Result<(), Error> {
