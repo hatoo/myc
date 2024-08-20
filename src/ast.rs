@@ -468,7 +468,7 @@ impl BaseType {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub enum VarType {
     Void,
     Base(BaseType),
@@ -483,6 +483,29 @@ impl From<BaseType> for VarType {
     }
 }
 
+impl PartialEq for VarType {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Base(l0), Self::Base(r0)) => l0 == r0,
+            (Self::Pointer(l0), Self::Pointer(r0)) => l0 == r0,
+            (
+                Self::Array {
+                    element: l_element,
+                    size: l_size,
+                },
+                Self::Array {
+                    element: r_element,
+                    size: r_size,
+                },
+            ) => l_element == r_element && l_size == r_size,
+            (Self::Struct(l0), Self::Struct(r0)) => l0.data == r0.data,
+            _ => core::mem::discriminant(self) == core::mem::discriminant(other),
+        }
+    }
+}
+
+impl Eq for VarType {}
+
 impl VarType {
     pub fn is_integer(&self) -> bool {
         if let Self::Base(base) = self {
@@ -490,6 +513,10 @@ impl VarType {
         } else {
             false
         }
+    }
+
+    pub fn is_scalar(&self) -> bool {
+        matches!(self, Self::Base(_))
     }
 
     pub fn is_pointer(&self) -> bool {

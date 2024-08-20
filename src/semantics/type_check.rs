@@ -30,10 +30,10 @@ impl DerefMut for SymbolTable {
 }
 
 impl SymbolTable {
-    pub fn type_size(&self, ty: &ast::VarType) -> Result<usize, Error> {
+    pub fn size(&self, ty: &ast::VarType) -> Result<usize, Error> {
         match ty {
             ast::VarType::Array { element, size } => {
-                let element_size = self.type_size(element)?;
+                let element_size = self.size(element)?;
                 Ok(element_size * size)
             }
             ast::VarType::Struct(name) => {
@@ -49,11 +49,11 @@ impl SymbolTable {
         }
     }
 
-    pub fn type_alignment(&self, ty: &ast::VarType) -> Result<usize, Error> {
+    pub fn alignment(&self, ty: &ast::VarType) -> Result<usize, Error> {
         match ty {
             ast::VarType::Array { element, .. } => {
-                if self.type_size(ty)? < 16 {
-                    self.type_alignment(element)
+                if self.size(ty)? < 16 {
+                    self.alignment(element)
                 } else {
                     Ok(16)
                 }
@@ -71,7 +71,7 @@ impl SymbolTable {
         }
     }
 
-    pub fn type_is_complete(&self, ty: &ast::VarType) -> bool {
+    pub fn is_complete(&self, ty: &ast::VarType) -> bool {
         match ty {
             ast::VarType::Void => false,
             ast::VarType::Struct(tag) => {
@@ -82,6 +82,16 @@ impl SymbolTable {
                 }
             }
             _ => true,
+        }
+    }
+
+    pub fn is_pointer_to_complete(&self, ty: &ast::VarType) -> bool {
+        match ty {
+            ast::VarType::Pointer(ty) => match ty.as_ref() {
+                ast::Ty::Var(ty) => self.is_complete(ty),
+                _ => false,
+            },
+            _ => false,
         }
     }
 }
@@ -762,16 +772,16 @@ impl TypeChecker {
                         if !self.check_expression_and_convert(exp)?.is_scalar() {
                             return Err(Error::IncompatibleTypes(exp.span()));
                         }
-                        *ty = ast::VarType::Int;
+                        *ty = ast::BaseType::Int.into();
                     }
                     ast::UnaryOp::Complement => {
                         *ty = self.check_expression(exp)?;
-                        if *ty == ast::VarType::Double || ty.is_pointer() {
+                        if *ty == ast::BaseType::Double.into() || ty.is_pointer() {
                             return Err(Error::IncompatibleTypes(exp.span()));
                         }
                         if ty.is_character() {
-                            *ty = ast::VarType::Int;
-                            convert_to(exp, &ast::VarType::Int);
+                            *ty = ast::BaseType::Int.into();
+                            convert_to(exp, &ast::VarType::Base(ast::BaseType::Int));
                         }
                     }
                     ast::UnaryOp::Negate => {
@@ -780,8 +790,8 @@ impl TypeChecker {
                             return Err(Error::IncompatibleTypes(exp.span()));
                         }
                         if ty.is_character() {
-                            *ty = ast::VarType::Int;
-                            convert_to(exp, &ast::VarType::Int);
+                            *ty = ast::BaseType::Int.into();
+                            convert_to(exp, &ast::VarType::Base(ast::BaseType::Int));
                         }
                     }
                 }
@@ -796,7 +806,7 @@ impl TypeChecker {
                         if !tyl.is_scalar() || !tyr.is_scalar() {
                             return Err(Error::IncompatibleTypes(exp.span()));
                         }
-                        *ty = ast::VarType::Int;
+                        *ty = ast::BaseType::Int.into();
                     }
                     ast::BinaryOp::Equal | ast::BinaryOp::NotEqual => {
                         let cty = if tyl.is_pointer() || tyr.is_pointer() {
@@ -806,7 +816,7 @@ impl TypeChecker {
                                 return Err(Error::IncompatibleTypes(exp.span()));
                             }
                         } else {
-                            if !tyl.is_complete() || !tyr.is_complete() {
+                            if !tyl.is_scalar() || !tyr.is_scalar() {
                                 return Err(Error::IncompatibleTypes(exp.span()));
                             }
                             common_type(tyl, tyr)
@@ -815,7 +825,7 @@ impl TypeChecker {
                         convert_to(lhs, &cty);
                         convert_to(rhs, &cty);
 
-                        *ty = ast::VarType::Int;
+                        *ty = ast::BaseType::Int.into();
                     }
                     ast::BinaryOp::Add => {
                         if !tyl.is_pointer() && !tyr.is_pointer() {
@@ -823,11 +833,11 @@ impl TypeChecker {
                             convert_to(lhs, &cty);
                             convert_to(rhs, &cty);
                             *ty = cty;
-                        } else if tyl.is_pointer_to_complete() && tyr.is_integer() {
-                            convert_to(rhs, &VarType::Long);
+                        } else if self.sym_table.is_pointer_to_complete(&tyl) && tyr.is_integer() {
+                            convert_to(rhs, &VarType::Base(ast::BaseType::Long));
                             *ty = tyl.clone();
-                        } else if tyl.is_integer() && tyr.is_pointer_to_complete() {
-                            convert_to(lhs, &VarType::Long);
+                        } else if tyl.is_integer() && self.sym_table.is_pointer_to_complete(&tyr) {
+                            convert_to(lhs, &VarType::Base(ast::BaseType::Long));
                             *ty = tyr.clone();
                         } else {
                             return Err(Error::IncompatibleTypes(exp.span()));
@@ -839,14 +849,14 @@ impl TypeChecker {
                             convert_to(lhs, &cty);
                             convert_to(rhs, &cty);
                             *ty = cty;
-                        } else if tyl.is_pointer_to_complete() && tyr.is_integer() {
-                            convert_to(rhs, &VarType::Long);
+                        } else if self.sym_table.is_pointer_to_complete(&tyl) && tyr.is_integer() {
+                            convert_to(rhs, &VarType::Base(ast::BaseType::Long));
                             *ty = tyl.clone();
-                        } else if tyl.is_pointer_to_complete()
-                            && tyr.is_pointer_to_complete()
+                        } else if self.sym_table.is_pointer_to_complete(&tyl)
+                            && self.sym_table.is_pointer_to_complete(&tyr)
                             && tyl == tyr
                         {
-                            *ty = ast::VarType::Long;
+                            *ty = ast::BaseType::Long.into();
                         } else {
                             return Err(Error::IncompatibleTypes(exp.span()));
                         }
@@ -871,7 +881,7 @@ impl TypeChecker {
                             let cty = common_type(tyl.clone(), tyr.clone());
                             convert_to(lhs, &cty);
                             convert_to(rhs, &cty);
-                            if cty == ast::VarType::Double || cty.is_pointer() {
+                            if cty == ast::BaseType::Double.into() || cty.is_pointer() {
                                 return Err(Error::IncompatibleTypes(exp.span()));
                             }
                             *ty = cty;
@@ -881,7 +891,9 @@ impl TypeChecker {
                                 return Err(Error::IncompatibleTypes(exp.span()));
                             }
 
-                            if !tyl.is_complete() || !tyr.is_complete() {
+                            if !self.sym_table.is_complete(&tyl)
+                                || !self.sym_table.is_complete(&tyr)
+                            {
                                 return Err(Error::IncompatibleTypes(exp.span()));
                             }
 
@@ -891,7 +903,7 @@ impl TypeChecker {
                                 convert_to(rhs, &cty);
                             }
 
-                            *ty = ast::VarType::Int;
+                            *ty = ast::BaseType::Int.into();
                         }
                     },
                 }
@@ -982,8 +994,8 @@ impl TypeChecker {
                     .map_err(|_| Error::IncompatibleTypes(exp.span()))?;
                 let ty = self.check_expression_and_convert(exp)?;
 
-                if (target.is_pointer() && ty == VarType::Double)
-                    || (ty.is_pointer() && target == &VarType::Double)
+                if (target.is_pointer() && ty == ast::BaseType::Double.into())
+                    || (ty.is_pointer() && target == &VarType::Base(ast::BaseType::Double))
                 {
                     return Err(Error::IncompatibleTypes(exp.span()));
                 }
@@ -1026,11 +1038,11 @@ impl TypeChecker {
                 let index_ty = self.check_expression_and_convert(index)?;
 
                 if array_ty.is_pointer() && index_ty.is_integer() {
-                    convert_to(index, &ast::VarType::Long);
+                    convert_to(index, &ast::VarType::Base(ast::BaseType::Long));
                     *ty = match array_ty {
                         ast::VarType::Pointer(ty) => {
                             if let ast::Ty::Var(ty) = ty.as_ref() {
-                                if !ty.is_complete() {
+                                if !self.sym_table.is_complete(ty) {
                                     return Err(Error::IncompatibleTypes(exp.span()));
                                 }
                                 ty.clone()
@@ -1041,11 +1053,11 @@ impl TypeChecker {
                         _ => unreachable!(),
                     };
                 } else if array_ty.is_integer() && index_ty.is_pointer() {
-                    convert_to(array, &ast::VarType::Long);
+                    convert_to(array, &ast::BaseType::Long.into());
                     *ty = match index_ty {
                         ast::VarType::Pointer(ty) => {
                             if let ast::Ty::Var(ty) = ty.as_ref() {
-                                if !ty.is_complete() {
+                                if !self.sym_table.is_complete(ty) {
                                     return Err(Error::IncompatibleTypes(exp.span()));
                                 }
                                 ty.clone()
@@ -1064,7 +1076,7 @@ impl TypeChecker {
             ast::Expression::String(_, ty) => Ok(ty.clone()),
             ast::Expression::Sizeof(exp) => {
                 let ty = self.check_expression(exp)?;
-                if !ty.is_complete() {
+                if !self.sym_table.is_complete(&ty) {
                     return Err(Error::IncompatibleTypes(exp.span()));
                 }
 
@@ -1075,10 +1087,10 @@ impl TypeChecker {
                     }
                 }
 
-                Ok(ast::VarType::Ulong)
+                Ok(ast::BaseType::Ulong.into())
             }
             ast::Expression::SizeofType(ty) => {
-                if !ty.data.is_complete() {
+                if !self.sym_table.is_complete(&ty.data) {
                     return Err(Error::IncompatibleTypes(exp.span()));
                 }
                 if let ast::VarType::Pointer(ty) = &ty.data {
@@ -1089,7 +1101,7 @@ impl TypeChecker {
                 }
                 self.validate_var_type(&ty.data)
                     .map_err(|_| Error::IncompatibleTypes(exp.span()))?;
-                Ok(ast::VarType::Ulong)
+                Ok(ast::BaseType::Ulong.into())
             }
             _ => todo!(),
         }
@@ -1107,6 +1119,13 @@ impl TypeChecker {
                     ty: ty.clone(),
                 };
                 Ok(ty)
+            }
+            VarType::Struct(s) => {
+                if self.sym_table.contains_key(&s.data) {
+                    Ok(VarType::Struct(s))
+                } else {
+                    Err(Error::IncompatibleTypes(exp.span()))
+                }
             }
             t => Ok(t),
         }
@@ -1230,7 +1249,7 @@ impl TypeChecker {
         let mut struct_size = 0;
         let mut struct_align = 0;
         for member in &decl.member_decls {
-            let align = self.sym_table.type_alignment(&member.ty)?;
+            let align = self.sym_table.alignment(&member.ty)?;
             let offset = round_up(struct_size, align);
 
             members.insert(
@@ -1242,7 +1261,7 @@ impl TypeChecker {
                 },
             );
 
-            struct_size = offset + self.sym_table.type_size(&member.ty)?;
+            struct_size = offset + self.sym_table.size(&member.ty)?;
             struct_align = std::cmp::max(struct_align, align);
         }
         struct_size = round_up(struct_size, struct_align);
@@ -1281,7 +1300,7 @@ impl TypeChecker {
     fn validate_var_type(&self, ty: &ast::VarType) -> Result<(), ()> {
         match ty {
             VarType::Array { element, .. } => {
-                if !self.sym_table.type_is_complete(element) {
+                if !self.sym_table.is_complete(element) {
                     return Err(());
                 }
                 self.validate_var_type(&element)?;
