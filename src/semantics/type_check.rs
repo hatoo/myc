@@ -254,16 +254,16 @@ fn common_pointer_type<'a>(
 }
 
 fn common_type(mut ty0: ast::VarType, mut ty1: ast::VarType) -> ast::VarType {
-    if ty0 == ast::VarType::Double || ty1 == ast::VarType::Double {
-        return ast::VarType::Double;
+    if ty0 == ast::BaseType::Double.into() || ty1 == ast::BaseType::Double.into() {
+        return ast::BaseType::Double.into();
     }
 
     if ty0.is_character() {
-        ty0 = ast::VarType::Int;
+        ty0 = ast::BaseType::Int.into();
     }
 
     if ty1.is_character() {
-        ty1 = ast::VarType::Int;
+        ty1 = ast::BaseType::Int.into();
     }
 
     if ty0 == ty1 {
