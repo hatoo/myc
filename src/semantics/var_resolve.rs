@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use ecow::EcoString;
 
 use crate::{
-    ast::{self, Expression, StructDecl, VarType},
+    ast::{self, Expression, StructDecl},
     span::{HasSpan, Spanned},
 };
 #[derive(Debug, Default)]
