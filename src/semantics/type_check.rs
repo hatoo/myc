@@ -937,6 +937,12 @@ impl TypeChecker {
                     } else {
                         return Err(Error::IncompatibleTypes(exp.span()));
                     }
+                } else if tyl.is_struct() || tyr.is_struct() {
+                    if tyl == tyr {
+                        tyl.clone()
+                    } else {
+                        return Err(Error::IncompatibleTypes(exp.span()));
+                    }
                 } else {
                     common_type(tyl, tyr)
                 };

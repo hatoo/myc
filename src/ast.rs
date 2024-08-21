@@ -537,6 +537,10 @@ impl VarType {
             false
         }
     }
+
+    pub fn is_struct(&self) -> bool {
+        matches!(self, Self::Struct(_))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
