@@ -408,8 +408,8 @@ impl TypeChecker {
 
                 Ok(vec![self.static_init(target, exp)?])
             }
-            Initializer::CompoundInit(inits) => {
-                if let ast::VarType::Array { element, size } = target {
+            Initializer::CompoundInit(inits) => match target {
+                ast::VarType::Array { element, size } => {
                     if inits.len() > *size {
                         return Err(Error::IncompatibleTypes(0..0));
                     }
@@ -426,10 +426,31 @@ impl TypeChecker {
                     }
 
                     Ok(res)
-                } else {
-                    Err(Error::IncompatibleTypes(0..0))
                 }
-            }
+                ast::VarType::Struct(tag) => {
+                    let StructDef { members, .. } = self.sym_table.struct_def(tag);
+                    let members = members.clone();
+                    let mut res = Vec::new();
+
+                    let mut offset = 0;
+                    for (init, member) in inits.iter().zip(members.iter()) {
+                        if member.offset > offset {
+                            res.push(StaticInit::Zero(member.offset - offset));
+                        }
+                        res.extend(self.static_init_from_initializer(&member.ty, init)?);
+                        offset = member.offset + self.sym_table.size(&member.ty)?;
+                    }
+
+                    let target_size = self.sym_table.size(target)?;
+                    if offset < target_size {
+                        res.push(StaticInit::Zero(target_size - offset));
+                    }
+
+                    Ok(res)
+                }
+
+                _ => Err(Error::IncompatibleTypes(0..0)),
+            },
         }
     }
 
@@ -701,7 +722,7 @@ impl TypeChecker {
                     Some(init) => {
                         InitialValue::Initial(self.static_init_from_initializer(ty, init)?)
                     }
-                    None => InitialValue::Initial(vec![ty.zero()]),
+                    None => InitialValue::Initial(vec![StaticInit::Zero(self.sym_table.size(ty)?)]),
                 };
                 self.sym_table.insert(
                     ident.data.clone(),

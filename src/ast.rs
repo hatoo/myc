@@ -234,14 +234,17 @@ impl Const {
 
     pub fn get_static_init(&self, ty: &VarType) -> Option<StaticInit> {
         match ty {
-            VarType::Char => Some(StaticInit::Char(self.get_int() as i8)),
-            VarType::SChar => Some(StaticInit::Char(self.get_int() as i8)),
-            VarType::UChar => Some(StaticInit::UChar(self.get_uint() as u8)),
-            VarType::Int => Some(StaticInit::Int(self.get_int())),
-            VarType::Uint => Some(StaticInit::Uint(self.get_uint())),
-            VarType::Long => Some(StaticInit::Long(self.get_long())),
-            VarType::Ulong => Some(StaticInit::Ulong(self.get_ulong())),
-            VarType::Double => Some(StaticInit::Double(self.get_double())),
+            VarType::Void => None,
+            VarType::Base(base) => match base {
+                BaseType::Char => Some(StaticInit::Char(self.get_int() as i8)),
+                BaseType::SChar => Some(StaticInit::Char(self.get_int() as i8)),
+                BaseType::UChar => Some(StaticInit::UChar(self.get_uint() as u8)),
+                BaseType::Int => Some(StaticInit::Int(self.get_int())),
+                BaseType::Uint => Some(StaticInit::Uint(self.get_uint())),
+                BaseType::Long => Some(StaticInit::Long(self.get_long())),
+                BaseType::Ulong => Some(StaticInit::Ulong(self.get_ulong())),
+                BaseType::Double => Some(StaticInit::Double(self.get_double())),
+            },
             VarType::Pointer(_) => match self {
                 Self::Int(0) => Some(StaticInit::Ulong(0)),
                 Self::Uint(0) => Some(StaticInit::Ulong(0)),
@@ -250,7 +253,7 @@ impl Const {
                 _ => None,
             },
             VarType::Array { .. } => None,
-            _ => todo!(),
+            VarType::Struct(_) => None,
         }
     }
 }
