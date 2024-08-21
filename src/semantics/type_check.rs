@@ -8,7 +8,7 @@ use std::{
 use ecow::EcoString;
 
 use crate::{
-    ast::{self, Expression, Initializer, Ty, VarType},
+    ast::{self, BaseType, Expression, Initializer, Ty, VarType},
     math::round_up,
     span::{HasSpan, MayHasSpan, Spanned},
 };
@@ -46,10 +46,7 @@ impl SymbolTable {
                 Ok(element_size * size)
             }
             ast::VarType::Struct(name) => {
-                let Some(Attr::Struct(StructDef { size, .. })) = self.get(&name.data) else {
-                    return Err(Error::IncompatibleTypes(name.span.clone()));
-                };
-
+                let StructDef { size, .. } = self.struct_def(name);
                 Ok(*size)
             }
             ast::VarType::Pointer(_) => Ok(8),
@@ -68,9 +65,7 @@ impl SymbolTable {
                 }
             }
             ast::VarType::Struct(name) => {
-                let Some(Attr::Struct(StructDef { alignment, .. })) = self.get(&name.data) else {
-                    return Err(Error::IncompatibleTypes(name.span.clone()));
-                };
+                let StructDef { alignment, .. } = self.struct_def(name);
 
                 Ok(*alignment)
             }
@@ -84,7 +79,7 @@ impl SymbolTable {
         match ty {
             ast::VarType::Void => false,
             ast::VarType::Struct(tag) => {
-                if let Some(Attr::Struct { .. }) = self.get(&tag.data) {
+                if let Some(Attr::Struct { .. }) = self.get(tag) {
                     true
                 } else {
                     false
@@ -119,7 +114,7 @@ impl SymbolTable {
                 ast::Initializer::CompoundInit(inits)
             }
             VarType::Struct(tag) => {
-                let StructDef { members, .. } = self.struct_def(&tag.data);
+                let StructDef { members, .. } = self.struct_def(&tag);
                 let inits = members
                     .iter()
                     .map(|member| self.zero_init(&member.ty))
@@ -163,7 +158,7 @@ pub struct StructDef {
     members: Vec<StructMember>,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StructMember {
     name: EcoString,
     ty: ast::VarType,
@@ -425,8 +420,9 @@ impl TypeChecker {
                     }
 
                     let filled = res.iter().map(|init| init.size()).sum::<usize>();
-                    if filled < target.size() {
-                        res.push(StaticInit::Zero(target.size() - filled));
+                    let target_size = self.sym_table.size(target)?;
+                    if filled < target_size {
+                        res.push(StaticInit::Zero(target_size - filled));
                     }
 
                     Ok(res)
@@ -463,17 +459,13 @@ impl TypeChecker {
                     })
                 }
                 ast::VarType::Pointer(ty) => {
-                    if let ast::Ty::Var(ty) = ty.as_ref() {
-                        if ty != &ast::VarType::Char {
-                            return Err(Error::IncompatibleTypes(exp.span()));
-                        }
-
+                    if let ast::Ty::Var(VarType::Base(BaseType::Char)) = ty.as_ref() {
                         let s = self.tmp_string();
                         self.sym_table.insert(
                             s.clone(),
                             Attr::Constant {
                                 ty: ast::VarType::Array {
-                                    element: Box::new(ty.clone()),
+                                    element: Box::new(BaseType::Char.into()),
                                     size: data.len() + 1,
                                 },
                                 init: StaticInit::String {
@@ -749,7 +741,7 @@ impl TypeChecker {
                 }
 
                 for _ in list.len()..*size {
-                    list.push(ast::Initializer::zero(element));
+                    list.push(self.sym_table.zero_init(element));
                 }
 
                 Ok(())
@@ -777,12 +769,21 @@ impl TypeChecker {
                 Ok(())
             }
             (ast::VarType::Struct(tag), ast::Initializer::CompoundInit(list)) => {
-                let StructDef { members, .. } = self.sym_table.struct_def(&tag.data);
+                let StructDef { members, .. } = self.sym_table.struct_def(tag);
                 if list.len() > members.len() {
                     return Err(Error::IncompatibleTypes(span.unwrap()));
                 }
+                let members = members.clone();
 
-                todo!()
+                for (init, member) in list.iter_mut().zip(members.iter()) {
+                    self.check_init(&member.ty, init)?;
+                }
+
+                for m in members.iter().skip(list.len()) {
+                    list.push(self.sym_table.zero_init(&m.ty));
+                }
+
+                Ok(())
             }
 
             _ => Err(Error::IncompatibleTypes(span.unwrap())),
@@ -1164,7 +1165,7 @@ impl TypeChecker {
             } => {
                 let structure_ty = self.check_expression_and_convert(structure)?;
                 if let ast::VarType::Struct(s) = structure_ty {
-                    let StructDef { members, .. } = self.sym_table.struct_def(&s.data);
+                    let StructDef { members, .. } = self.sym_table.struct_def(&s);
                     if let Some(member) = members.iter().find(|name| &name.name == &member.data) {
                         *ty = member.ty.clone();
                         Ok(ty.clone())
@@ -1186,7 +1187,7 @@ impl TypeChecker {
                     } else {
                         return Err(Error::IncompatibleTypes(exp.span()));
                     };
-                    let StructDef { members, .. } = self.sym_table.struct_def(&s.data);
+                    let StructDef { members, .. } = self.sym_table.struct_def(&s);
                     if let Some(member) = members.iter().find(|name| &name.name == &member.data) {
                         *ty = member.ty.clone();
                         Ok(ty.clone())
@@ -1214,7 +1215,7 @@ impl TypeChecker {
                 Ok(ty)
             }
             VarType::Struct(s) => {
-                if self.sym_table.contains_key(&s.data) {
+                if self.sym_table.contains_key(&s) {
                     Ok(VarType::Struct(s))
                 } else {
                     Err(Error::IncompatibleTypes(exp.span()))
@@ -1357,7 +1358,7 @@ impl TypeChecker {
         struct_size = round_up(struct_size, struct_align);
 
         self.sym_table.insert(
-            decl.tag.clone(),
+            decl.tag.data.clone(),
             Attr::Struct(StructDef {
                 members,
                 size: struct_size,
@@ -1368,7 +1369,7 @@ impl TypeChecker {
     }
 
     fn validate_struct_definition(&self, decl: &ast::StructDecl) -> Result<(), Error> {
-        if self.sym_table.contains_key(&decl.tag) {
+        if self.sym_table.contains_key(&decl.tag.data) {
             todo!()
         }
 
@@ -1404,7 +1405,7 @@ impl TypeChecker {
                 }
             },
             VarType::Struct(tag) => {
-                if !matches!(self.sym_table.get(&tag.data), Some(Attr::Struct { .. })) {
+                if !matches!(self.sym_table.get(tag), Some(Attr::Struct { .. })) {
                     return Err(());
                 }
             }
