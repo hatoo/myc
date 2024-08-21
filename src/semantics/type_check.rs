@@ -39,18 +39,18 @@ impl SymbolTable {
         }
     }
 
-    pub fn size(&self, ty: &ast::VarType) -> Result<usize, Error> {
+    pub fn size(&self, ty: &ast::VarType) -> usize {
         match ty {
             ast::VarType::Array { element, size } => {
-                let element_size = self.size(element)?;
-                Ok(element_size * size)
+                let element_size = self.size(element);
+                element_size * size
             }
             ast::VarType::Struct(name) => {
                 let StructDef { size, .. } = self.struct_def(name);
-                Ok(*size)
+                *size
             }
-            ast::VarType::Pointer(_) => Ok(8),
-            ast::VarType::Base(base) => Ok(base.size()),
+            ast::VarType::Pointer(_) => 8,
+            ast::VarType::Base(base) => base.size(),
             ast::VarType::Void => panic!("Get size of void"),
         }
     }
@@ -58,7 +58,7 @@ impl SymbolTable {
     pub fn alignment(&self, ty: &ast::VarType) -> Result<usize, Error> {
         match ty {
             ast::VarType::Array { element, .. } => {
-                if self.size(ty)? < 16 {
+                if self.size(ty) < 16 {
                     self.alignment(element)
                 } else {
                     Ok(16)
@@ -420,7 +420,7 @@ impl TypeChecker {
                     }
 
                     let filled = res.iter().map(|init| init.size()).sum::<usize>();
-                    let target_size = self.sym_table.size(target)?;
+                    let target_size = self.sym_table.size(target);
                     if filled < target_size {
                         res.push(StaticInit::Zero(target_size - filled));
                     }
@@ -438,10 +438,10 @@ impl TypeChecker {
                             res.push(StaticInit::Zero(member.offset - offset));
                         }
                         res.extend(self.static_init_from_initializer(&member.ty, init)?);
-                        offset = member.offset + self.sym_table.size(&member.ty)?;
+                        offset = member.offset + self.sym_table.size(&member.ty);
                     }
 
-                    let target_size = self.sym_table.size(target)?;
+                    let target_size = self.sym_table.size(target);
                     if offset < target_size {
                         res.push(StaticInit::Zero(target_size - offset));
                     }
@@ -722,7 +722,7 @@ impl TypeChecker {
                     Some(init) => {
                         InitialValue::Initial(self.static_init_from_initializer(ty, init)?)
                     }
-                    None => InitialValue::Initial(vec![StaticInit::Zero(self.sym_table.size(ty)?)]),
+                    None => InitialValue::Initial(vec![StaticInit::Zero(self.sym_table.size(ty))]),
                 };
                 self.sym_table.insert(
                     ident.data.clone(),
@@ -1373,7 +1373,7 @@ impl TypeChecker {
                 ty: member.ty.clone(),
             });
 
-            struct_size = offset + self.sym_table.size(&member.ty)?;
+            struct_size = offset + self.sym_table.size(&member.ty);
             struct_align = std::cmp::max(struct_align, align);
         }
         struct_size = round_up(struct_size, struct_align);

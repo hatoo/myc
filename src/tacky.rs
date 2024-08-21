@@ -239,7 +239,7 @@ impl<'a> InstructionGenerator<'a> {
                         .data
                         .iter()
                         .chain(std::iter::repeat(&0))
-                        .take(ty.size())
+                        .take(self.symbol_table.size(ty))
                         .copied()
                         .collect::<Vec<_>>()
                         .chunks(4)
@@ -269,7 +269,7 @@ impl<'a> InstructionGenerator<'a> {
                 }
                 Initializer::SingleInit(exp) => {
                     let val = self.add_expression_and_convert(exp);
-                    let size = val.ty(self.symbol_table).size();
+                    let size = self.symbol_table.size(&val.ty(self.symbol_table));
                     self.instructions.push(Instruction::CopyToOffset {
                         src: val,
                         dst: name.clone(),
@@ -537,6 +537,9 @@ impl<'a> InstructionGenerator<'a> {
                 let dst = self.make_tmp_local(ty.clone());
 
                 if let ast::VarType::Pointer(elem) = ty {
+                    let ast::Ty::Var(elem) = elem.as_ref() else {
+                        unreachable!()
+                    };
                     match op {
                         ast::BinaryOp::Add => {
                             let (lhs, rhs) = if lhs.ty(self.symbol_table).is_pointer() {
@@ -547,7 +550,7 @@ impl<'a> InstructionGenerator<'a> {
                             self.instructions.push(Instruction::AddPtr {
                                 ptr: lhs,
                                 index: rhs,
-                                scale: elem.size(),
+                                scale: self.symbol_table.size(elem),
                                 dst: dst.clone(),
                             });
                             return ExpResult::PlainOperand(dst);
@@ -555,7 +558,7 @@ impl<'a> InstructionGenerator<'a> {
                         ast::BinaryOp::Subtract => {
                             // ptr - int
 
-                            let neg = self.make_tmp_local(ast::VarType::Long);
+                            let neg = self.make_tmp_local(ast::BaseType::Long.into());
                             self.instructions.push(Instruction::Unary {
                                 op: UnaryOp::Negate,
                                 src: rhs.clone(),
