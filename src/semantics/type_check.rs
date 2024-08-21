@@ -30,6 +30,14 @@ impl DerefMut for SymbolTable {
 }
 
 impl SymbolTable {
+    pub fn struct_def(&self, tag: &EcoString) -> &StructDef {
+        if let Attr::Struct(def) = self.get(tag).unwrap() {
+            def
+        } else {
+            unreachable!()
+        }
+    }
+
     pub fn size(&self, ty: &ast::VarType) -> Result<usize, Error> {
         match ty {
             ast::VarType::Array { element, size } => {
@@ -37,7 +45,7 @@ impl SymbolTable {
                 Ok(element_size * size)
             }
             ast::VarType::Struct(name) => {
-                let Some(Attr::Struct { size, .. }) = self.get(&name.data) else {
+                let Some(Attr::Struct(StructDef { size, .. })) = self.get(&name.data) else {
                     return Err(Error::IncompatibleTypes(name.span.clone()));
                 };
 
@@ -59,7 +67,7 @@ impl SymbolTable {
                 }
             }
             ast::VarType::Struct(name) => {
-                let Some(Attr::Struct { alignment, .. }) = self.get(&name.data) else {
+                let Some(Attr::Struct(StructDef { alignment, .. })) = self.get(&name.data) else {
                     return Err(Error::IncompatibleTypes(name.span.clone()));
                 };
 
@@ -119,11 +127,14 @@ pub enum Attr {
         init: StaticInit,
     },
     Local(ast::VarType),
-    Struct {
-        alignment: usize,
-        size: usize,
-        members: HashMap<EcoString, StructMember>,
-    },
+    Struct(StructDef),
+}
+
+#[derive(Debug)]
+pub struct StructDef {
+    alignment: usize,
+    size: usize,
+    members: HashMap<EcoString, StructMember>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -648,7 +659,7 @@ impl TypeChecker {
                 }
                 match self.sym_table.entry(ident.data.clone()) {
                     Entry::Occupied(o) => match o.get() {
-                        Attr::Fun { .. } | Attr::Struct { .. } => {
+                        Attr::Fun { .. } | Attr::Struct(_) => {
                             return Err(Error::IncompatibleTypes(ident.span.clone()));
                         }
                         Attr::Local(ty0) | Attr::Static { ty: ty0, .. } => {
@@ -738,6 +749,14 @@ impl TypeChecker {
                 self.check_expression_and_convert(e)?;
                 convert_by_assignment(e, target)?;
                 Ok(())
+            }
+            (ast::VarType::Struct(tag), ast::Initializer::CompoundInit(list)) => {
+                let StructDef { members, .. } = self.sym_table.struct_def(&tag.data);
+                if list.len() > members.len() {
+                    return Err(Error::IncompatibleTypes(span.unwrap()));
+                }
+
+                todo!()
             }
 
             _ => Err(Error::IncompatibleTypes(span.unwrap())),
@@ -1119,9 +1138,7 @@ impl TypeChecker {
             } => {
                 let structure_ty = self.check_expression_and_convert(structure)?;
                 if let ast::VarType::Struct(s) = structure_ty {
-                    let Attr::Struct { members, .. } = &self.sym_table[&s.data] else {
-                        unreachable!()
-                    };
+                    let StructDef { members, .. } = self.sym_table.struct_def(&s.data);
                     if let Some(member) = members.get(&member.data) {
                         *ty = member.ty.clone();
                         Ok(ty.clone())
@@ -1143,9 +1160,7 @@ impl TypeChecker {
                     } else {
                         return Err(Error::IncompatibleTypes(exp.span()));
                     };
-                    let Attr::Struct { members, .. } = &self.sym_table[&s.data] else {
-                        unreachable!()
-                    };
+                    let StructDef { members, .. } = self.sym_table.struct_def(&s.data);
                     if let Some(member) = members.get(&member.data) {
                         *ty = member.ty.clone();
                         Ok(ty.clone())
@@ -1320,11 +1335,11 @@ impl TypeChecker {
 
         self.sym_table.insert(
             decl.tag.clone(),
-            Attr::Struct {
+            Attr::Struct(StructDef {
                 members,
                 size: struct_size,
                 alignment: struct_align,
-            },
+            }),
         );
         Ok(())
     }
