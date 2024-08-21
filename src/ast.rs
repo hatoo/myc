@@ -469,6 +469,10 @@ impl BaseType {
     pub fn is_character(&self) -> bool {
         matches!(self, Self::Char | Self::SChar | Self::UChar)
     }
+
+    pub fn is_signed(&self) -> bool {
+        matches!(self, Self::Char | Self::SChar | Self::Int | Self::Long)
+    }
 }
 
 #[derive(Debug, Clone)]

@@ -253,17 +253,17 @@ fn common_pointer_type<'a>(
     }
 }
 
-fn common_type(mut ty0: ast::VarType, mut ty1: ast::VarType) -> ast::VarType {
-    if ty0 == ast::BaseType::Double.into() || ty1 == ast::BaseType::Double.into() {
-        return ast::BaseType::Double.into();
+fn common_base_type(mut ty0: ast::BaseType, mut ty1: ast::BaseType) -> ast::BaseType {
+    if ty0 == ast::BaseType::Double || ty1 == ast::BaseType::Double {
+        return ast::BaseType::Double;
     }
 
     if ty0.is_character() {
-        ty0 = ast::BaseType::Int.into();
+        ty0 = ast::BaseType::Int
     }
 
     if ty1.is_character() {
-        ty1 = ast::BaseType::Int.into();
+        ty1 = ast::BaseType::Int
     }
 
     if ty0 == ty1 {
@@ -816,10 +816,11 @@ impl TypeChecker {
                                 return Err(Error::IncompatibleTypes(exp.span()));
                             }
                         } else {
-                            if !tyl.is_scalar() || !tyr.is_scalar() {
+                            if let (ast::VarType::Base(tyl), ast::VarType::Base(tyr)) = (tyl, tyr) {
+                                common_base_type(tyl, tyr).into()
+                            } else {
                                 return Err(Error::IncompatibleTypes(exp.span()));
                             }
-                            common_type(tyl, tyr)
                         };
 
                         convert_to(lhs, &cty);
@@ -828,8 +829,8 @@ impl TypeChecker {
                         *ty = ast::BaseType::Int.into();
                     }
                     ast::BinaryOp::Add => {
-                        if !tyl.is_pointer() && !tyr.is_pointer() {
-                            let cty = common_type(tyl, tyr);
+                        if let (ast::VarType::Base(tyl), ast::VarType::Base(tyr)) = (&tyl, &tyr) {
+                            let cty = common_base_type(*tyl, *tyr).into();
                             convert_to(lhs, &cty);
                             convert_to(rhs, &cty);
                             *ty = cty;
@@ -844,8 +845,8 @@ impl TypeChecker {
                         }
                     }
                     ast::BinaryOp::Subtract => {
-                        if !tyl.is_pointer() && !tyr.is_pointer() {
-                            let cty = common_type(tyl, tyr);
+                        if let (ast::VarType::Base(tyl), ast::VarType::Base(tyr)) = (&tyl, &tyr) {
+                            let cty = common_base_type(*tyl, *tyr).into();
                             convert_to(lhs, &cty);
                             convert_to(rhs, &cty);
                             *ty = cty;
@@ -863,28 +864,28 @@ impl TypeChecker {
                     }
                     _ => match op {
                         ast::BinaryOp::Multiply | ast::BinaryOp::Divide => {
-                            if tyl.is_pointer() || tyr.is_pointer() {
+                            if let (ast::VarType::Base(tyl), ast::VarType::Base(tyr)) = (tyl, tyr) {
+                                let cty = common_base_type(tyl.clone(), tyr.clone()).into();
+                                convert_to(lhs, &cty);
+                                convert_to(rhs, &cty);
+                                *ty = cty;
+                            } else {
                                 return Err(Error::IncompatibleTypes(exp.span()));
                             }
-                            let cty = common_type(tyl.clone(), tyr.clone());
-                            convert_to(lhs, &cty);
-                            convert_to(rhs, &cty);
-                            if cty.is_pointer() {
-                                return Err(Error::IncompatibleTypes(exp.span()));
-                            }
-                            *ty = cty;
                         }
                         ast::BinaryOp::Remainder => {
-                            if tyl.is_pointer() || tyr.is_pointer() {
+                            if let (ast::VarType::Base(tyl), ast::VarType::Base(tyr)) = (tyl, tyr) {
+                                let cty = common_base_type(tyl.clone(), tyr.clone());
+                                if cty == ast::BaseType::Double.into() {
+                                    return Err(Error::IncompatibleTypes(exp.span()));
+                                }
+                                let cty = cty.into();
+                                convert_to(lhs, &cty);
+                                convert_to(rhs, &cty);
+                                *ty = cty;
+                            } else {
                                 return Err(Error::IncompatibleTypes(exp.span()));
                             }
-                            let cty = common_type(tyl.clone(), tyr.clone());
-                            convert_to(lhs, &cty);
-                            convert_to(rhs, &cty);
-                            if cty == ast::BaseType::Double.into() || cty.is_pointer() {
-                                return Err(Error::IncompatibleTypes(exp.span()));
-                            }
-                            *ty = cty;
                         }
                         _ => {
                             if (tyl != tyr) && (tyl.is_pointer() || tyr.is_pointer()) {
@@ -897,8 +898,8 @@ impl TypeChecker {
                                 return Err(Error::IncompatibleTypes(exp.span()));
                             }
 
-                            if !tyl.is_pointer() && !tyr.is_pointer() {
-                                let cty = common_type(tyl, tyr);
+                            if let (ast::VarType::Base(tyl), ast::VarType::Base(tyr)) = (tyl, tyr) {
+                                let cty = common_base_type(tyl, tyr).into();
                                 convert_to(lhs, &cty);
                                 convert_to(rhs, &cty);
                             }
@@ -931,7 +932,9 @@ impl TypeChecker {
                 let tyl = self.check_expression_and_convert(then_branch)?;
                 let tyr = self.check_expression_and_convert(else_branch)?;
 
-                let cty = if tyl.is_pointer() || tyr.is_pointer() {
+                let cty = if let (ast::VarType::Base(tyl), ast::VarType::Base(tyr)) = (&tyl, &tyr) {
+                    common_base_type(*tyl, *tyr).into()
+                } else if tyl.is_pointer() || tyr.is_pointer() {
                     if let Some(cty) = common_pointer_type(then_branch, else_branch) {
                         cty.clone()
                     } else {
@@ -944,7 +947,7 @@ impl TypeChecker {
                         return Err(Error::IncompatibleTypes(exp.span()));
                     }
                 } else {
-                    common_type(tyl, tyr)
+                    return Err(Error::IncompatibleTypes(exp.span()));
                 };
 
                 convert_to(then_branch, &cty);
