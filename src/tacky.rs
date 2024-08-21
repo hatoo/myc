@@ -161,18 +161,24 @@ pub enum Val {
 }
 
 impl Val {
-    pub fn ty<'a>(&self, symbol_table: &'a SymbolTable) -> &'a ast::VarType {
+    pub fn ty(&self, symbol_table: &SymbolTable) -> ast::VarType {
         match self {
             Val::Constant(c) => match c {
-                ast::Const::Int(_) => &ast::VarType::Int,
-                ast::Const::Long(_) => &ast::VarType::Long,
-                ast::Const::Uint(_) => &ast::VarType::Uint,
-                ast::Const::Ulong(_) => &ast::VarType::Ulong,
-                ast::Const::Double(_) => &ast::VarType::Double,
-                ast::Const::Char(_) => &ast::VarType::Char,
-                ast::Const::UChar(_) => &ast::VarType::UChar,
+                ast::Const::Int(_) => ast::BaseType::Int.into(),
+                ast::Const::Long(_) => ast::BaseType::Long.into(),
+                ast::Const::Uint(_) => ast::BaseType::Uint.into(),
+                ast::Const::Ulong(_) => ast::BaseType::Ulong.into(),
+                ast::Const::Double(_) => ast::BaseType::Double.into(),
+                ast::Const::Char(_) => ast::BaseType::Char.into(),
+                ast::Const::UChar(_) => ast::BaseType::UChar.into(),
             },
-            Val::Var(var) => symbol_table[var].ty(),
+            Val::Var(var) => match &symbol_table[var] {
+                Attr::Fun { ty, .. } => ty.ret.clone(),
+                Attr::Static { ty, .. } => ty.clone(),
+                Attr::Local(ty) => ty.clone(),
+                Attr::Constant { ty, .. } => ty.clone(),
+                Attr::Struct(_) => ast::VarType::Struct(var.clone()),
+            },
         }
     }
 }
