@@ -37,7 +37,7 @@ pub struct FunDecl {
 
 #[derive(Debug)]
 pub struct StructDecl {
-    pub tag: EcoString,
+    pub tag: Spanned<EcoString>,
     pub member_decls: Vec<MemberDecl>,
 }
 
@@ -465,13 +465,13 @@ impl BaseType {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VarType {
     Void,
     Base(BaseType),
     Pointer(Box<Ty>),
     Array { element: Box<VarType>, size: usize },
-    Struct(Spanned<EcoString>),
+    Struct(EcoString),
 }
 
 impl From<BaseType> for VarType {
@@ -479,29 +479,6 @@ impl From<BaseType> for VarType {
         Self::Base(base)
     }
 }
-
-impl PartialEq for VarType {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Base(l0), Self::Base(r0)) => l0 == r0,
-            (Self::Pointer(l0), Self::Pointer(r0)) => l0 == r0,
-            (
-                Self::Array {
-                    element: l_element,
-                    size: l_size,
-                },
-                Self::Array {
-                    element: r_element,
-                    size: r_size,
-                },
-            ) => l_element == r_element && l_size == r_size,
-            (Self::Struct(l0), Self::Struct(r0)) => l0.data == r0.data,
-            _ => core::mem::discriminant(self) == core::mem::discriminant(other),
-        }
-    }
-}
-
-impl Eq for VarType {}
 
 impl VarType {
     pub fn is_integer(&self) -> bool {
@@ -644,7 +621,7 @@ enum TypeSpecifier {
     Unsigned,
     Signed,
     Double,
-    Struct(Spanned<EcoString>),
+    Struct(EcoString),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -1387,7 +1364,7 @@ impl<'a> Parser<'a> {
                     let tag = self.expect_ident()?;
                     end = tag.span.end;
                     ty.push(Spanned {
-                        data: TypeSpecifier::Struct(tag.clone()),
+                        data: TypeSpecifier::Struct(tag.data.clone()),
                         span: tag.span,
                     });
                 }
@@ -1512,7 +1489,7 @@ impl<'a> Parser<'a> {
                         self.advance();
                         let tag = self.expect_ident()?;
                         ty.push(Spanned {
-                            data: TypeSpecifier::Struct(tag.clone()),
+                            data: TypeSpecifier::Struct(tag.data),
                             span: tag.span,
                         });
                     }
@@ -2020,7 +1997,7 @@ impl<'a> Parser<'a> {
         self.expect(Token::SemiColon)?;
 
         Ok(StructDecl {
-            tag: tag.data,
+            tag,
             member_decls: member_decls.unwrap_or_default(),
         })
     }
