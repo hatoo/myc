@@ -54,50 +54,40 @@ pub enum Initializer {
 }
 
 impl Initializer {
-    pub fn zero(ty: &VarType) -> Self {
+    pub fn zero_base(ty: BaseType) -> Self {
         match ty {
-            VarType::Char => Self::SingleInit(Expression::Constant(Spanned {
+            BaseType::Char => Self::SingleInit(Expression::Constant(Spanned {
                 data: Const::Char(0),
                 span: 0..0,
             })),
-            VarType::SChar => Self::SingleInit(Expression::Constant(Spanned {
+            BaseType::SChar => Self::SingleInit(Expression::Constant(Spanned {
                 data: Const::Char(0),
                 span: 0..0,
             })),
-            VarType::UChar => Self::SingleInit(Expression::Constant(Spanned {
+            BaseType::UChar => Self::SingleInit(Expression::Constant(Spanned {
                 data: Const::UChar(0),
                 span: 0..0,
             })),
-            VarType::Int => Self::SingleInit(Expression::Constant(Spanned {
+            BaseType::Int => Self::SingleInit(Expression::Constant(Spanned {
                 data: Const::Int(0),
                 span: 0..0,
             })),
-            VarType::Long => Self::SingleInit(Expression::Constant(Spanned {
-                data: Const::Long(0),
-                span: 0..0,
-            })),
-            VarType::Uint => Self::SingleInit(Expression::Constant(Spanned {
+            BaseType::Uint => Self::SingleInit(Expression::Constant(Spanned {
                 data: Const::Uint(0),
                 span: 0..0,
             })),
-            VarType::Ulong => Self::SingleInit(Expression::Constant(Spanned {
+            BaseType::Long => Self::SingleInit(Expression::Constant(Spanned {
+                data: Const::Long(0),
+                span: 0..0,
+            })),
+            BaseType::Ulong => Self::SingleInit(Expression::Constant(Spanned {
                 data: Const::Ulong(0),
                 span: 0..0,
             })),
-            VarType::Double => Self::SingleInit(Expression::Constant(Spanned {
+            BaseType::Double => Self::SingleInit(Expression::Constant(Spanned {
                 data: Const::Double(0.0),
                 span: 0..0,
             })),
-            VarType::Pointer(_) => Self::SingleInit(Expression::Constant(Spanned {
-                data: Const::Ulong(0),
-                span: 0..0,
-            })),
-            VarType::Array { element, size } => {
-                let inits = vec![Initializer::zero(element.as_ref()); *size];
-
-                Self::CompoundInit(inits)
-            }
-            _ => todo!(),
         }
     }
 }

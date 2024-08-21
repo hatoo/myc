@@ -1,3 +1,4 @@
+use core::panic;
 use std::{
     collections::{hash_map::Entry, HashMap, HashSet},
     fmt::Display,
@@ -102,6 +103,31 @@ impl SymbolTable {
             _ => false,
         }
     }
+
+    pub fn zero_init(&self, ty: &ast::VarType) -> ast::Initializer {
+        match ty {
+            VarType::Void => panic!("Zero init void"),
+            VarType::Base(base) => ast::Initializer::zero_base(*base),
+            VarType::Pointer(_) => {
+                ast::Initializer::SingleInit(ast::Expression::Constant(Spanned {
+                    data: ast::Const::Ulong(0),
+                    span: 0..0,
+                }))
+            }
+            VarType::Array { element, size } => {
+                let inits = vec![self.zero_init(element); *size];
+                ast::Initializer::CompoundInit(inits)
+            }
+            VarType::Struct(tag) => {
+                let StructDef { members, .. } = self.struct_def(&tag.data);
+                let inits = members
+                    .iter()
+                    .map(|member| self.zero_init(&member.ty))
+                    .collect();
+                ast::Initializer::CompoundInit(inits)
+            }
+        }
+    }
 }
 
 #[derive(Debug, Default)]
@@ -134,7 +160,7 @@ pub enum Attr {
 pub struct StructDef {
     alignment: usize,
     size: usize,
-    members: HashMap<EcoString, StructMember>,
+    members: Vec<StructMember>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -1139,7 +1165,7 @@ impl TypeChecker {
                 let structure_ty = self.check_expression_and_convert(structure)?;
                 if let ast::VarType::Struct(s) = structure_ty {
                     let StructDef { members, .. } = self.sym_table.struct_def(&s.data);
-                    if let Some(member) = members.get(&member.data) {
+                    if let Some(member) = members.iter().find(|name| &name.name == &member.data) {
                         *ty = member.ty.clone();
                         Ok(ty.clone())
                     } else {
@@ -1161,7 +1187,7 @@ impl TypeChecker {
                         return Err(Error::IncompatibleTypes(exp.span()));
                     };
                     let StructDef { members, .. } = self.sym_table.struct_def(&s.data);
-                    if let Some(member) = members.get(&member.data) {
+                    if let Some(member) = members.iter().find(|name| &name.name == &member.data) {
                         *ty = member.ty.clone();
                         Ok(ty.clone())
                     } else {
@@ -1311,7 +1337,7 @@ impl TypeChecker {
 
         self.validate_struct_definition(decl)?;
 
-        let mut members = HashMap::new();
+        let mut members = Vec::new();
 
         let mut struct_size = 0;
         let mut struct_align = 0;
@@ -1319,14 +1345,11 @@ impl TypeChecker {
             let align = self.sym_table.alignment(&member.ty)?;
             let offset = round_up(struct_size, align);
 
-            members.insert(
-                member.name.clone(),
-                StructMember {
-                    name: member.name.clone(),
-                    offset,
-                    ty: member.ty.clone(),
-                },
-            );
+            members.push(StructMember {
+                name: member.name.clone(),
+                offset,
+                ty: member.ty.clone(),
+            });
 
             struct_size = offset + self.sym_table.size(&member.ty)?;
             struct_align = std::cmp::max(struct_align, align);
