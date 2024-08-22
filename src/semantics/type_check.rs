@@ -340,6 +340,10 @@ fn convert_by_assignment(exp: &mut ast::Expression, ty: &ast::VarType) -> Result
         return Err(Error::IncompatibleTypes(exp.span()));
     }
 
+    if ety.is_struct() || ty.is_struct() {
+        return Err(Error::IncompatibleTypes(exp.span()));
+    }
+
     if !ety.is_pointer() && !ty.is_pointer() {
         convert_to(exp, ty);
         return Ok(());
@@ -1428,7 +1432,7 @@ impl TypeChecker {
                     self.validate_fun_type(ty, allow_incomplete_struct)?;
                 }
                 ast::Ty::Var(ty) => {
-                    self.validate_var_type(ty, allow_incomplete_struct)?;
+                    self.validate_var_type(ty, true)?;
                 }
             },
             VarType::Struct(tag) => {
