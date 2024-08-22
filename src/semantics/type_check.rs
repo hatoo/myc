@@ -602,7 +602,7 @@ impl TypeChecker {
                 }
                 self.check_fun_decl(decl)
             }
-            _ => todo!(),
+            crate::ast::Declaration::StructDecl(decl) => self.check_struct_decl(decl),
         }
     }
 
@@ -1360,7 +1360,9 @@ impl TypeChecker {
             return Ok(());
         }
 
-        self.validate_struct_definition(decl)?;
+        if self.sym_table.contains_key(&decl.tag.data) {
+            return Err(Error::Redefined(decl.tag.clone()));
+        }
 
         let mut members = Vec::new();
 
@@ -1389,14 +1391,11 @@ impl TypeChecker {
                 alignment: struct_align,
             }),
         );
+        self.validate_struct_definition(decl)?;
         Ok(())
     }
 
     fn validate_struct_definition(&self, decl: &ast::StructDecl) -> Result<(), Error> {
-        if self.sym_table.contains_key(&decl.tag.data) {
-            todo!()
-        }
-
         let mut member_names = HashSet::new();
 
         for member in &decl.member_decls {

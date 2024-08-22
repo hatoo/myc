@@ -392,7 +392,10 @@ impl VarResolver {
                 self.resolve_expression(exp)?;
                 Ok(())
             }
-            ast::Expression::SizeofType(..) => Ok(()),
+            ast::Expression::SizeofType(ty) => {
+                self.resolve_var_type(&mut ty.data, ty.span.clone())?;
+                Ok(())
+            }
             ast::Expression::Dot { structure, .. } => {
                 self.resolve_expression(structure)?;
                 Ok(())
