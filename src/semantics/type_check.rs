@@ -86,7 +86,7 @@ impl SymbolTable {
         match ty {
             ast::VarType::Void => false,
             ast::VarType::Struct(tag) => {
-                if let Some(Attr::Struct { .. }) = self.get(tag) {
+                if let Some(Attr::Struct(_)) = self.get(tag) {
                     true
                 } else {
                     false
@@ -618,7 +618,7 @@ impl TypeChecker {
             ty,
         } = decl;
 
-        self.validate_var_type(ty, true)
+        self.validate_var_type(ty, storage_class == &Some(crate::ast::StorageClass::Extern))
             .map_err(|_| Error::IncompatibleTypes(ident.span.clone()))?;
         if ty == &ast::VarType::Void {
             return Err(Error::IncompatibleTypes(ident.span.clone()));
@@ -692,7 +692,7 @@ impl TypeChecker {
             ty,
         } = decl;
 
-        self.validate_var_type(ty, true)
+        self.validate_var_type(ty, storage_class == &Some(crate::ast::StorageClass::Extern))
             .map_err(|_| Error::IncompatibleTypes(ident.span.clone()))?;
         if ty == &ast::VarType::Void {
             return Err(Error::IncompatibleTypes(ident.span.clone()));
@@ -850,7 +850,8 @@ impl TypeChecker {
                     }
                     ast::UnaryOp::Complement => {
                         *ty = self.check_expression(exp)?;
-                        if *ty == ast::BaseType::Double.into() || ty.is_pointer() {
+                        if *ty == ast::BaseType::Double.into() || ty.is_pointer() || ty.is_struct()
+                        {
                             return Err(Error::IncompatibleTypes(exp.span()));
                         }
                         if ty.is_character() {
@@ -1045,6 +1046,10 @@ impl TypeChecker {
                         convert_by_assignment(arg, &ty)?;
                     }
                     *fty = ret.clone();
+
+                    if ret != ast::VarType::Void && !self.sym_table.is_complete(&ret) {
+                        return Err(Error::IncompatibleTypes(name.span.clone()));
+                    }
                     Ok(ret.clone())
                 }
                 Some(
@@ -1243,7 +1248,7 @@ impl TypeChecker {
                 Ok(ty)
             }
             VarType::Struct(s) => {
-                if self.sym_table.contains_key(&s) {
+                if self.sym_table.is_complete(&VarType::Struct(s.clone())) {
                     Ok(VarType::Struct(s))
                 } else {
                     Err(Error::IncompatibleTypes(exp.span()))
@@ -1339,7 +1344,7 @@ impl TypeChecker {
                             self.check_var_decl_local(decl)?;
                         }
                         crate::ast::ForInit::Expression(exp) => {
-                            self.check_expression(exp)?;
+                            self.check_expression_and_convert(exp)?;
                         }
                     }
                 }
@@ -1422,7 +1427,7 @@ impl TypeChecker {
     ) -> Result<(), ()> {
         match ty {
             VarType::Array { element, .. } => {
-                if !allow_incomplete_struct && !self.sym_table.is_complete(element) {
+                if !self.sym_table.is_complete(element) {
                     return Err(());
                 }
                 self.validate_var_type(&element, allow_incomplete_struct)?;
