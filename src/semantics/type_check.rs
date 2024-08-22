@@ -160,16 +160,16 @@ pub enum Attr {
 
 #[derive(Debug)]
 pub struct StructDef {
-    alignment: usize,
-    size: usize,
-    members: Vec<StructMember>,
+    pub alignment: usize,
+    pub size: usize,
+    pub members: Vec<StructMember>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StructMember {
-    name: EcoString,
-    ty: ast::VarType,
-    offset: usize,
+    pub name: EcoString,
+    pub ty: ast::VarType,
+    pub offset: usize,
 }
 
 impl Attr {

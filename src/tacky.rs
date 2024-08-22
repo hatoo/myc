@@ -130,6 +130,11 @@ pub enum Instruction {
         dst: EcoString,
         offset: usize,
     },
+    CopyFromOffset {
+        src: EcoString,
+        offset: usize,
+        dst: Val,
+    },
 }
 
 #[derive(Debug)]
@@ -192,6 +197,7 @@ struct InstructionGenerator<'a> {
 enum ExpResult {
     PlainOperand(Val),
     DereferencedPointer(Val),
+    SubObject { base: EcoString, offset: usize },
 }
 
 impl<'a> InstructionGenerator<'a> {
@@ -862,6 +868,48 @@ impl<'a> InstructionGenerator<'a> {
             ast::Expression::SizeofType(ty) => {
                 let size = self.symbol_table.size(&ty.data);
                 ExpResult::PlainOperand(Val::Constant(ast::Const::Ulong(size as _)))
+            }
+            ast::Expression::Dot {
+                structure,
+                member,
+                ty,
+            } => {
+                let ast::VarType::Struct(struct_name) = structure.ty() else {
+                    unreachable!()
+                };
+                let struct_def = self.symbol_table.struct_def(struct_name);
+                let member_offset = struct_def
+                    .members
+                    .iter()
+                    .find(|m| &m.name == &member.data)
+                    .unwrap()
+                    .offset;
+
+                match self.add_expression(structure) {
+                    ExpResult::PlainOperand(Val::Var(v)) => ExpResult::SubObject {
+                        base: v,
+                        offset: member_offset,
+                    },
+                    ExpResult::SubObject { base, offset } => ExpResult::SubObject {
+                        base,
+                        offset: offset + member_offset,
+                    },
+                    ExpResult::DereferencedPointer(ptr) => {
+                        let dst_ptr = self.make_tmp_local(ast::VarType::Pointer(Box::new(
+                            ast::Ty::Var(ast::VarType::Struct(struct_name.clone())),
+                        )));
+
+                        self.instructions.push(Instruction::AddPtr {
+                            ptr,
+                            index: Val::Constant(ast::Const::Int(member_offset as _)),
+                            scale: 1,
+                            dst: dst_ptr.clone(),
+                        });
+
+                        ExpResult::DereferencedPointer(dst_ptr)
+                    }
+                    _ => unreachable!(),
+                }
             }
             _ => todo!(),
         }
