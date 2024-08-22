@@ -1360,7 +1360,7 @@ impl TypeChecker {
                     }
                 }
                 if let Some(step) = step {
-                    self.check_expression(step)?;
+                    self.check_expression_and_convert(step)?;
                 }
                 self.check_statement(body, ret_type)?;
                 Ok(())
