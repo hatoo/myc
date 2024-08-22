@@ -349,7 +349,8 @@ impl Expression {
             Self::String(_, ty) => ty,
             Self::Sizeof(_) => &VarType::Base(BaseType::Ulong),
             Self::SizeofType(_) => &VarType::Base(BaseType::Ulong),
-            _ => todo!(),
+            Self::Dot { ty, .. } => ty,
+            Self::Arrow { ty, .. } => ty,
         }
     }
 
