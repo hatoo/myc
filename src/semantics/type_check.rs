@@ -523,12 +523,8 @@ impl TypeChecker {
             ty,
         } = fun_decl;
 
-        self.validate_fun_type(ty)
+        self.validate_fun_type(ty, body.is_none())
             .map_err(|_| Error::IncompatibleTypes(name.span.clone()))?;
-
-        if ty.ret.is_array() {
-            return Err(Error::IncompatibleTypes(name.span.clone()));
-        }
 
         for ty in &mut ty.params {
             if let ast::VarType::Array { element, .. } = ty {
@@ -618,7 +614,7 @@ impl TypeChecker {
             ty,
         } = decl;
 
-        self.validate_var_type(ty)
+        self.validate_var_type(ty, true)
             .map_err(|_| Error::IncompatibleTypes(ident.span.clone()))?;
         if ty == &ast::VarType::Void {
             return Err(Error::IncompatibleTypes(ident.span.clone()));
@@ -692,7 +688,7 @@ impl TypeChecker {
             ty,
         } = decl;
 
-        self.validate_var_type(ty)
+        self.validate_var_type(ty, true)
             .map_err(|_| Error::IncompatibleTypes(ident.span.clone()))?;
         if ty == &ast::VarType::Void {
             return Err(Error::IncompatibleTypes(ident.span.clone()));
@@ -1073,7 +1069,7 @@ impl TypeChecker {
                 _ => Err(Error::IncompatibleTypes(name.span.clone())),
             },
             crate::ast::Expression::Cast { target, exp } => {
-                self.validate_var_type(target)
+                self.validate_var_type(target, false)
                     .map_err(|_| Error::IncompatibleTypes(exp.span()))?;
                 let ty = self.check_expression_and_convert(exp)?;
 
@@ -1182,7 +1178,7 @@ impl TypeChecker {
                         return Err(Error::IncompatibleTypes(exp.span()));
                     }
                 }
-                self.validate_var_type(&ty.data)
+                self.validate_var_type(&ty.data, false)
                     .map_err(|_| Error::IncompatibleTypes(exp.span()))?;
                 Ok(ast::BaseType::Ulong.into())
             }
@@ -1408,7 +1404,7 @@ impl TypeChecker {
                 todo!()
             }
 
-            if self.validate_var_type(&member.ty).is_err() {
+            if self.validate_var_type(&member.ty, false).is_err() {
                 todo!()
             }
         }
@@ -1416,24 +1412,30 @@ impl TypeChecker {
         Ok(())
     }
 
-    fn validate_var_type(&self, ty: &ast::VarType) -> Result<(), ()> {
+    fn validate_var_type(
+        &self,
+        ty: &ast::VarType,
+        allow_incomplete_struct: bool,
+    ) -> Result<(), ()> {
         match ty {
             VarType::Array { element, .. } => {
-                if !self.sym_table.is_complete(element) {
+                if !allow_incomplete_struct && !self.sym_table.is_complete(element) {
                     return Err(());
                 }
-                self.validate_var_type(&element)?;
+                self.validate_var_type(&element, allow_incomplete_struct)?;
             }
             VarType::Pointer(ty) => match ty.as_ref() {
                 ast::Ty::Fun(ty) => {
-                    self.validate_fun_type(ty)?;
+                    self.validate_fun_type(ty, allow_incomplete_struct)?;
                 }
                 ast::Ty::Var(ty) => {
-                    self.validate_var_type(ty)?;
+                    self.validate_var_type(ty, allow_incomplete_struct)?;
                 }
             },
             VarType::Struct(tag) => {
-                if !matches!(self.sym_table.get(tag), Some(Attr::Struct { .. })) {
+                if !allow_incomplete_struct
+                    && !matches!(self.sym_table.get(tag), Some(Attr::Struct { .. }))
+                {
                     return Err(());
                 }
             }
@@ -1443,15 +1445,23 @@ impl TypeChecker {
         Ok(())
     }
 
-    fn validate_fun_type(&self, ty: &ast::FunType) -> Result<(), ()> {
+    fn validate_fun_type(
+        &self,
+        ty: &ast::FunType,
+        allow_incomplete_struct: bool,
+    ) -> Result<(), ()> {
         for ty in &ty.params {
             if ty == &ast::VarType::Void {
                 return Err(());
             }
-            self.validate_var_type(ty)?;
+            self.validate_var_type(ty, allow_incomplete_struct)?;
         }
 
-        self.validate_var_type(&ty.ret)?;
+        if matches!(ty.ret, ast::VarType::Array { .. }) {
+            return Err(());
+        }
+
+        self.validate_var_type(&ty.ret, allow_incomplete_struct)?;
 
         Ok(())
     }
