@@ -3,10 +3,10 @@ use std::collections::HashMap;
 use ecow::EcoString;
 
 use crate::{
-    ast::{self, Block, Expression, Initializer, VarType},
+    ast::{self, BaseType, Block, Expression, Initializer, VarType},
     semantics::{
         self,
-        type_check::{Attr, SymbolTable},
+        type_check::{Attr, StaticInit, SymbolTable},
     },
     span::Spanned,
 };
@@ -567,7 +567,7 @@ impl<'a> InstructionGenerator<'a> {
                             self.instructions.push(Instruction::AddPtr {
                                 ptr: lhs,
                                 index: neg,
-                                scale: elem.size(),
+                                scale: self.symbol_table.size(elem),
                                 dst: dst.clone(),
                             });
                             return ExpResult::PlainOperand(dst);
@@ -583,9 +583,9 @@ impl<'a> InstructionGenerator<'a> {
                     let VarType::Pointer(elem) = lhs.ty(self.symbol_table) else {
                         unreachable!()
                     };
-                    let elem_size = elem.size();
+                    let elem_size = self.symbol_table.ty_size(&elem);
                     // ptr - ptr
-                    let diff = self.make_tmp_local(ast::VarType::Long);
+                    let diff = self.make_tmp_local(ast::BaseType::Long.into());
                     self.instructions.push(Instruction::Binary {
                         op: BinaryOp::Subtract,
                         lhs: lhs.clone(),
@@ -714,11 +714,10 @@ impl<'a> InstructionGenerator<'a> {
                     }
                     (from, to) if from == to => ExpResult::PlainOperand(val),
                     (
-                        ast::VarType::Double,
-                        to @ (ast::VarType::Int
-                        | ast::VarType::Long
-                        | ast::VarType::Char
-                        | ast::VarType::SChar),
+                        ast::VarType::Base(ast::BaseType::Double),
+                        to @ (ast::VarType::Base(
+                            BaseType::Int | BaseType::Long | BaseType::Char | BaseType::SChar,
+                        )),
                     ) => {
                         let dst = self.make_tmp_local(to.clone());
                         self.instructions.push(Instruction::DoubleToInt {
@@ -728,8 +727,10 @@ impl<'a> InstructionGenerator<'a> {
                         ExpResult::PlainOperand(dst)
                     }
                     (
-                        ast::VarType::Double,
-                        to @ (ast::VarType::Uint | ast::VarType::Ulong | ast::VarType::UChar),
+                        ast::VarType::Base(ast::BaseType::Double),
+                        to @ ast::VarType::Base(
+                            ast::BaseType::Uint | ast::BaseType::Ulong | ast::BaseType::UChar,
+                        ),
                     ) => {
                         let dst = self.make_tmp_local(to.clone());
                         self.instructions.push(Instruction::DoubleToUint {
@@ -739,13 +740,12 @@ impl<'a> InstructionGenerator<'a> {
                         ExpResult::PlainOperand(dst)
                     }
                     (
-                        ast::VarType::Int
-                        | ast::VarType::Long
-                        | ast::VarType::Char
-                        | ast::VarType::SChar,
-                        ast::VarType::Double,
+                        ast::VarType::Base(
+                            BaseType::Int | BaseType::Long | BaseType::Char | BaseType::SChar,
+                        ),
+                        ast::VarType::Base(ast::BaseType::Double),
                     ) => {
-                        let dst = self.make_tmp_local(ast::VarType::Double);
+                        let dst = self.make_tmp_local(ast::VarType::Base(BaseType::Double));
                         self.instructions.push(Instruction::IntToDouble {
                             src: val,
                             dst: dst.clone(),
@@ -753,17 +753,19 @@ impl<'a> InstructionGenerator<'a> {
                         ExpResult::PlainOperand(dst)
                     }
                     (
-                        ast::VarType::Uint | ast::VarType::Ulong | ast::VarType::UChar,
-                        ast::VarType::Double,
+                        ast::VarType::Base(
+                            ast::BaseType::Uint | ast::BaseType::Ulong | ast::BaseType::UChar,
+                        ),
+                        ast::VarType::Base(ast::BaseType::Double),
                     ) => {
-                        let dst = self.make_tmp_local(ast::VarType::Double);
+                        let dst = self.make_tmp_local(ast::VarType::Base(ast::BaseType::Double));
                         self.instructions.push(Instruction::UintToDouble {
                             src: val,
                             dst: dst.clone(),
                         });
                         ExpResult::PlainOperand(dst)
                     }
-                    (from, to) if from.size() == to.size() => {
+                    (from, to) if self.symbol_table.size(from) == self.symbol_table.size(to) => {
                         let dst = self.make_tmp_local(to.clone());
                         self.instructions.push(Instruction::Copy {
                             src: val,
@@ -771,7 +773,7 @@ impl<'a> InstructionGenerator<'a> {
                         });
                         ExpResult::PlainOperand(dst)
                     }
-                    (from, to) if from.size() > to.size() => {
+                    (from, to) if self.symbol_table.size(from) > self.symbol_table.size(to) => {
                         let dst = self.make_tmp_local(to.clone());
                         self.instructions.push(Instruction::Truncate {
                             src: val,
@@ -831,7 +833,7 @@ impl<'a> InstructionGenerator<'a> {
                 self.instructions.push(Instruction::AddPtr {
                     ptr,
                     index,
-                    scale: ty.size(),
+                    scale: self.symbol_table.size(ty),
                     dst: dst.clone(),
                 });
 
@@ -839,13 +841,14 @@ impl<'a> InstructionGenerator<'a> {
             }
             ast::Expression::String(data, ty) => {
                 let name = self.new_label("tacky.string");
+                let pad = self.symbol_table.size(ty) - data.data.len();
                 self.symbol_table.insert(
                     name.clone(),
                     semantics::type_check::Attr::Constant {
                         ty: ty.clone(),
                         init: semantics::type_check::StaticInit::String {
                             data: data.data.clone(),
-                            pad: ty.size() - data.data.len(),
+                            pad,
                         },
                     },
                 );
@@ -853,11 +856,11 @@ impl<'a> InstructionGenerator<'a> {
                 ExpResult::PlainOperand(Val::Var(name))
             }
             ast::Expression::Sizeof(exp) => {
-                let size = exp.ty().size();
+                let size = self.symbol_table.size(exp.ty());
                 ExpResult::PlainOperand(Val::Constant(ast::Const::Ulong(size as _)))
             }
             ast::Expression::SizeofType(ty) => {
-                let size = ty.data.size();
+                let size = self.symbol_table.size(&ty.data);
                 ExpResult::PlainOperand(Val::Constant(ast::Const::Ulong(size as _)))
             }
             _ => todo!(),
@@ -879,7 +882,7 @@ impl<'a> InstructionGenerator<'a> {
     }
 }
 
-pub fn gen_program(program: &ast::Program, symbol_table: &mut HashMap<EcoString, Attr>) -> Program {
+pub fn gen_program(program: &ast::Program, symbol_table: &mut SymbolTable) -> Program {
     let mut generator = InstructionGenerator::new(symbol_table);
 
     let functions: Vec<_> = program
@@ -899,13 +902,15 @@ pub fn gen_program(program: &ast::Program, symbol_table: &mut HashMap<EcoString,
                 Attr::Static { init, global, ty } => {
                     let init = match init {
                         semantics::type_check::InitialValue::Initial(i) => i.clone(),
-                        semantics::type_check::InitialValue::Tentative => vec![ty.zero()],
+                        semantics::type_check::InitialValue::Tentative => {
+                            vec![StaticInit::Zero(generator.symbol_table.size(ty))]
+                        }
                         semantics::type_check::InitialValue::NoInitializer => return None,
                     };
                     Some(TopLevelItem::StaticVariable(StaticVariable {
                         global: *global,
                         name: key.clone(),
-                        alignment: ty.alignment(),
+                        alignment: generator.symbol_table.alignment(ty),
                         init,
                     }))
                 }
@@ -928,7 +933,7 @@ fn gen_function(generator: &mut InstructionGenerator, function: &ast::FunDecl) -
         }
         generator.add_statement(&ast::Statement::Return(match function.ty.ret {
             ast::VarType::Void => None,
-            ast::VarType::Double => Some(ast::Expression::Constant(Spanned {
+            ast::VarType::Base(BaseType::Double) => Some(ast::Expression::Constant(Spanned {
                 data: ast::Const::Double(0.0),
                 span: 0..0,
             })),

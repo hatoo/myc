@@ -39,6 +39,13 @@ impl SymbolTable {
         }
     }
 
+    pub fn ty_size(&self, ty: &ast::Ty) -> usize {
+        match ty {
+            ast::Ty::Var(ref ty) => self.size(ty),
+            ast::Ty::Fun(_) => 1,
+        }
+    }
+
     pub fn size(&self, ty: &ast::VarType) -> usize {
         match ty {
             ast::VarType::Array { element, size } => {
@@ -55,22 +62,22 @@ impl SymbolTable {
         }
     }
 
-    pub fn alignment(&self, ty: &ast::VarType) -> Result<usize, Error> {
+    pub fn alignment(&self, ty: &ast::VarType) -> usize {
         match ty {
             ast::VarType::Array { element, .. } => {
                 if self.size(ty) < 16 {
                     self.alignment(element)
                 } else {
-                    Ok(16)
+                    16
                 }
             }
             ast::VarType::Struct(name) => {
                 let StructDef { alignment, .. } = self.struct_def(name);
 
-                Ok(*alignment)
+                *alignment
             }
-            ast::VarType::Pointer(_) => Ok(8),
-            ast::VarType::Base(base) => Ok(base.alignment()),
+            ast::VarType::Pointer(_) => 8,
+            ast::VarType::Base(base) => base.alignment(),
             ast::VarType::Void => panic!("Get alignment of void"),
         }
     }
@@ -1364,7 +1371,7 @@ impl TypeChecker {
         let mut struct_size = 0;
         let mut struct_align = 0;
         for member in &decl.member_decls {
-            let align = self.sym_table.alignment(&member.ty)?;
+            let align = self.sym_table.alignment(&member.ty);
             let offset = round_up(struct_size, align);
 
             members.push(StructMember {

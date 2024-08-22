@@ -493,7 +493,15 @@ impl VarType {
     }
 
     pub fn is_scalar(&self) -> bool {
-        matches!(self, Self::Base(_))
+        matches!(self, Self::Base(_) | Self::Pointer(_))
+    }
+
+    pub fn is_signed(&self) -> bool {
+        if let Self::Base(base) = self {
+            base.is_signed()
+        } else {
+            false
+        }
     }
 
     pub fn is_pointer(&self) -> bool {
