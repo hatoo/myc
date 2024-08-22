@@ -440,6 +440,9 @@ impl TypeChecker {
                 }
                 ast::VarType::Struct(tag) => {
                     let StructDef { members, .. } = self.sym_table.struct_def(tag);
+                    if inits.len() > members.len() {
+                        return Err(Error::IncompatibleTypes(0..0));
+                    }
                     let members = members.clone();
                     let mut res = Vec::new();
 
@@ -1021,6 +1024,8 @@ impl TypeChecker {
                     } else {
                         return Err(Error::IncompatibleTypes(exp.span()));
                     }
+                } else if tyl == ast::VarType::Void && tyr == ast::VarType::Void {
+                    ast::VarType::Void
                 } else {
                     return Err(Error::IncompatibleTypes(exp.span()));
                 };
@@ -1278,7 +1283,7 @@ impl TypeChecker {
                 _ => Err(Error::IncompatibleTypes(0..0)),
             },
             crate::ast::Statement::Expression(exp) => {
-                self.check_expression(exp)?;
+                self.check_expression_and_convert(exp)?;
                 Ok(())
             }
             crate::ast::Statement::If {
