@@ -405,7 +405,12 @@ impl HasSpan for Expression {
             Self::String(s, _) => s.span.clone(),
             Self::Sizeof(exp) => exp.span(),
             Self::SizeofType(ty) => ty.span.clone(),
-            _ => todo!(),
+            Self::Dot {
+                structure, member, ..
+            } => structure.span().start..member.span.end,
+            Self::Arrow {
+                pointer, member, ..
+            } => pointer.span().start..member.span.end,
         }
     }
 }

@@ -452,9 +452,9 @@ impl VarResolver {
         match self.lookup_struct(&tag.data) {
             None | Some((false, _)) => {
                 let new_name = self.new_var(&tag.data);
-                tag.data = new_name.clone();
                 self.current_scope_struct()
                     .insert(tag.data.clone(), new_name.clone());
+                tag.data = new_name.clone();
             }
             Some((true, prev)) => {
                 tag.data = prev.clone();

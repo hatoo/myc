@@ -1404,7 +1404,7 @@ impl TypeChecker {
         let mut member_names = HashSet::new();
 
         for member in &decl.member_decls {
-            if member_names.insert(member.name.clone()) {
+            if !member_names.insert(member.name.clone()) {
                 todo!()
             }
 
