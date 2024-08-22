@@ -376,9 +376,11 @@ impl Expression {
 
     pub fn is_lvalue(&self) -> bool {
         match self {
-            Self::Var(_, _) | Self::Dereference(_) | Self::Subscript { .. } | Self::String(..) => {
-                true
-            }
+            Self::Var(_, _)
+            | Self::Dereference(_)
+            | Self::Subscript { .. }
+            | Self::String(..)
+            | Self::Arrow { .. } => true,
             Self::Dot { structure, .. } => structure.is_lvalue(),
             _ => false,
         }

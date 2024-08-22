@@ -33,7 +33,18 @@ struct Opts {
 
 fn main() {
     let opts = Opts::parse();
-    let src = Arc::new(std::fs::read(&opts.input).unwrap());
+
+    // TODO implement a proper preprocessor
+    let preped = process::Command::new("gcc")
+        .arg("-E")
+        .arg(&opts.input)
+        .stdout(process::Stdio::piped())
+        .spawn()
+        .unwrap();
+
+    let src = preped.wait_with_output().unwrap().stdout;
+
+    let src = Arc::new(src);
 
     let tokens = lexer(&src)
         .map_err(|err| SpannedError::new(err, src.clone()))
