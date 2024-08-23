@@ -1175,6 +1175,24 @@ impl<'a> CodeGen<'a> {
                         }
                     }
                 },
+                tacky::Instruction::CopyFromOffset { src, offset, dst } => {
+                    let size = self.symbol_table.size(&dst.ty(self.symbol_table));
+                    let Val::Var(dst) = dst else { unreachable!() };
+
+                    for (asm, offset2) in divide_into_assembly_sizes(size) {
+                        body.push(Instruction::Mov {
+                            ty: asm,
+                            src: Operand::Pseudo(Pseudo::Mem {
+                                name: src.clone(),
+                                offset: offset + offset2,
+                            }),
+                            dst: Operand::Pseudo(Pseudo::Mem {
+                                name: dst.clone(),
+                                offset: offset2,
+                            }),
+                        });
+                    }
+                }
                 tacky::Instruction::AddPtr {
                     ptr,
                     index,
@@ -1228,7 +1246,6 @@ impl<'a> CodeGen<'a> {
                         });
                     }
                 },
-                _ => todo!(),
             }
         }
 
