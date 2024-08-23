@@ -176,6 +176,8 @@ pub enum BinaryOp {
     And,
     Or,
     Xor,
+    Shl,
+    ShrTwo,
 }
 
 #[derive(Debug, Clone)]
@@ -192,7 +194,7 @@ pub enum Operand {
     Reg(Register),
     Pseudo(Pseudo),
     Memory(Register, i32),
-    Data(EcoString),
+    Data(EcoString, i32),
     Plt(EcoString),
     Indexed {
         base: Register,
