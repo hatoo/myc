@@ -890,6 +890,7 @@ impl<'a> InstructionGenerator<'a> {
                         base: v,
                         offset: member_offset,
                     },
+                    ExpResult::PlainOperand(Val::Constant(_)) => unreachable!(),
                     ExpResult::SubObject { base, offset } => ExpResult::SubObject {
                         base,
                         offset: offset + member_offset,
@@ -908,10 +909,33 @@ impl<'a> InstructionGenerator<'a> {
 
                         ExpResult::DereferencedPointer(dst_ptr)
                     }
-                    _ => unreachable!(),
                 }
             }
-            _ => todo!(),
+            ast::Expression::Arrow {
+                pointer,
+                member,
+                ty,
+            } => {
+                let struct_name = if let ast::VarType::Pointer(ty) = pointer.ty() {
+                    let ast::Ty::Var(ast::VarType::Struct(struct_name)) = ty.as_ref() else {
+                        unreachable!()
+                    };
+                    struct_name
+                } else {
+                    unreachable!()
+                };
+                let struct_def = self.symbol_table.struct_def(&struct_name);
+                let member_offset = struct_def
+                    .members
+                    .iter()
+                    .find(|m| &m.name == &member.data)
+                    .unwrap()
+                    .offset;
+
+                match self.add_expression(&pointer) {
+                    _ => todo!(),
+                }
+            }
         }
     }
 
@@ -922,6 +946,15 @@ impl<'a> InstructionGenerator<'a> {
                 let dst = self.make_tmp_local(expression.ty().clone());
                 self.instructions.push(Instruction::Load {
                     src: ptr,
+                    dst: dst.clone(),
+                });
+                dst
+            }
+            ExpResult::SubObject { base, offset } => {
+                let dst = self.make_tmp_local(expression.ty().clone());
+                self.instructions.push(Instruction::CopyFromOffset {
+                    src: base,
+                    offset,
                     dst: dst.clone(),
                 });
                 dst
