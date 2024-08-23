@@ -182,6 +182,7 @@ pub enum BinaryOp {
 
 #[derive(Debug, Clone)]
 pub enum Pseudo {
+    // TODO: Replace to Mem with 0 offset
     Var(EcoString),
     // Must be placed in read only section
     Double { value: f64, alignment: usize },
@@ -302,6 +303,31 @@ impl ConstTable {
             }
         }
     }
+}
+
+fn divide_into_assembly_sizes(size: usize) -> impl Iterator<Item = (AssemblyType, usize)> {
+    let mut size = size;
+    let mut offset = 0;
+    std::iter::from_fn(move || {
+        if size == 0 {
+            None
+        } else if size >= 8 {
+            size -= 8;
+            let ret = Some((AssemblyType::QuadWord, offset));
+            offset += 8;
+            ret
+        } else if size >= 4 {
+            size -= 4;
+            let ret = Some((AssemblyType::LongWord, offset));
+            offset += 4;
+            ret
+        } else {
+            size -= 1;
+            let ret = Some((AssemblyType::Byte, offset));
+            offset += 1;
+            ret
+        }
+    })
 }
 
 #[derive(Debug)]
@@ -669,13 +695,32 @@ impl<'a> CodeGen<'a> {
                         }
                     }
                 }
-                tacky::Instruction::Copy { src, dst } => {
-                    body.push(Instruction::Mov {
-                        ty: src.ty(self.symbol_table).into(),
-                        src: src.into(),
-                        dst: dst.into(),
-                    });
-                }
+                tacky::Instruction::Copy { src, dst } => match src {
+                    Val::Constant(_) => {
+                        body.push(Instruction::Mov {
+                            ty: src.ty(self.symbol_table).into(),
+                            src: src.into(),
+                            dst: dst.into(),
+                        });
+                    }
+                    Val::Var(src_name) => {
+                        let size = self.symbol_table.size(&src.ty(self.symbol_table));
+                        let Val::Var(dst) = dst else { unreachable!() };
+                        for (asm, offset) in divide_into_assembly_sizes(size) {
+                            body.push(Instruction::Mov {
+                                ty: asm,
+                                src: Operand::Pseudo(Pseudo::Mem {
+                                    name: src_name.clone(),
+                                    offset,
+                                }),
+                                dst: Operand::Pseudo(Pseudo::Mem {
+                                    name: dst.clone(),
+                                    offset,
+                                }),
+                            });
+                        }
+                    }
+                },
                 tacky::Instruction::Jump(label) => {
                     body.push(Instruction::Jmp(label.clone()));
                 }
