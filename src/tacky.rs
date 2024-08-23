@@ -660,6 +660,14 @@ impl<'a> InstructionGenerator<'a> {
                         });
                         ExpResult::PlainOperand(rhs)
                     }
+                    ExpResult::SubObject { base, offset } => {
+                        self.instructions.push(Instruction::CopyToOffset {
+                            src: rhs.clone(),
+                            dst: base.clone(),
+                            offset: *offset,
+                        });
+                        ExpResult::PlainOperand(rhs)
+                    }
                 }
             }
             ast::Expression::Conditional {
@@ -822,6 +830,16 @@ impl<'a> InstructionGenerator<'a> {
                         ExpResult::PlainOperand(dst)
                     }
                     ExpResult::DereferencedPointer(ptr) => ExpResult::PlainOperand(ptr),
+                    ExpResult::SubObject { base, offset } => {
+                        let dst = self.make_tmp_local(ty.clone());
+                        self.instructions.push(Instruction::AddPtr {
+                            ptr: Val::Var(base),
+                            index: Val::Constant(ast::Const::Int(offset as _)),
+                            scale: 1,
+                            dst: dst.clone(),
+                        });
+                        ExpResult::PlainOperand(dst)
+                    }
                 }
             }
             ast::Expression::Subscript { array, index, ty } => {
@@ -932,9 +950,17 @@ impl<'a> InstructionGenerator<'a> {
                     .unwrap()
                     .offset;
 
-                match self.add_expression(&pointer) {
-                    _ => todo!(),
-                }
+                let ptr = self.add_expression_and_convert(&pointer);
+                let dst_ptr = self.make_tmp_local(pointer.ty().clone());
+
+                self.instructions.push(Instruction::AddPtr {
+                    ptr,
+                    index: Val::Constant(ast::Const::Int(member_offset as _)),
+                    scale: 1,
+                    dst: dst_ptr.clone(),
+                });
+
+                ExpResult::DereferencedPointer(dst_ptr)
             }
         }
     }
