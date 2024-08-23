@@ -1099,28 +1099,42 @@ impl<'a> CodeGen<'a> {
                     _ => unreachable!(),
                 },
                 tacky::Instruction::Load { src, dst } => {
+                    let size = self.symbol_table.size(&src.ty(self.symbol_table));
+                    let Val::Var(dst) = dst else { unreachable!() };
                     body.push(Instruction::Mov {
                         ty: AssemblyType::QuadWord,
                         src: src.into(),
                         dst: Operand::Reg(Register::Ax),
                     });
-                    body.push(Instruction::Mov {
-                        ty: dst.ty(self.symbol_table).into(),
-                        src: Operand::Memory(Register::Ax, 0),
-                        dst: dst.into(),
-                    });
+                    for (asm, offset) in divide_into_assembly_sizes(size) {
+                        body.push(Instruction::Mov {
+                            ty: asm,
+                            src: Operand::Memory(Register::Ax, offset as i32),
+                            dst: Operand::Pseudo(Pseudo::Mem {
+                                name: dst.clone(),
+                                offset,
+                            }),
+                        });
+                    }
                 }
                 tacky::Instruction::Store { src, dst } => {
+                    let size = self.symbol_table.size(&src.ty(self.symbol_table));
+                    let Val::Var(src) = src else { unreachable!() };
                     body.push(Instruction::Mov {
                         ty: AssemblyType::QuadWord,
                         src: dst.into(),
                         dst: Operand::Reg(Register::Ax),
                     });
-                    body.push(Instruction::Mov {
-                        ty: src.ty(self.symbol_table).into(),
-                        src: src.into(),
-                        dst: Operand::Memory(Register::Ax, 0),
-                    });
+                    for (asm, offset) in divide_into_assembly_sizes(size) {
+                        body.push(Instruction::Mov {
+                            ty: asm,
+                            src: Operand::Pseudo(Pseudo::Mem {
+                                name: src.clone(),
+                                offset,
+                            }),
+                            dst: Operand::Memory(Register::Ax, offset as i32),
+                        });
+                    }
                 }
                 tacky::Instruction::GetAddress { src, dst } => {
                     let Val::Var(var) = src else { unreachable!() };
@@ -1132,16 +1146,35 @@ impl<'a> CodeGen<'a> {
                         dst: dst.into(),
                     });
                 }
-                tacky::Instruction::CopyToOffset { src, dst, offset } => {
-                    body.push(Instruction::Mov {
-                        ty: src.ty(self.symbol_table).into(),
-                        src: src.into(),
-                        dst: Operand::Pseudo(Pseudo::Mem {
-                            name: dst.clone(),
-                            offset: *offset,
-                        }),
-                    });
-                }
+                tacky::Instruction::CopyToOffset { src, dst, offset } => match src {
+                    Val::Constant(_) => {
+                        body.push(Instruction::Mov {
+                            ty: src.ty(self.symbol_table).into(),
+                            src: src.into(),
+                            dst: Operand::Pseudo(Pseudo::Mem {
+                                name: dst.clone(),
+                                offset: *offset,
+                            }),
+                        });
+                    }
+                    Val::Var(src_name) => {
+                        let size = self.symbol_table.size(&src.ty(self.symbol_table));
+
+                        for (asm, offset2) in divide_into_assembly_sizes(size) {
+                            body.push(Instruction::Mov {
+                                ty: asm,
+                                src: Operand::Pseudo(Pseudo::Mem {
+                                    name: src_name.clone(),
+                                    offset: offset2,
+                                }),
+                                dst: Operand::Pseudo(Pseudo::Mem {
+                                    name: dst.clone(),
+                                    offset: offset + offset2,
+                                }),
+                            });
+                        }
+                    }
+                },
                 tacky::Instruction::AddPtr {
                     ptr,
                     index,
