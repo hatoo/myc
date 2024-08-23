@@ -227,7 +227,7 @@ impl<'a> InstructionGenerator<'a> {
                     self.add_var_declaration(decl);
                 }
                 ast::Declaration::FunDecl(_) => {}
-                _ => todo!(),
+                ast::Declaration::StructDecl(_) => {}
             },
             ast::BlockItem::Statement(stmt) => {
                 self.add_statement(stmt);
