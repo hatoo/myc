@@ -237,56 +237,77 @@ impl<'a> InstructionGenerator<'a> {
         }
     }
 
-    fn copy_initializers(&mut self, inits: &[Initializer], name: EcoString, offset: &mut usize) {
-        for init in inits {
-            match init {
-                Initializer::SingleInit(Expression::String(data, ty @ VarType::Array { .. })) => {
-                    for chunk in data
-                        .data
-                        .iter()
-                        .chain(std::iter::repeat(&0))
-                        .take(self.symbol_table.size(ty))
-                        .copied()
-                        .collect::<Vec<_>>()
-                        .chunks(4)
-                    {
-                        if chunk.len() == 4 {
-                            let val = Val::Constant(ast::Const::Uint(u32::from_le_bytes([
-                                chunk[0], chunk[1], chunk[2], chunk[3],
-                            ])));
+    fn copy_initializers(
+        &mut self,
+        init: &Initializer,
+        name: EcoString,
+        target: &VarType,
+        offset: &mut usize,
+    ) {
+        match init {
+            Initializer::SingleInit(Expression::String(data, ty @ VarType::Array { .. })) => {
+                for chunk in data
+                    .data
+                    .iter()
+                    .chain(std::iter::repeat(&0))
+                    .take(self.symbol_table.size(ty))
+                    .copied()
+                    .collect::<Vec<_>>()
+                    .chunks(4)
+                {
+                    if chunk.len() == 4 {
+                        let val = Val::Constant(ast::Const::Uint(u32::from_le_bytes([
+                            chunk[0], chunk[1], chunk[2], chunk[3],
+                        ])));
+                        self.instructions.push(Instruction::CopyToOffset {
+                            src: val,
+                            dst: name.clone(),
+                            offset: *offset,
+                        });
+                        *offset += chunk.len();
+                    } else {
+                        for byte in chunk {
+                            let val = Val::Constant(ast::Const::UChar(*byte));
                             self.instructions.push(Instruction::CopyToOffset {
                                 src: val,
                                 dst: name.clone(),
                                 offset: *offset,
                             });
-                            *offset += chunk.len();
-                        } else {
-                            for byte in chunk {
-                                let val = Val::Constant(ast::Const::UChar(*byte));
-                                self.instructions.push(Instruction::CopyToOffset {
-                                    src: val,
-                                    dst: name.clone(),
-                                    offset: *offset,
-                                });
-                                *offset += 1;
-                            }
+                            *offset += 1;
                         }
                     }
                 }
-                Initializer::SingleInit(exp) => {
-                    let val = self.add_expression_and_convert(exp);
-                    let size = self.symbol_table.size(&val.ty(self.symbol_table));
-                    self.instructions.push(Instruction::CopyToOffset {
-                        src: val,
-                        dst: name.clone(),
-                        offset: *offset,
-                    });
-                    *offset += size;
-                }
-                Initializer::CompoundInit(inits) => {
-                    self.copy_initializers(inits, name.clone(), offset);
-                }
             }
+            Initializer::SingleInit(exp) => {
+                let val = self.add_expression_and_convert(exp);
+                let size = self.symbol_table.size(&val.ty(self.symbol_table));
+                self.instructions.push(Instruction::CopyToOffset {
+                    src: val,
+                    dst: name.clone(),
+                    offset: *offset,
+                });
+                *offset += size;
+            }
+            Initializer::CompoundInit(inits) => match target {
+                VarType::Array { element, .. } => {
+                    for init in inits {
+                        self.copy_initializers(init, name.clone(), element, offset);
+                    }
+                }
+                VarType::Struct(name) => {
+                    let struct_def = self.symbol_table.struct_def(name);
+                    let offset_start = *offset;
+                    for (member, init) in struct_def.members.clone().into_iter().zip(inits) {
+                        self.copy_initializers(
+                            init,
+                            name.clone(),
+                            &member.ty,
+                            &mut (offset_start + member.offset),
+                        );
+                    }
+                }
+                _ => unreachable!(),
+            },
         }
     }
 
@@ -294,22 +315,9 @@ impl<'a> InstructionGenerator<'a> {
         if decl.storage_class.is_some() {
             return;
         }
-        if let Some(init) = &decl.init {
-            match init {
-                ast::Initializer::SingleInit(Expression::String(..)) => {
-                    self.copy_initializers(&[init.clone()], decl.ident.data.clone(), &mut 0);
-                }
-                ast::Initializer::SingleInit(exp) => {
-                    let val = self.add_expression_and_convert(exp);
-                    self.instructions.push(Instruction::Copy {
-                        src: val,
-                        dst: Val::Var(decl.ident.data.clone()),
-                    });
-                }
-                ast::Initializer::CompoundInit(inits) => {
-                    self.copy_initializers(inits, decl.ident.data.clone(), &mut 0);
-                }
-            }
+
+        if let Some(init) = decl.init.as_ref() {
+            self.copy_initializers(init, decl.ident.data.clone(), &decl.ty, &mut 0);
         }
     }
 
@@ -729,9 +737,9 @@ impl<'a> InstructionGenerator<'a> {
                     (from, to) if from == to => ExpResult::PlainOperand(val),
                     (
                         ast::VarType::Base(ast::BaseType::Double),
-                        to @ (ast::VarType::Base(
+                        to @ ast::VarType::Base(
                             BaseType::Int | BaseType::Long | BaseType::Char | BaseType::SChar,
-                        )),
+                        ),
                     ) => {
                         let dst = self.make_tmp_local(to.clone());
                         self.instructions.push(Instruction::DoubleToInt {
@@ -915,7 +923,7 @@ impl<'a> InstructionGenerator<'a> {
                     },
                     ExpResult::DereferencedPointer(ptr) => {
                         let dst_ptr = self.make_tmp_local(ast::VarType::Pointer(Box::new(
-                            ast::Ty::Var(ast::VarType::Struct(struct_name.clone())),
+                            ast::Ty::Var(ty.clone()),
                         )));
 
                         self.instructions.push(Instruction::AddPtr {
