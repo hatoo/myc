@@ -1,9 +1,7 @@
-use std::collections::HashMap;
-
 use ecow::EcoString;
 
 use crate::{
-    ast::{self, BaseType, Block, Expression, Initializer, VarType},
+    ast::{self, BaseType, Block, Expression, Initializer, Ty, VarType},
     semantics::{
         self,
         type_check::{Attr, StaticInit, SymbolTable},
@@ -295,9 +293,9 @@ impl<'a> InstructionGenerator<'a> {
                     }
                 }
                 VarType::Struct(name) => {
-                    let struct_def = self.symbol_table.struct_def(name);
+                    let struct_def = self.symbol_table.struct_def(name).clone();
                     let offset_start = *offset;
-                    for (member, init) in struct_def.members.clone().into_iter().zip(inits) {
+                    for (member, init) in struct_def.members.iter().zip(inits) {
                         self.copy_initializers(
                             init,
                             name.clone(),
@@ -305,6 +303,7 @@ impl<'a> InstructionGenerator<'a> {
                             &mut (offset_start + member.offset),
                         );
                     }
+                    *offset = offset_start + struct_def.size;
                 }
                 _ => unreachable!(),
             },
@@ -959,7 +958,7 @@ impl<'a> InstructionGenerator<'a> {
                     .offset;
 
                 let ptr = self.add_expression_and_convert(&pointer);
-                let dst_ptr = self.make_tmp_local(pointer.ty().clone());
+                let dst_ptr = self.make_tmp_local(VarType::Pointer(Box::new(Ty::Var(ty.clone()))));
 
                 self.instructions.push(Instruction::AddPtr {
                     ptr,
