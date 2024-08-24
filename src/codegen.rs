@@ -1311,9 +1311,14 @@ impl<'a> CodeGen<'a> {
                         }
                     } else {
                         body.push(Instruction::Mov {
+                            ty: AssemblyType::QuadWord,
+                            src: dst.into(),
+                            dst: Operand::Reg(Register::Ax),
+                        });
+                        body.push(Instruction::Mov {
                             ty: self.val_asm_type(&src),
                             src: src.into(),
-                            dst: dst.into(),
+                            dst: Operand::Memory(Register::Ax, 0),
                         });
                     }
                 }
