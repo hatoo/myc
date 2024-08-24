@@ -1273,13 +1273,7 @@ impl<'a> CodeGen<'a> {
                     _ => unreachable!(),
                 },
                 tacky::Instruction::Load { src, dst } => {
-                    let VarType::Pointer(ty) = src.ty(self.symbol_table) else {
-                        unreachable!()
-                    };
-                    let Ty::Var(ty) = ty.as_ref() else {
-                        unreachable!()
-                    };
-                    let size = self.symbol_table.size(ty);
+                    let size = self.symbol_table.size(&dst.ty(self.symbol_table));
                     let Val::Var(dst) = dst else { unreachable!() };
                     body.push(Instruction::Mov {
                         ty: AssemblyType::QuadWord,
