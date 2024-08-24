@@ -2,7 +2,6 @@ use core::panic;
 use std::{
     collections::{hash_map::Entry, HashMap},
     fmt::Display,
-    intrinsics::mir::PtrMetadata,
 };
 
 use ecow::EcoString;
@@ -1339,8 +1338,95 @@ impl<'a> CodeGen<'a> {
             }
         }
     }
+
+    #[allow(clippy::type_complexity)]
+    fn classify_parameters(
+        &self,
+        iter: impl Iterator<Item = Val>,
+        return_in_memory: bool,
+    ) -> (
+        Vec<(AssemblyType, Operand)>,
+        Vec<(AssemblyType, Operand)>,
+        Vec<(AssemblyType, Operand)>,
+    ) {
+        let mut int_reg_args = Vec::new();
+        let mut double_reg_args = Vec::new();
+        let mut stack_args = Vec::new();
+
+        let int_regs_available = if return_in_memory { 5 } else { 6 };
+
+        for val in iter {
+            let ty = val.ty(&self.symbol_table);
+            let asm_ty = ty.into();
+            match &ty {
+                VarType::Base(BaseType::Double) => {
+                    if double_reg_args.len() < 8 {
+                        double_reg_args.push((asm_ty, val.into()));
+                    } else {
+                        stack_args.push((asm_ty, val.into()));
+                    }
+                }
+                VarType::Struct(name) => {
+                    let structure = self.symbol_table.struct_def(&name);
+                    let classes = self.classify_struct(structure);
+                    let mut use_stack = true;
+                    let struct_size = structure.size;
+                    let Val::Var(val_name) = val else {
+                        unreachable!()
+                    };
+
+                    if classes[0] != Class::Memory {
+                        let mut tentative_ints = Vec::new();
+                        let mut tentative_doubles = Vec::new();
+                        let mut offset = 0;
+                        for class in classes {
+                            let operand = Operand::Pseudo(Pseudo::Mem {
+                                name: val_name.clone(),
+                                offset,
+                            });
+
+                            if class == Class::Sse {
+                                tentative_doubles.push((asm_ty, operand));
+                            } else {
+                                let eightbyte_type = get_eightbyte_type(offset, struct_size);
+                                tentative_ints.push((eightbyte_type, operand));
+                            }
+
+                            offset += 8;
+                        }
+                    }
+                }
+                _ => {
+                    if int_reg_args.len() < int_regs_available {
+                        int_reg_args.push((asm_ty, val.into()));
+                    } else {
+                        stack_args.push((asm_ty, val.into()));
+                    }
+                }
+            }
+        }
+
+        (int_reg_args, double_reg_args, stack_args)
+    }
 }
 
+fn get_eightbyte_type(offset: usize, struct_size: usize) -> AssemblyType {
+    let bytes_from_end = struct_size - offset;
+    if bytes_from_end >= 8 {
+        AssemblyType::QuadWord
+    } else if bytes_from_end == 4 {
+        AssemblyType::LongWord
+    } else if bytes_from_end == 1 {
+        AssemblyType::Byte
+    } else {
+        AssemblyType::ByteArray {
+            size: bytes_from_end,
+            alignment: 8,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Class {
     Memory,
     Sse,
