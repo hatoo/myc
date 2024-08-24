@@ -563,7 +563,7 @@ impl<'a> CodeGen<'a> {
 
                             for (i, (asm_ty, op)) in int_retvals.into_iter().enumerate() {
                                 if let AssemblyType::ByteArray { size, .. } = asm_ty {
-                                    self.copy_bytes_from_reg(&op, int_ret_regs[i], size, &mut body);
+                                    self.copy_bytes_to_reg(&op, int_ret_regs[i], size, &mut body);
                                 } else {
                                     body.push(Instruction::Mov {
                                         ty: asm_ty,
