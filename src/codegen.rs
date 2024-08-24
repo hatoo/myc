@@ -2,6 +2,7 @@ use core::panic;
 use std::{
     collections::{hash_map::Entry, HashMap},
     fmt::Display,
+    os::unix::raw::off_t,
 };
 
 use ecow::EcoString;
@@ -1357,7 +1358,7 @@ impl<'a> CodeGen<'a> {
 
         for val in iter {
             let ty = val.ty(&self.symbol_table);
-            let asm_ty = ty.into();
+            let asm_ty = (&ty).into();
             match &ty {
                 VarType::Base(BaseType::Double) => {
                     if double_reg_args.len() < 8 {
@@ -1379,7 +1380,7 @@ impl<'a> CodeGen<'a> {
                         let mut tentative_ints = Vec::new();
                         let mut tentative_doubles = Vec::new();
                         let mut offset = 0;
-                        for class in classes {
+                        for &class in &classes {
                             let operand = Operand::Pseudo(Pseudo::Mem {
                                 name: val_name.clone(),
                                 offset,
@@ -1392,6 +1393,26 @@ impl<'a> CodeGen<'a> {
                                 tentative_ints.push((eightbyte_type, operand));
                             }
 
+                            offset += 8;
+                        }
+
+                        if (tentative_doubles.len() + double_reg_args.len()) <= 8
+                            && (tentative_ints.len() + int_reg_args.len()) <= int_regs_available
+                        {
+                            double_reg_args.extend(tentative_doubles);
+                            int_reg_args.extend(tentative_ints);
+                            use_stack = false;
+                        }
+                    }
+                    if use_stack {
+                        let mut offset = 0;
+                        for _ in classes {
+                            let operand = Operand::Pseudo(Pseudo::Mem {
+                                name: val_name.clone(),
+                                offset,
+                            });
+                            let eightbyte_type = get_eightbyte_type(offset, struct_size);
+                            stack_args.push((eightbyte_type, operand));
                             offset += 8;
                         }
                     }
