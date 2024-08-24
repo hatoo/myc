@@ -39,7 +39,12 @@ impl AssemblyType {
             AssemblyType::LongWord => "l",
             AssemblyType::QuadWord => "q",
             AssemblyType::Double => "sd",
-            AssemblyType::ByteArray { .. } => todo!(),
+            AssemblyType::ByteArray { .. } => {
+                panic!(
+                    "Custom backtrace: {}",
+                    std::backtrace::Backtrace::force_capture()
+                );
+            }
         }
     }
 }
@@ -506,7 +511,7 @@ impl<'a> CodeGen<'a> {
 
         for (i, (asm_ty, op)) in double_reg_args.into_iter().enumerate() {
             body.push(Instruction::Mov {
-                ty: asm_ty,
+                ty: AssemblyType::Double,
                 src: Operand::Reg(Register::Xmm(i as _)),
                 dst: op,
             });
@@ -946,9 +951,9 @@ impl<'a> CodeGen<'a> {
                         }
                     }
 
-                    for (i, (asm_ty, op)) in double_reg_args.into_iter().enumerate() {
+                    for (i, (_, op)) in double_reg_args.into_iter().enumerate() {
                         body.push(Instruction::Mov {
-                            ty: asm_ty,
+                            ty: AssemblyType::Double,
                             src: op,
                             dst: Operand::Reg(Register::Xmm(i as _)),
                         });
