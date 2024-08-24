@@ -798,6 +798,10 @@ impl<'a> CodeGen<'a> {
                     };
 
                     let (int_dests, double_dests, return_in_memory) = if let Some(retval) = dst {
+                        body.push(Instruction::Lea {
+                            src: retval.into(),
+                            dst: Operand::Reg(Register::Di),
+                        });
                         self.classify_return_value(retval.clone())
                     } else {
                         (Vec::new(), Vec::new(), false)
