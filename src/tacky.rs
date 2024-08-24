@@ -292,8 +292,8 @@ impl<'a> InstructionGenerator<'a> {
                         self.copy_initializers(init, name.clone(), element, offset);
                     }
                 }
-                VarType::Struct(name) => {
-                    let struct_def = self.symbol_table.struct_def(name).clone();
+                VarType::Struct(struct_name) => {
+                    let struct_def = self.symbol_table.struct_def(struct_name).clone();
                     let offset_start = *offset;
                     for (member, init) in struct_def.members.iter().zip(inits) {
                         self.copy_initializers(

@@ -494,12 +494,12 @@ impl<'a> CodeGen<'a> {
 
         for (i, (asm_ty, op)) in int_reg_args.into_iter().enumerate() {
             if let AssemblyType::ByteArray { size, .. } = asm_ty {
-                self.copy_bytes_to_reg(&op, int_regs[i], size, &mut body);
+                self.copy_bytes_from_reg(&op, int_regs[i], size, &mut body);
             } else {
                 body.push(Instruction::Mov {
                     ty: asm_ty,
-                    src: op,
-                    dst: Operand::Reg(int_regs[i]),
+                    src: Operand::Reg(int_regs[i]),
+                    dst: op,
                 });
             }
         }
