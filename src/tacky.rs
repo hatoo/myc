@@ -157,7 +157,7 @@ pub enum BinaryOp {
     GreaterOrEqual,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Val {
     Constant(ast::Const),
     Var(EcoString),

@@ -164,7 +164,7 @@ pub enum Statement {
     Null,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Const {
     Char(i8),
     UChar(u8),

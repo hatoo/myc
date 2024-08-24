@@ -7,7 +7,7 @@ use std::{
 use ecow::EcoString;
 
 use crate::{
-    ast::{self, BaseType, Const, VarType},
+    ast::{self, BaseType, Const, Ty, VarType},
     math::round_up,
     semantics::{
         self,
@@ -1273,7 +1273,13 @@ impl<'a> CodeGen<'a> {
                     _ => unreachable!(),
                 },
                 tacky::Instruction::Load { src, dst } => {
-                    let size = self.symbol_table.size(&src.ty(self.symbol_table));
+                    let VarType::Pointer(ty) = src.ty(self.symbol_table) else {
+                        unreachable!()
+                    };
+                    let Ty::Var(ty) = ty.as_ref() else {
+                        unreachable!()
+                    };
+                    let size = self.symbol_table.size(ty);
                     let Val::Var(dst) = dst else { unreachable!() };
                     body.push(Instruction::Mov {
                         ty: AssemblyType::QuadWord,
