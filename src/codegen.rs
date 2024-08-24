@@ -2,6 +2,7 @@ use core::panic;
 use std::{
     collections::{hash_map::Entry, HashMap},
     fmt::Display,
+    intrinsics::mir::PtrMetadata,
 };
 
 use ecow::EcoString;
@@ -9,7 +10,10 @@ use ecow::EcoString;
 use crate::{
     ast::{self, BaseType, Const, VarType},
     math::round_up,
-    semantics::{self, type_check::SymbolTable},
+    semantics::{
+        self,
+        type_check::{self, SymbolTable},
+    },
     tacky::{self, Val},
 };
 
@@ -1268,6 +1272,79 @@ impl<'a> CodeGen<'a> {
             body,
         }
     }
+
+    fn flatten(&self, ty: &VarType) -> Vec<BaseType> {
+        let mut ret = Vec::new();
+
+        match ty {
+            VarType::Base(base) => {
+                ret.push(base.clone());
+            }
+            VarType::Pointer(_) => {
+                ret.push(BaseType::Ulong);
+            }
+            VarType::Array { element, size } => {
+                for _ in 0..*size {
+                    ret.extend(self.flatten(&element));
+                }
+            }
+            VarType::Struct(name) => {
+                let structure = self.symbol_table.struct_def(name);
+
+                for member in &structure.members {
+                    ret.extend(self.flatten(&member.ty));
+                }
+            }
+            VarType::Void => unreachable!(),
+        }
+
+        ret
+    }
+
+    fn classify_struct(&self, structure: &type_check::StructDef) -> Vec<Class> {
+        if structure.size > 16 {
+            let mut ret = Vec::new();
+            let mut size = structure.size;
+            while size > 0 {
+                if size >= 8 {
+                    size -= 8;
+                } else {
+                    size = 0;
+                }
+                ret.push(Class::Memory);
+            }
+            ret
+        } else {
+            let mut scalar_types = Vec::new();
+            for member in &structure.members {
+                scalar_types.extend(self.flatten(&member.ty));
+            }
+
+            if structure.size > 8 {
+                if scalar_types.first() == Some(&BaseType::Double)
+                    && scalar_types.last() == Some(&BaseType::Double)
+                {
+                    vec![Class::Sse, Class::Sse]
+                } else if scalar_types.first() == Some(&BaseType::Double) {
+                    vec![Class::Sse, Class::Integer]
+                } else if scalar_types.last() == Some(&BaseType::Double) {
+                    vec![Class::Integer, Class::Sse]
+                } else {
+                    vec![Class::Integer, Class::Integer]
+                }
+            } else if scalar_types.first() == Some(&BaseType::Double) {
+                vec![Class::Sse]
+            } else {
+                vec![Class::Integer]
+            }
+        }
+    }
+}
+
+enum Class {
+    Memory,
+    Sse,
+    Integer,
 }
 
 #[allow(clippy::type_complexity)]
