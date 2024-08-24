@@ -476,30 +476,52 @@ impl<'a> CodeGen<'a> {
             unreachable!()
         };
 
-        let (int_reg_args, double_reg_args, stack_args) =
-            classify_parameters(function.params.iter().zip(ty.params.iter()));
+        let return_in_memory = self.is_return_in_memory(&ty.ret);
 
-        for (i, (param, ty)) in int_reg_args.into_iter().enumerate() {
+        if return_in_memory {
             body.push(Instruction::Mov {
-                ty: ty.into(),
-                src: Operand::Reg(PARAM_REGISTERS[i]),
-                dst: Operand::Pseudo(Pseudo::Var(param.clone())),
+                ty: AssemblyType::QuadWord,
+                src: Operand::Reg(Register::Di),
+                dst: Operand::Memory(Register::BP, -8),
             });
         }
 
-        for (i, (param, ty)) in double_reg_args.into_iter().enumerate() {
+        let (int_reg_args, double_reg_args, stack_args) = self.classify_parameters(
+            function.params.iter().map(|name| Val::Var(name.clone())),
+            return_in_memory,
+        );
+
+        let int_regs = if return_in_memory {
+            &PARAM_REGISTERS[1..]
+        } else {
+            &PARAM_REGISTERS
+        };
+
+        for (i, (asm_ty, op)) in int_reg_args.into_iter().enumerate() {
+            if let AssemblyType::ByteArray { size, .. } = asm_ty {
+                self.copy_bytes_to_reg(&op, int_regs[i], size, &mut body);
+            } else {
+                body.push(Instruction::Mov {
+                    ty: asm_ty,
+                    src: op,
+                    dst: Operand::Reg(int_regs[i]),
+                });
+            }
+        }
+
+        for (i, (asm_ty, op)) in double_reg_args.into_iter().enumerate() {
             body.push(Instruction::Mov {
-                ty: ty.into(),
+                ty: asm_ty,
                 src: Operand::Reg(Register::Xmm(i as _)),
-                dst: Operand::Pseudo(Pseudo::Var(param.clone())),
+                dst: op,
             });
         }
 
-        for (i, (param, ty)) in stack_args.into_iter().enumerate() {
+        for (i, (asm_ty, op)) in stack_args.into_iter().enumerate() {
             body.push(Instruction::Mov {
-                ty: ty.into(),
+                ty: asm_ty,
                 src: Operand::stack((16 + i * 8) as i32),
-                dst: Operand::Pseudo(Pseudo::Var(param.clone())),
+                dst: op,
             });
         }
 
@@ -846,7 +868,7 @@ impl<'a> CodeGen<'a> {
                     body.push(Instruction::Label(label.clone()));
                 }
                 tacky::Instruction::FunCall { name, args, dst } => {
-                    let (callee, ty) = match &self.symbol_table[name] {
+                    let (callee, _ty) = match &self.symbol_table[name] {
                         semantics::type_check::Attr::Fun { ty, .. } => {
                             (Operand::Plt(name.clone()), ty)
                         }
@@ -1540,6 +1562,16 @@ impl<'a> CodeGen<'a> {
         }
 
         (int_reg_args, double_reg_args, stack_args)
+    }
+
+    fn is_return_in_memory(&self, ty: &VarType) -> bool {
+        if let VarType::Struct(name) = ty {
+            let struct_def = self.symbol_table.struct_def(name);
+            let classes = self.classify_struct(struct_def);
+            classes[0] == Class::Memory
+        } else {
+            false
+        }
     }
 
     fn classify_return_value(
