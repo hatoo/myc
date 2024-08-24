@@ -192,6 +192,7 @@ struct InstructionGenerator<'a> {
     symbol_table: &'a mut SymbolTable,
 }
 
+#[derive(Debug)]
 enum ExpResult {
     PlainOperand(Val),
     DereferencedPointer(Val),
@@ -839,8 +840,16 @@ impl<'a> InstructionGenerator<'a> {
                     ExpResult::DereferencedPointer(ptr) => ExpResult::PlainOperand(ptr),
                     ExpResult::SubObject { base, offset } => {
                         let dst = self.make_tmp_local(ty.clone());
+                        let ptr = self.make_tmp_local(ast::VarType::Pointer(Box::new(
+                            ast::Ty::Var(ty.clone()),
+                        )));
+
+                        self.instructions.push(Instruction::GetAddress {
+                            src: Val::Var(base),
+                            dst: ptr.clone(),
+                        });
                         self.instructions.push(Instruction::AddPtr {
-                            ptr: Val::Var(base),
+                            ptr,
                             index: Val::Constant(ast::Const::Int(offset as _)),
                             scale: 1,
                             dst: dst.clone(),
