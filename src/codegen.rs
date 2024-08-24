@@ -401,6 +401,10 @@ impl<'a> CodeGen<'a> {
                 .collect(),
         }
     }
+    fn copy_bytes_to_reg(&self, op: &Operand, dst_reg: Register, byte_count: usize) {
+        todo!()
+    }
+
     fn gen_function(&mut self, function: &tacky::Function) -> Function {
         let mut body = Vec::new();
 
@@ -793,8 +797,20 @@ impl<'a> CodeGen<'a> {
                         _ => unreachable!(),
                     };
 
+                    let (int_dests, double_dests, return_in_memory) = if let Some(retval) = dst {
+                        self.classify_return_value(retval.clone())
+                    } else {
+                        (Vec::new(), Vec::new(), false)
+                    };
+
+                    let param_regs = if return_in_memory {
+                        &PARAM_REGISTERS[1..]
+                    } else {
+                        &PARAM_REGISTERS
+                    };
+
                     let (int_reg_args, double_reg_args, stack_args) =
-                        classify_parameters(args.iter().zip(ty.params.iter()));
+                        self.classify_parameters(args.iter().cloned(), return_in_memory);
 
                     let stack_padding = 8 * (stack_args.len() % 2);
 
@@ -807,45 +823,48 @@ impl<'a> CodeGen<'a> {
                         });
                     }
 
-                    for (i, (arg, ty)) in int_reg_args.into_iter().enumerate() {
-                        body.push(Instruction::Mov {
-                            ty: ty.into(),
-                            src: arg.into(),
-                            dst: Operand::Reg(PARAM_REGISTERS[i]),
-                        });
+                    for (i, (asm_ty, op)) in int_reg_args.into_iter().enumerate() {
+                        if let AssemblyType::ByteArray { size, .. } = asm_ty {
+                            self.copy_bytes_to_reg(&op, PARAM_REGISTERS[i], size);
+                        } else {
+                            body.push(Instruction::Mov {
+                                ty: asm_ty,
+                                src: op,
+                                dst: Operand::Reg(PARAM_REGISTERS[i]),
+                            });
+                        }
                     }
 
-                    for (i, (arg, ty)) in double_reg_args.into_iter().enumerate() {
+                    for (i, (asm_ty, op)) in double_reg_args.into_iter().enumerate() {
                         body.push(Instruction::Mov {
-                            ty: ty.into(),
-                            src: arg.into(),
+                            ty: asm_ty,
+                            src: op,
                             dst: Operand::Reg(Register::Xmm(i as _)),
                         });
                     }
 
                     let stack_len = stack_args.len();
-                    for (arg, ty) in stack_args.into_iter().rev() {
-                        match ty.into() {
-                            AssemblyType::Byte => {
-                                body.push(Instruction::Mov {
-                                    ty: AssemblyType::Byte,
-                                    src: arg.into(),
-                                    dst: Operand::Reg(Register::Ax),
-                                });
-                                body.push(Instruction::Push(Operand::Reg(Register::Ax)));
-                            }
-                            AssemblyType::LongWord => {
-                                body.push(Instruction::Mov {
-                                    ty: AssemblyType::LongWord,
-                                    src: arg.into(),
-                                    dst: Operand::Reg(Register::Ax),
-                                });
-                                body.push(Instruction::Push(Operand::Reg(Register::Ax)));
-                            }
-                            AssemblyType::QuadWord | AssemblyType::Double => {
-                                body.push(Instruction::Push(arg.into()));
-                            }
-                            AssemblyType::ByteArray { .. } => unreachable!(),
+                    for (asm_ty, op) in stack_args.into_iter().rev() {
+                        if let AssemblyType::ByteArray { size, .. } = asm_ty {
+                            body.push(Instruction::Binary {
+                                op: BinaryOp::Sub,
+                                ty: AssemblyType::QuadWord,
+                                lhs: Operand::Imm(8),
+                                rhs: Operand::Reg(Register::SP),
+                            });
+                            todo!()
+                        } else if matches!(op, Operand::Reg(_) | Operand::Imm(_))
+                            || asm_ty == AssemblyType::QuadWord
+                            || asm_ty == AssemblyType::Double
+                        {
+                            body.push(Instruction::Push(op));
+                        } else {
+                            body.push(Instruction::Mov {
+                                ty: asm_ty,
+                                src: op,
+                                dst: Operand::Reg(Register::Ax),
+                            });
+                            body.push(Instruction::Push(Operand::Reg(Register::Ax)));
                         }
                     }
 
