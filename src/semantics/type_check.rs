@@ -172,18 +172,6 @@ pub struct StructMember {
     pub offset: usize,
 }
 
-impl Attr {
-    pub fn ty(&self) -> &ast::VarType {
-        match self {
-            Attr::Fun { ty, .. } => &ty.ret,
-            Attr::Static { ty, .. } => ty,
-            Attr::Local(ty) => ty,
-            Attr::Constant { ty, .. } => ty,
-            _ => todo!(),
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub enum InitialValue {
     Tentative,

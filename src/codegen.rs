@@ -1718,7 +1718,7 @@ fn pseudo_to_stack(
     let mut remove_pseudo = |operand: &mut Operand| {
         if let Operand::Pseudo(var) = operand {
             match var {
-                Pseudo::Var(name) => match &symbol_table[var] {
+                Pseudo::Var(name) => match &symbol_table[name] {
                     semantics::type_check::Attr::Static { .. } => {
                         *operand = Operand::Data(name.clone(), 0)
                     }
@@ -1878,8 +1878,8 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
         match inst {
             Instruction::Mov {
                 ty,
-                src: src @ (Operand::Memory(..) | Operand::Data(_)),
-                dst: dst @ (Operand::Memory(..) | Operand::Data(_)),
+                src: src @ (Operand::Memory(..) | Operand::Data(..)),
+                dst: dst @ (Operand::Memory(..) | Operand::Data(..)),
             } => {
                 let tmp_reg = Operand::Reg(if ty == AssemblyType::Double {
                     Register::Xmm(14)
@@ -1900,7 +1900,7 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
             Instruction::Mov {
                 ty: AssemblyType::QuadWord,
                 src: src @ Operand::Imm(_),
-                dst: dst @ (Operand::Memory(..) | Operand::Data(_)),
+                dst: dst @ (Operand::Memory(..) | Operand::Data(..)),
             } => {
                 new_insts.push(Instruction::Mov {
                     ty: AssemblyType::QuadWord,
@@ -1917,7 +1917,7 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
                 src_type,
                 dst_type,
                 src: src @ Operand::Imm(_),
-                dst: dst @ (Operand::Memory(..) | Operand::Data(_)),
+                dst: dst @ (Operand::Memory(..) | Operand::Data(..)),
             } => {
                 new_insts.push(Instruction::Mov {
                     ty: src_type,
@@ -1958,7 +1958,7 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
                 src_type,
                 dst_type,
                 src,
-                dst: dst @ (Operand::Memory(..) | Operand::Data(_)),
+                dst: dst @ (Operand::Memory(..) | Operand::Data(..)),
             } => {
                 new_insts.push(Instruction::Movsx {
                     src_type,
@@ -1991,8 +1991,8 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
             Instruction::Binary {
                 ty,
                 op: op @ (BinaryOp::Add | BinaryOp::Sub | BinaryOp::And | BinaryOp::Or),
-                lhs: lhs @ (Operand::Memory(..) | Operand::Data(_)),
-                rhs: rhs @ (Operand::Memory(..) | Operand::Data(_)),
+                lhs: lhs @ (Operand::Memory(..) | Operand::Data(..)),
+                rhs: rhs @ (Operand::Memory(..) | Operand::Data(..)),
             } if !matches!(ty, AssemblyType::Double) => {
                 new_insts.push(Instruction::Mov {
                     ty,
@@ -2010,7 +2010,7 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
                 ty,
                 op: BinaryOp::Mult,
                 lhs,
-                rhs: rhs @ (Operand::Memory(..) | Operand::Data(_)),
+                rhs: rhs @ (Operand::Memory(..) | Operand::Data(..)),
             } => {
                 let lhs = if ty == AssemblyType::QuadWord && matches!(lhs, Operand::Imm(_)) {
                     new_insts.push(Instruction::Mov {
@@ -2121,8 +2121,8 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
             }
             Instruction::Cmp(
                 ty,
-                lhs @ (Operand::Memory(..) | Operand::Data(_)),
-                rhs @ (Operand::Memory(..) | Operand::Data(_)),
+                lhs @ (Operand::Memory(..) | Operand::Data(..)),
+                rhs @ (Operand::Memory(..) | Operand::Data(..)),
             ) if !matches!(ty, AssemblyType::Double) => {
                 new_insts.push(Instruction::Mov {
                     ty,
@@ -2337,7 +2337,7 @@ impl<'a> Display for SizedOperand<'a> {
                 _ => unreachable!(),
             },
             Operand::Pseudo(_) => panic!("Pseudo operand should have been removed"),
-            Operand::Data(name) => write!(f, "{}(%rip)", name)?,
+            Operand::Data(name, _) => todo!(), // write!(f, "{}(%rip)", name)?,
             Operand::Memory(reg, offset) => write!(f, "{}({})", offset, RegisterSize::Qword(reg))?,
             Operand::Plt(name) => write!(f, "{}@PLT", name)?,
             Operand::Indexed { base, index, scale } => write!(
@@ -2622,6 +2622,7 @@ impl Display for BinaryOp {
             BinaryOp::Or => write!(f, "or")?,
             BinaryOp::DivDouble => write!(f, "div")?,
             BinaryOp::Xor => write!(f, "xor")?,
+            _ => todo!(),
         }
         Ok(())
     }
