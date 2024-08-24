@@ -825,12 +825,12 @@ impl<'a> CodeGen<'a> {
 
                     for (i, (asm_ty, op)) in int_reg_args.into_iter().enumerate() {
                         if let AssemblyType::ByteArray { size, .. } = asm_ty {
-                            self.copy_bytes_to_reg(&op, PARAM_REGISTERS[i], size);
+                            self.copy_bytes_to_reg(&op, param_regs[i], size);
                         } else {
                             body.push(Instruction::Mov {
                                 ty: asm_ty,
                                 src: op,
-                                dst: Operand::Reg(PARAM_REGISTERS[i]),
+                                dst: Operand::Reg(param_regs[i]),
                             });
                         }
                     }
