@@ -527,27 +527,53 @@ impl<'a> CodeGen<'a> {
 
         for inst in &function.body {
             match inst {
-                tacky::Instruction::Return(val) => match (val, &ty.ret) {
-                    (Some(val), VarType::Base(BaseType::Double)) => {
-                        body.push(Instruction::Mov {
-                            ty: AssemblyType::Double,
-                            src: val.into(),
-                            dst: Operand::Reg(Register::Xmm(0)),
-                        });
-                        body.push(Instruction::Ret);
+                tacky::Instruction::Return(val) => {
+                    if let Some(val) = val {
+                        let (int_retvals, double_retvals, return_in_memory) =
+                            self.classify_return_value(val);
+
+                        if return_in_memory {
+                            body.push(Instruction::Mov {
+                                ty: AssemblyType::QuadWord,
+                                src: Operand::Memory(Register::BP, -8),
+                                dst: Operand::Reg(Register::Ax),
+                            });
+                            let return_storage = Operand::Memory(Register::Ax, 0);
+                            let ret_operand: Operand = val.into();
+                            let size = self.symbol_table.size(&val.ty(&self.symbol_table));
+                            for (asm_ty, offset) in divide_into_assembly_sizes(size) {
+                                body.push(Instruction::Mov {
+                                    ty: asm_ty,
+                                    src: ret_operand.offset(offset as i32),
+                                    dst: return_storage.offset(offset as i32),
+                                });
+                            }
+                        } else {
+                            let int_ret_regs = [Register::Ax, Register::Dx];
+
+                            for (i, (asm_ty, op)) in int_retvals.into_iter().enumerate() {
+                                if let AssemblyType::ByteArray { size, .. } = asm_ty {
+                                    self.copy_bytes_from_reg(&op, int_ret_regs[i], size, &mut body);
+                                } else {
+                                    body.push(Instruction::Mov {
+                                        ty: asm_ty,
+                                        src: op,
+                                        dst: Operand::Reg(int_ret_regs[i]),
+                                    });
+                                }
+                            }
+
+                            for (i, op) in double_retvals.into_iter().enumerate() {
+                                body.push(Instruction::Mov {
+                                    ty: AssemblyType::Double,
+                                    src: op,
+                                    dst: Operand::Reg(Register::Xmm(i as _)),
+                                });
+                            }
+                        }
                     }
-                    (Some(val), _) => {
-                        body.push(Instruction::Mov {
-                            ty: ty.ret.clone().into(),
-                            src: val.into(),
-                            dst: Operand::Reg(Register::Ax),
-                        });
-                        body.push(Instruction::Ret);
-                    }
-                    (None, _) => {
-                        body.push(Instruction::Ret);
-                    }
-                },
+                    body.push(Instruction::Ret);
+                }
                 tacky::Instruction::Unary { op, src, dst } => {
                     let src_ty = src.ty(self.symbol_table);
                     let dst_ty = dst.ty(self.symbol_table);
@@ -888,7 +914,7 @@ impl<'a> CodeGen<'a> {
                             src: retval.into(),
                             dst: Operand::Reg(Register::Di),
                         });
-                        self.classify_return_value(retval.clone())
+                        self.classify_return_value(&retval)
                     } else {
                         (Vec::new(), Vec::new(), false)
                     };
@@ -1576,7 +1602,7 @@ impl<'a> CodeGen<'a> {
 
     fn classify_return_value(
         &self,
-        retval: Val,
+        retval: &Val,
     ) -> (Vec<(AssemblyType, Operand)>, Vec<Operand>, bool) {
         let ty = retval.ty(&self.symbol_table);
         let asm_ty: AssemblyType = (&ty).into();
