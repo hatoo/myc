@@ -1429,6 +1429,55 @@ impl<'a> CodeGen<'a> {
 
         (int_reg_args, double_reg_args, stack_args)
     }
+
+    fn classify_return_value(
+        &self,
+        retval: Val,
+    ) -> (Vec<(AssemblyType, Operand)>, Vec<Operand>, bool) {
+        let ty = retval.ty(&self.symbol_table);
+        let asm_ty: AssemblyType = (&ty).into();
+
+        match asm_ty {
+            AssemblyType::Double => (Vec::new(), vec![retval.into()], false),
+            AssemblyType::ByteArray { .. } => {
+                let Val::Var(name) = retval else {
+                    unreachable!()
+                };
+                let struct_def = self.symbol_table.struct_def(&name);
+                let classes = self.classify_struct(struct_def);
+                let struct_size = struct_def.size;
+
+                if classes[0] == Class::Memory {
+                    (Vec::new(), Vec::new(), true)
+                } else {
+                    let mut int_retvals = Vec::new();
+                    let mut double_ret_vals = Vec::new();
+                    let mut offset = 0;
+
+                    for class in classes {
+                        let operand = Operand::Pseudo(Pseudo::Mem {
+                            name: name.clone(),
+                            offset,
+                        });
+                        match class {
+                            Class::Sse => {
+                                double_ret_vals.push(operand);
+                            }
+                            Class::Integer => {
+                                let eightbyte_type = get_eightbyte_type(offset, struct_size);
+                                int_retvals.push((eightbyte_type, operand));
+                            }
+                            Class::Memory => unreachable!(),
+                        }
+                        offset += 8;
+                    }
+                    (int_retvals, double_ret_vals, false)
+                }
+            }
+            // scalar
+            _ => (vec![(asm_ty, retval.into())], Vec::new(), false),
+        }
+    }
 }
 
 fn get_eightbyte_type(offset: usize, struct_size: usize) -> AssemblyType {
