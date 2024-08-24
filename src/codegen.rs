@@ -11,7 +11,7 @@ use crate::{
     math::round_up,
     semantics::{
         self,
-        type_check::{self, SymbolTable},
+        type_check::{self, StructDef, SymbolTable},
     },
     tacky::{self, Val},
 };
@@ -1718,20 +1718,40 @@ fn pseudo_to_stack(
     let mut remove_pseudo = |operand: &mut Operand| {
         if let Operand::Pseudo(var) = operand {
             match var {
-                Pseudo::Var(var) => match &symbol_table[var] {
-                    semantics::type_check::Attr::Static { .. }
-                    | semantics::type_check::Attr::Fun { .. } => {
-                        *operand = Operand::Data(var.clone());
+                Pseudo::Var(name) => match &symbol_table[var] {
+                    semantics::type_check::Attr::Static { .. } => {
+                        *operand = Operand::Data(name.clone(), 0)
                     }
-                    attr => match known_vars.entry(var.clone()) {
+                    semantics::type_check::Attr::Local(ty) => {
+                        match known_vars.entry(name.clone()) {
+                            Entry::Occupied(entry) => {
+                                let addr = *entry.get();
+                                *operand = Operand::stack(addr);
+                            }
+                            Entry::Vacant(entry) => {
+                                let size = symbol_table.size(ty) as i32;
+                                let align = symbol_table.alignment(ty) as i32;
+                                total += size;
+                                total = round_up(total as usize, align as usize) as i32;
+                                entry.insert(-total);
+                                *operand = Operand::stack(-total);
+                            }
+                        }
+                    }
+                    semantics::type_check::Attr::Constant { .. } => {
+                        *operand = Operand::Data(name.clone(), 0)
+                    }
+                    semantics::type_check::Attr::Fun { .. } => todo!(),
+                    semantics::type_check::Attr::Struct(StructDef {
+                        alignment, size, ..
+                    }) => match known_vars.entry(name.clone()) {
                         Entry::Occupied(entry) => {
                             let addr = *entry.get();
                             *operand = Operand::stack(addr);
                         }
                         Entry::Vacant(entry) => {
-                            let size = symbol_table.size(attr.ty()) as i32;
-                            let align = symbol_table.alignment(attr.ty()) as i32;
-                            total += size;
+                            let align = *alignment as i32;
+                            total += *size as i32;
                             total = round_up(total as usize, align as usize) as i32;
                             entry.insert(-total);
                             *operand = Operand::stack(-total);
@@ -1742,11 +1762,11 @@ fn pseudo_to_stack(
                     value: d,
                     alignment,
                 } => {
-                    *operand = Operand::Data(const_table.label(*d, *alignment));
+                    *operand = Operand::Data(const_table.label(*d, *alignment), 0);
                 }
                 Pseudo::Mem { name, offset } => match &symbol_table[name] {
                     semantics::type_check::Attr::Static { .. } => {
-                        *operand = Operand::Data(name.clone())
+                        *operand = Operand::Data(name.clone(), *offset as _)
                     }
                     semantics::type_check::Attr::Local(ty) => {
                         match known_vars.entry(name.clone()) {
@@ -1765,10 +1785,24 @@ fn pseudo_to_stack(
                         }
                     }
                     semantics::type_check::Attr::Constant { .. } => {
-                        *operand = Operand::Data(name.clone())
+                        *operand = Operand::Data(name.clone(), *offset as _)
                     }
                     semantics::type_check::Attr::Fun { .. } => todo!(),
-                    semantics::type_check::Attr::Struct { .. } => todo!(),
+                    semantics::type_check::Attr::Struct(StructDef {
+                        alignment, size, ..
+                    }) => match known_vars.entry(name.clone()) {
+                        Entry::Occupied(entry) => {
+                            let addr = *entry.get();
+                            *operand = Operand::stack(addr + (*offset as i32));
+                        }
+                        Entry::Vacant(entry) => {
+                            let align = *alignment as i32;
+                            total += *size as i32;
+                            total = round_up(total as usize, align as usize) as i32;
+                            entry.insert(-total);
+                            *operand = Operand::stack(-total + (*offset as i32));
+                        }
+                    },
                 },
             }
         }
