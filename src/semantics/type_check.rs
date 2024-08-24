@@ -39,6 +39,34 @@ impl SymbolTable {
         }
     }
 
+    pub fn flatten(&self, ty: &VarType) -> Vec<BaseType> {
+        let mut ret = Vec::new();
+
+        match ty {
+            VarType::Base(base) => {
+                ret.push(base.clone());
+            }
+            VarType::Pointer(_) => {
+                ret.push(BaseType::Ulong);
+            }
+            VarType::Array { element, size } => {
+                for _ in 0..*size {
+                    ret.extend(self.flatten(&element));
+                }
+            }
+            VarType::Struct(name) => {
+                let structure = self.struct_def(name);
+
+                for member in &structure.members {
+                    ret.extend(self.flatten(&member.ty));
+                }
+            }
+            VarType::Void => unreachable!(),
+        }
+
+        ret
+    }
+
     pub fn ty_size(&self, ty: &ast::Ty) -> usize {
         match ty {
             ast::Ty::Var(ref ty) => self.size(ty),
@@ -1370,18 +1398,23 @@ impl TypeChecker {
 
         let mut struct_size = 0;
         let mut struct_align = 0;
+
         for member in &decl.member_decls {
-            let align = self.sym_table.alignment(&member.ty);
-            let offset = round_up(struct_size, align);
+            for (i, base) in self.sym_table.flatten(&member.ty).into_iter().enumerate() {
+                let align = base.alignment();
+                let size = base.size();
 
-            members.push(StructMember {
-                name: member.name.clone(),
-                offset,
-                ty: member.ty.clone(),
-            });
-
-            struct_size = offset + self.sym_table.size(&member.ty);
-            struct_align = std::cmp::max(struct_align, align);
+                let offset = round_up(struct_size, align);
+                if i == 0 {
+                    members.push(StructMember {
+                        name: member.name.clone(),
+                        offset,
+                        ty: member.ty.clone(),
+                    });
+                }
+                struct_size = offset + size;
+                struct_align = std::cmp::max(struct_align, align);
+            }
         }
         struct_size = round_up(struct_size, struct_align);
 

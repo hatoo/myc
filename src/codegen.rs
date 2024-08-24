@@ -1440,34 +1440,6 @@ impl<'a> CodeGen<'a> {
         }
     }
 
-    fn flatten(&self, ty: &VarType) -> Vec<BaseType> {
-        let mut ret = Vec::new();
-
-        match ty {
-            VarType::Base(base) => {
-                ret.push(base.clone());
-            }
-            VarType::Pointer(_) => {
-                ret.push(BaseType::Ulong);
-            }
-            VarType::Array { element, size } => {
-                for _ in 0..*size {
-                    ret.extend(self.flatten(&element));
-                }
-            }
-            VarType::Struct(name) => {
-                let structure = self.symbol_table.struct_def(name);
-
-                for member in &structure.members {
-                    ret.extend(self.flatten(&member.ty));
-                }
-            }
-            VarType::Void => unreachable!(),
-        }
-
-        ret
-    }
-
     fn classify_struct(&self, structure: &type_check::StructDef) -> Vec<Class> {
         if structure.size > 16 {
             let mut ret = Vec::new();
@@ -1484,7 +1456,7 @@ impl<'a> CodeGen<'a> {
         } else {
             let mut scalar_types = Vec::new();
             for member in &structure.members {
-                scalar_types.extend(self.flatten(&member.ty));
+                scalar_types.extend(self.symbol_table.flatten(&member.ty));
             }
 
             if structure.size > 8 {
