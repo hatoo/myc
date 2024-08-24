@@ -2353,7 +2353,13 @@ impl<'a> Display for SizedOperand<'a> {
                 _ => unreachable!(),
             },
             Operand::Pseudo(_) => panic!("Pseudo operand should have been removed"),
-            Operand::Data(name, _) => todo!(), // write!(f, "{}(%rip)", name)?,
+            Operand::Data(name, offset) => {
+                if *offset == 0 {
+                    write!(f, "{}(%rip)", name)?
+                } else {
+                    write!(f, "{}+{}(%rip)", name, offset)?
+                }
+            }
             Operand::Memory(reg, offset) => write!(f, "{}({})", offset, RegisterSize::Qword(reg))?,
             Operand::Plt(name) => write!(f, "{}@PLT", name)?,
             Operand::Indexed { base, index, scale } => write!(
@@ -2638,7 +2644,8 @@ impl Display for BinaryOp {
             BinaryOp::Or => write!(f, "or")?,
             BinaryOp::DivDouble => write!(f, "div")?,
             BinaryOp::Xor => write!(f, "xor")?,
-            _ => todo!(),
+            BinaryOp::Shl => write!(f, "shl")?,
+            BinaryOp::ShrTwo => write!(f, "shr")?,
         }
         Ok(())
     }
