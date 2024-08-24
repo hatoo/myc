@@ -2,7 +2,6 @@ use core::panic;
 use std::{
     collections::{hash_map::Entry, HashMap},
     fmt::Display,
-    os::unix::raw::off_t,
 };
 
 use ecow::EcoString;
@@ -42,39 +41,6 @@ impl AssemblyType {
             AssemblyType::Double => "sd",
             AssemblyType::ByteArray { .. } => todo!(),
         }
-    }
-}
-
-impl<'a> From<&'a ast::VarType> for AssemblyType {
-    fn from(ty: &'a ast::VarType) -> Self {
-        /*
-        match ty {
-            ast::VarType::Char => AssemblyType::Byte,
-            ast::VarType::SChar => AssemblyType::Byte,
-            ast::VarType::UChar => AssemblyType::Byte,
-            ast::VarType::Int => AssemblyType::LongWord,
-            ast::VarType::Uint => AssemblyType::LongWord,
-            ast::VarType::Ulong => AssemblyType::QuadWord,
-            ast::VarType::Long => AssemblyType::QuadWord,
-            ast::VarType::Double => AssemblyType::Double,
-            ast::VarType::Pointer(_) => AssemblyType::QuadWord,
-            ast::VarType::Array { .. } => AssemblyType::ByteArray {
-                size: ty.size(),
-                alignment: ty.alignment(),
-            },
-            ast::VarType::Void => {
-                unreachable!()
-            }
-            _ => todo!(),
-        }
-        */
-        todo!()
-    }
-}
-
-impl From<ast::VarType> for AssemblyType {
-    fn from(ty: ast::VarType) -> Self {
-        (&ty).into()
     }
 }
 
@@ -369,6 +335,31 @@ impl<'a> CodeGen<'a> {
         let label = format!("codegen.{}.{}", prefix, self.label_counter);
         self.label_counter += 1;
         EcoString::from(label)
+    }
+
+    fn asm_type(&self, ty: &VarType) -> AssemblyType {
+        match ty {
+            VarType::Void => unreachable!(),
+            VarType::Base(base) => match base {
+                BaseType::Char | BaseType::SChar | BaseType::UChar => AssemblyType::Byte,
+                BaseType::Int | BaseType::Uint => AssemblyType::LongWord,
+                BaseType::Long | BaseType::Ulong => AssemblyType::QuadWord,
+                BaseType::Double => AssemblyType::Double,
+            },
+            VarType::Pointer(_) => AssemblyType::QuadWord,
+            VarType::Array { .. } => AssemblyType::ByteArray {
+                size: self.symbol_table.size(ty),
+                alignment: self.symbol_table.alignment(ty),
+            },
+            VarType::Struct(name) => {
+                let struct_def = self.symbol_table.struct_def(name);
+
+                AssemblyType::ByteArray {
+                    size: struct_def.size,
+                    alignment: struct_def.alignment,
+                }
+            }
+        }
     }
 
     pub fn gen_program(&mut self, program: &tacky::Program) -> Program {
