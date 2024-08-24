@@ -1400,21 +1400,24 @@ impl TypeChecker {
         let mut struct_align = 0;
 
         for member in &decl.member_decls {
-            for (i, base) in self.sym_table.flatten(&member.ty).into_iter().enumerate() {
-                let align = base.alignment();
-                let size = base.size();
+            let size = self.sym_table.size(&member.ty);
+            let align = if let VarType::Array { element, .. } = &member.ty {
+                // HACK
+                // TODO: Read SystemV ABI
+                self.sym_table.alignment(element)
+            } else {
+                self.sym_table.alignment(&member.ty)
+            };
 
-                let offset = round_up(struct_size, align);
-                if i == 0 {
-                    members.push(StructMember {
-                        name: member.name.clone(),
-                        offset,
-                        ty: member.ty.clone(),
-                    });
-                }
-                struct_size = offset + size;
-                struct_align = std::cmp::max(struct_align, align);
-            }
+            let offset = round_up(struct_size, align);
+            members.push(StructMember {
+                name: member.name.clone(),
+                offset,
+                ty: member.ty.clone(),
+            });
+
+            struct_size = offset + size;
+            struct_align = std::cmp::max(struct_align, align);
         }
         struct_size = round_up(struct_size, struct_align);
 
