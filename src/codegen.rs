@@ -518,11 +518,21 @@ impl<'a> CodeGen<'a> {
         }
 
         for (i, (asm_ty, op)) in stack_args.into_iter().enumerate() {
-            body.push(Instruction::Mov {
-                ty: asm_ty,
-                src: Operand::stack((16 + i * 8) as i32),
-                dst: op,
-            });
+            if let AssemblyType::ByteArray { size, .. } = asm_ty {
+                for (asm_ty, offset) in divide_into_assembly_sizes(size) {
+                    body.push(Instruction::Mov {
+                        ty: asm_ty,
+                        src: Operand::Memory(Register::BP, (16 + i * 8 + offset) as i32),
+                        dst: op.offset(offset as i32),
+                    });
+                }
+            } else {
+                body.push(Instruction::Mov {
+                    ty: asm_ty,
+                    src: Operand::stack((16 + i * 8) as i32),
+                    dst: op,
+                });
+            }
         }
 
         for inst in &function.body {
