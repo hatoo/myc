@@ -1415,7 +1415,12 @@ impl<'a> CodeGen<'a> {
             }
         }
 
-        let stack_size = pseudo_to_stack(&mut body, self.symbol_table, &mut self.const_table);
+        let stack_size = pseudo_to_stack(
+            &mut body,
+            self.symbol_table,
+            &mut self.const_table,
+            if return_in_memory { 8 } else { 0 },
+        );
         let stack_size = round_up(stack_size, 16);
         body.insert(
             0,
@@ -1721,8 +1726,9 @@ fn pseudo_to_stack(
     insts: &mut [Instruction],
     symbol_table: &SymbolTable,
     const_table: &mut ConstTable,
+    offset: usize,
 ) -> usize {
-    let mut total = 0;
+    let mut total = offset as i32;
     let mut known_vars = HashMap::new();
 
     let mut remove_pseudo = |operand: &mut Operand| {
