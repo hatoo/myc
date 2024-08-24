@@ -15,6 +15,7 @@ pub struct Program {
 pub enum Declaration {
     VarDecl(VarDecl),
     FunDecl(FunDecl),
+    StructDecl(StructDecl),
 }
 
 #[derive(Debug)]
@@ -34,6 +35,18 @@ pub struct FunDecl {
     pub storage_class: Option<StorageClass>,
 }
 
+#[derive(Debug)]
+pub struct StructDecl {
+    pub tag: Spanned<EcoString>,
+    pub member_decls: Vec<MemberDecl>,
+}
+
+#[derive(Debug)]
+pub struct MemberDecl {
+    pub name: EcoString,
+    pub ty: VarType,
+}
+
 #[derive(Debug, Clone)]
 pub enum Initializer {
     SingleInit(Expression),
@@ -41,50 +54,40 @@ pub enum Initializer {
 }
 
 impl Initializer {
-    pub fn zero(ty: &VarType) -> Self {
+    pub fn zero_base(ty: BaseType) -> Self {
         match ty {
-            VarType::Char => Self::SingleInit(Expression::Constant(Spanned {
+            BaseType::Char => Self::SingleInit(Expression::Constant(Spanned {
                 data: Const::Char(0),
                 span: 0..0,
             })),
-            VarType::SChar => Self::SingleInit(Expression::Constant(Spanned {
+            BaseType::SChar => Self::SingleInit(Expression::Constant(Spanned {
                 data: Const::Char(0),
                 span: 0..0,
             })),
-            VarType::UChar => Self::SingleInit(Expression::Constant(Spanned {
+            BaseType::UChar => Self::SingleInit(Expression::Constant(Spanned {
                 data: Const::UChar(0),
                 span: 0..0,
             })),
-            VarType::Int => Self::SingleInit(Expression::Constant(Spanned {
+            BaseType::Int => Self::SingleInit(Expression::Constant(Spanned {
                 data: Const::Int(0),
                 span: 0..0,
             })),
-            VarType::Long => Self::SingleInit(Expression::Constant(Spanned {
-                data: Const::Long(0),
-                span: 0..0,
-            })),
-            VarType::Uint => Self::SingleInit(Expression::Constant(Spanned {
+            BaseType::Uint => Self::SingleInit(Expression::Constant(Spanned {
                 data: Const::Uint(0),
                 span: 0..0,
             })),
-            VarType::Ulong => Self::SingleInit(Expression::Constant(Spanned {
+            BaseType::Long => Self::SingleInit(Expression::Constant(Spanned {
+                data: Const::Long(0),
+                span: 0..0,
+            })),
+            BaseType::Ulong => Self::SingleInit(Expression::Constant(Spanned {
                 data: Const::Ulong(0),
                 span: 0..0,
             })),
-            VarType::Double => Self::SingleInit(Expression::Constant(Spanned {
+            BaseType::Double => Self::SingleInit(Expression::Constant(Spanned {
                 data: Const::Double(0.0),
                 span: 0..0,
             })),
-            VarType::Pointer(_) => Self::SingleInit(Expression::Constant(Spanned {
-                data: Const::Ulong(0),
-                span: 0..0,
-            })),
-            VarType::Array { element, size } => {
-                let inits = vec![Initializer::zero(element.as_ref()); *size];
-
-                Self::CompoundInit(inits)
-            }
-            _ => todo!(),
         }
     }
 }
@@ -161,7 +164,7 @@ pub enum Statement {
     Null,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Const {
     Char(i8),
     UChar(u8),
@@ -231,14 +234,17 @@ impl Const {
 
     pub fn get_static_init(&self, ty: &VarType) -> Option<StaticInit> {
         match ty {
-            VarType::Char => Some(StaticInit::Char(self.get_int() as i8)),
-            VarType::SChar => Some(StaticInit::Char(self.get_int() as i8)),
-            VarType::UChar => Some(StaticInit::UChar(self.get_uint() as u8)),
-            VarType::Int => Some(StaticInit::Int(self.get_int())),
-            VarType::Uint => Some(StaticInit::Uint(self.get_uint())),
-            VarType::Long => Some(StaticInit::Long(self.get_long())),
-            VarType::Ulong => Some(StaticInit::Ulong(self.get_ulong())),
-            VarType::Double => Some(StaticInit::Double(self.get_double())),
+            VarType::Void => None,
+            VarType::Base(base) => match base {
+                BaseType::Char => Some(StaticInit::Char(self.get_int() as i8)),
+                BaseType::SChar => Some(StaticInit::Char(self.get_int() as i8)),
+                BaseType::UChar => Some(StaticInit::UChar(self.get_uint() as u8)),
+                BaseType::Int => Some(StaticInit::Int(self.get_int())),
+                BaseType::Uint => Some(StaticInit::Uint(self.get_uint())),
+                BaseType::Long => Some(StaticInit::Long(self.get_long())),
+                BaseType::Ulong => Some(StaticInit::Ulong(self.get_ulong())),
+                BaseType::Double => Some(StaticInit::Double(self.get_double())),
+            },
             VarType::Pointer(_) => match self {
                 Self::Int(0) => Some(StaticInit::Ulong(0)),
                 Self::Uint(0) => Some(StaticInit::Ulong(0)),
@@ -247,7 +253,7 @@ impl Const {
                 _ => None,
             },
             VarType::Array { .. } => None,
-            _ => todo!(),
+            VarType::Struct(_) => None,
         }
     }
 }
@@ -298,6 +304,16 @@ pub enum Expression {
     String(Spanned<Vec<u8>>, VarType),
     Sizeof(Box<Expression>),
     SizeofType(Spanned<VarType>),
+    Dot {
+        structure: Box<Expression>,
+        member: Spanned<EcoString>,
+        ty: VarType,
+    },
+    Arrow {
+        pointer: Box<Expression>,
+        member: Spanned<EcoString>,
+        ty: VarType,
+    },
 }
 
 impl Expression {
@@ -306,13 +322,13 @@ impl Expression {
             Self::Var(_, ty) => ty,
             Self::Cast { target, .. } => target,
             Self::Constant(Spanned { data, .. }) => match data {
-                Const::Int(_) => &VarType::Int,
-                Const::Long(_) => &VarType::Long,
-                Const::Uint(_) => &VarType::Uint,
-                Const::Ulong(_) => &VarType::Ulong,
-                Const::Double(_) => &VarType::Double,
-                Const::Char(_) => &VarType::Char,
-                Const::UChar(_) => &VarType::UChar,
+                Const::Int(_) => &VarType::Base(BaseType::Int),
+                Const::Long(_) => &VarType::Base(BaseType::Long),
+                Const::Uint(_) => &VarType::Base(BaseType::Uint),
+                Const::Ulong(_) => &VarType::Base(BaseType::Ulong),
+                Const::Double(_) => &VarType::Base(BaseType::Double),
+                Const::Char(_) => &VarType::Base(BaseType::Char),
+                Const::UChar(_) => &VarType::Base(BaseType::UChar),
             },
             Self::Unary { ty, .. } => ty,
             Self::Binary { ty, .. } => ty,
@@ -331,8 +347,10 @@ impl Expression {
             Self::AddrOf { ty, .. } => ty,
             Self::Subscript { ty, .. } => ty,
             Self::String(_, ty) => ty,
-            Self::Sizeof(_) => &VarType::Ulong,
-            Self::SizeofType(_) => &VarType::Ulong,
+            Self::Sizeof(_) => &VarType::Base(BaseType::Ulong),
+            Self::SizeofType(_) => &VarType::Base(BaseType::Ulong),
+            Self::Dot { ty, .. } => ty,
+            Self::Arrow { ty, .. } => ty,
         }
     }
 
@@ -357,10 +375,15 @@ impl Expression {
     }
 
     pub fn is_lvalue(&self) -> bool {
-        matches!(
-            self,
-            Self::Var(_, _) | Self::Dereference(_) | Self::Subscript { .. } | Self::String(..)
-        )
+        match self {
+            Self::Var(_, _)
+            | Self::Dereference(_)
+            | Self::Subscript { .. }
+            | Self::String(..)
+            | Self::Arrow { .. } => true,
+            Self::Dot { structure, .. } => structure.is_lvalue(),
+            _ => false,
+        }
     }
 }
 
@@ -385,6 +408,12 @@ impl HasSpan for Expression {
             Self::String(s, _) => s.span.clone(),
             Self::Sizeof(exp) => exp.span(),
             Self::SizeofType(ty) => ty.span.clone(),
+            Self::Dot {
+                structure, member, ..
+            } => structure.span().start..member.span.end,
+            Self::Arrow {
+                pointer, member, ..
+            } => pointer.span().start..member.span.end,
         }
     }
 }
@@ -395,19 +424,8 @@ pub enum Ty {
     Fun(FunType),
 }
 
-impl Ty {
-    pub fn size(&self) -> usize {
-        match self {
-            Self::Var(ty) => ty.size(),
-            // TODO: Search it, currently it uses gcc/clang's value
-            Self::Fun(_) => 1,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum VarType {
-    Void,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BaseType {
     Char,
     SChar,
     UChar,
@@ -416,11 +434,9 @@ pub enum VarType {
     Uint,
     Ulong,
     Double,
-    Pointer(Box<Ty>),
-    Array { element: Box<VarType>, size: usize },
 }
 
-impl VarType {
+impl BaseType {
     pub fn size(&self) -> usize {
         match self {
             Self::Char => 1,
@@ -431,32 +447,11 @@ impl VarType {
             Self::Long => 8,
             Self::Ulong => 8,
             Self::Double => 8,
-            Self::Pointer(_) => 8,
-            Self::Array { element, size } => element.size() * size,
-            _ => todo!(),
         }
     }
 
     pub fn alignment(&self) -> usize {
-        match self {
-            Self::Char => 1,
-            Self::SChar => 1,
-            Self::UChar => 1,
-            Self::Int => 4,
-            Self::Uint => 4,
-            Self::Long => 8,
-            Self::Ulong => 8,
-            Self::Double => 8,
-            Self::Pointer(_) => 8,
-            Self::Array { element, .. } => {
-                if self.size() < 16 {
-                    element.alignment()
-                } else {
-                    16
-                }
-            }
-            _ => todo!(),
-        }
+        self.size()
     }
 
     pub fn is_integer(&self) -> bool {
@@ -472,12 +467,49 @@ impl VarType {
         )
     }
 
-    pub fn is_signed(&self) -> bool {
-        matches!(self, Self::Int | Self::Long | Self::SChar | Self::Char)
+    pub fn is_character(&self) -> bool {
+        matches!(self, Self::Char | Self::SChar | Self::UChar)
     }
 
-    pub fn zero(&self) -> StaticInit {
-        StaticInit::Zero(self.size())
+    pub fn is_signed(&self) -> bool {
+        matches!(self, Self::Char | Self::SChar | Self::Int | Self::Long)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum VarType {
+    Void,
+    Base(BaseType),
+    Pointer(Box<Ty>),
+    Array { element: Box<VarType>, size: usize },
+    Struct(EcoString),
+}
+
+impl From<BaseType> for VarType {
+    fn from(base: BaseType) -> Self {
+        Self::Base(base)
+    }
+}
+
+impl VarType {
+    pub fn is_integer(&self) -> bool {
+        if let Self::Base(base) = self {
+            base.is_integer()
+        } else {
+            false
+        }
+    }
+
+    pub fn is_scalar(&self) -> bool {
+        matches!(self, Self::Base(_) | Self::Pointer(_))
+    }
+
+    pub fn is_signed(&self) -> bool {
+        if let Self::Base(base) = self {
+            base.is_signed()
+        } else {
+            false
+        }
     }
 
     pub fn is_pointer(&self) -> bool {
@@ -489,25 +521,15 @@ impl VarType {
     }
 
     pub fn is_character(&self) -> bool {
-        matches!(self, Self::Char | Self::SChar | Self::UChar)
-    }
-
-    pub fn is_scalar(&self) -> bool {
-        !matches!(self, Self::Void | Self::Array { .. })
-    }
-
-    pub fn is_complete(&self) -> bool {
-        self != &Self::Void
-    }
-
-    pub fn is_pointer_to_complete(&self) -> bool {
-        match self {
-            Self::Pointer(ty) => match ty.as_ref() {
-                Ty::Var(ty) => ty.is_complete(),
-                Ty::Fun(_) => true,
-            },
-            _ => false,
+        if let Self::Base(base) = self {
+            base.is_character()
+        } else {
+            false
         }
+    }
+
+    pub fn is_struct(&self) -> bool {
+        matches!(self, Self::Struct(_))
     }
 }
 
@@ -618,6 +640,7 @@ enum TypeSpecifier {
     Unsigned,
     Signed,
     Double,
+    Struct(EcoString),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -683,7 +706,7 @@ fn solve_type_specifier(ty: &[Spanned<TypeSpecifier>]) -> Result<VarType, Error>
             ..
         }]
     ) {
-        return Ok(VarType::Double);
+        return Ok(BaseType::Double.into());
     }
 
     if matches!(
@@ -694,6 +717,14 @@ fn solve_type_specifier(ty: &[Spanned<TypeSpecifier>]) -> Result<VarType, Error>
         }]
     ) {
         return Ok(VarType::Void);
+    }
+
+    if let [Spanned {
+        data: TypeSpecifier::Struct(tag),
+        ..
+    }] = ty
+    {
+        return Ok(VarType::Struct(tag.clone()));
     }
 
     for s in ty {
@@ -734,41 +765,45 @@ fn solve_type_specifier(ty: &[Spanned<TypeSpecifier>]) -> Result<VarType, Error>
             TypeSpecifier::Double => {
                 return Err(Error::BadTypeSpecifier(s.span.clone()));
             }
+            TypeSpecifier::Struct(_) => {
+                return Err(Error::BadTypeSpecifier(s.span.clone()));
+            }
         }
     }
 
     let base_ty = match (char, int, long) {
-        (true, _, _) => VarType::Char,
-        (_, _, true) => VarType::Long,
-        _ => VarType::Int,
+        (true, _, _) => BaseType::Char,
+        (_, _, true) => BaseType::Long,
+        _ => BaseType::Int,
     };
 
-    match base_ty {
-        VarType::Char => {
+    Ok(match base_ty {
+        BaseType::Char => {
             if unsigned {
-                Ok(VarType::UChar)
+                BaseType::UChar
             } else if signed {
-                Ok(VarType::SChar)
+                BaseType::SChar
             } else {
-                Ok(VarType::Char)
+                BaseType::Char
             }
         }
-        VarType::Long => {
+        BaseType::Long => {
             if unsigned {
-                Ok(VarType::Ulong)
+                BaseType::Ulong
             } else {
-                Ok(VarType::Long)
+                BaseType::Long
             }
         }
-        VarType::Int => {
+        BaseType::Int => {
             if unsigned {
-                Ok(VarType::Uint)
+                BaseType::Uint
             } else {
-                Ok(VarType::Int)
+                BaseType::Int
             }
         }
         _ => unreachable!(),
     }
+    .into())
 }
 
 #[derive(Debug)]
@@ -904,7 +939,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /*
     fn expect_ident(&mut self) -> Result<Spanned<EcoString>, Error> {
         if let Some(spanned) = self.tokens.get(self.index) {
             if let Token::Ident(t) = &spanned.data {
@@ -920,7 +954,7 @@ impl<'a> Parser<'a> {
             Err(Error::UnexpectedEof)
         }
     }
-    */
+
     fn expect_constant(&mut self) -> Result<Spanned<Constant>, Error> {
         if let Some(spanned) = self.tokens.get(self.index) {
             if let Token::Constant(c) = &spanned.data {
@@ -1344,6 +1378,15 @@ impl<'a> Parser<'a> {
                     end = s.span.end;
                     self.advance();
                 }
+                Token::Struct => {
+                    self.advance();
+                    let tag = self.expect_ident()?;
+                    end = tag.span.end;
+                    ty.push(Spanned {
+                        data: TypeSpecifier::Struct(tag.data.clone()),
+                        span: tag.span,
+                    });
+                }
                 Token::Static => {
                     if storage_class.is_some() {
                         return Err(Error::ConflictingSpecifier(s.span.clone()));
@@ -1461,6 +1504,14 @@ impl<'a> Parser<'a> {
                         ty.push(s.clone().map(|_| TypeSpecifier::Double));
                         self.advance();
                     }
+                    Token::Struct => {
+                        self.advance();
+                        let tag = self.expect_ident()?;
+                        ty.push(Spanned {
+                            data: TypeSpecifier::Struct(tag.data),
+                            span: tag.span,
+                        });
+                    }
                     _ => {
                         if ty.is_empty() {
                             return Err(Error::UnexpectedSpecifier(s.clone()));
@@ -1517,11 +1568,23 @@ impl<'a> Parser<'a> {
                     Ok(decl) => Ok(Declaration::FunDecl(decl)),
                     Err(fun_err) => {
                         let fun_decl_fail = self.index;
-                        if var_decl_fail > fun_decl_fail {
-                            self.index = var_decl_fail;
-                            Err(var_err)
-                        } else {
-                            Err(fun_err)
+                        self.index = index;
+                        match self.parse_struct_decl() {
+                            Ok(decl) => Ok(Declaration::StructDecl(decl)),
+                            Err(struct_err) => {
+                                let struct_decl_fail = self.index;
+                                self.index = index;
+                                if var_decl_fail > fun_decl_fail && var_decl_fail > struct_decl_fail
+                                {
+                                    Err(var_err)
+                                } else if fun_decl_fail > var_decl_fail
+                                    && fun_decl_fail > struct_decl_fail
+                                {
+                                    Err(fun_err)
+                                } else {
+                                    Err(struct_err)
+                                }
+                            }
                         }
                     }
                 }
@@ -1601,7 +1664,7 @@ impl<'a> Parser<'a> {
                                 span: start..end,
                             },
                             VarType::Array {
-                                element: Box::new(VarType::Char),
+                                element: Box::new(BaseType::Char.into()),
                                 size: len + 1,
                             },
                         ))
@@ -1639,7 +1702,7 @@ impl<'a> Parser<'a> {
                         Ok(Expression::FunctionCall {
                             name: Spanned { data: ident, span },
                             args,
-                            ty: VarType::Int,
+                            ty: VarType::Void,
                         })
                     } else {
                         Ok(Expression::Var(
@@ -1647,7 +1710,7 @@ impl<'a> Parser<'a> {
                                 data: ident,
                                 span: span.clone(),
                             },
-                            VarType::Int,
+                            VarType::Void,
                         ))
                     }
                 }
@@ -1660,17 +1723,69 @@ impl<'a> Parser<'a> {
 
     fn parse_postfix_exp(&mut self) -> Result<Expression, Error> {
         let mut exp = self.parse_primary_exp()?;
-        let subscriptions = self.many0(|s| s.parse_square_exp());
+        let postfixes = self.many0(|s| s.parse_postfix_op());
 
-        for sub in subscriptions {
-            exp = Expression::Subscript {
-                array: Box::new(exp),
-                index: Box::new(sub),
-                ty: VarType::Int,
-            };
+        for op in postfixes {
+            match op {
+                PostfixOp::Subscript(index) => {
+                    exp = Expression::Subscript {
+                        array: Box::new(exp),
+                        index: Box::new(index),
+                        ty: VarType::Void,
+                    };
+                }
+                PostfixOp::Dot(ident) => {
+                    exp = Expression::Dot {
+                        structure: Box::new(exp),
+                        member: ident,
+                        ty: VarType::Void,
+                    };
+                }
+                PostfixOp::Arrow(ident) => {
+                    exp = Expression::Arrow {
+                        pointer: Box::new(exp),
+                        member: ident,
+                        ty: VarType::Void,
+                    }
+                }
+            }
         }
 
         Ok(exp)
+    }
+
+    fn parse_postfix_op(&mut self) -> Result<PostfixOp, Error> {
+        match self.peek() {
+            Some(Spanned {
+                data: Token::OpenSquareBracket,
+                ..
+            }) => {
+                self.advance();
+                let exp = self.parse_expression(0)?;
+                self.expect(Token::CloseSquareBracket)?;
+                Ok(PostfixOp::Subscript(exp))
+            }
+            Some(Spanned {
+                data: Token::Dot, ..
+            }) => {
+                self.advance();
+                let ident = self.expect_ident()?;
+                Ok(PostfixOp::Dot(ident))
+            }
+            Some(Spanned {
+                data: Token::Arrow, ..
+            }) => {
+                self.advance();
+                let ident = self.expect_ident()?;
+                Ok(PostfixOp::Arrow(ident))
+            }
+            Some(tok) => Err(Error::Unexpected(
+                tok.clone(),
+                // todo
+                ExpectedToken::Ident,
+            )),
+            None => Err(Error::UnexpectedEof),
+        }
     }
 
     fn parse_cast_exp(&mut self) -> Result<Expression, Error> {
@@ -1699,7 +1814,7 @@ impl<'a> Parser<'a> {
                         op,
                         exp: Box::new(exp),
                         // Fixed in type check pass
-                        ty: VarType::Int,
+                        ty: VarType::Void,
                     })
                 }
                 Token::Ampersands => {
@@ -1708,7 +1823,7 @@ impl<'a> Parser<'a> {
                     Ok(Expression::AddrOf {
                         exp: Box::new(exp),
                         // Fixed in type check pass
-                        ty: VarType::Int,
+                        ty: VarType::Void,
                     })
                 }
                 Token::Asterisk => {
@@ -1877,7 +1992,7 @@ impl<'a> Parser<'a> {
                             op: bin_op,
                             lhs: Box::new(left),
                             rhs: Box::new(right),
-                            ty: VarType::Int,
+                            ty: BaseType::Int.into(),
                         };
                     }
                 }
@@ -1887,4 +2002,45 @@ impl<'a> Parser<'a> {
         }
         Ok(left)
     }
+
+    fn parse_struct_decl(&mut self) -> Result<StructDecl, Error> {
+        self.expect(Token::Struct)?;
+        let tag = self.expect_ident()?;
+
+        let member_decls = self.atomic(|s| {
+            s.expect(Token::OpenBrace)?;
+            let member_decls = s.many1(|s| s.parse_struct_member())?;
+            s.expect(Token::CloseBrace)?;
+            Ok(member_decls)
+        });
+        self.expect(Token::SemiColon)?;
+
+        Ok(StructDecl {
+            tag,
+            member_decls: member_decls.unwrap_or_default(),
+        })
+    }
+
+    fn parse_struct_member(&mut self) -> Result<MemberDecl, Error> {
+        let ty = self.parse_type_specifiers()?;
+        let decl = self.parse_declarator()?;
+        let (ident, ty, _) = process_declarator(decl, ty)?;
+        self.expect(Token::SemiColon)?;
+
+        let ty = match ty {
+            Ty::Fun(_) => return Err(Error::NotVarType(ident.span.clone())),
+            Ty::Var(ty) => ty,
+        };
+
+        Ok(MemberDecl {
+            name: ident.data,
+            ty,
+        })
+    }
+}
+
+enum PostfixOp {
+    Subscript(Expression),
+    Dot(Spanned<EcoString>),
+    Arrow(Spanned<EcoString>),
 }

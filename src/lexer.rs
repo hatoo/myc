@@ -64,6 +64,9 @@ pub enum Token {
     Double,
     Char,
     Sizeof,
+    Struct,
+    Dot,
+    Arrow,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -211,10 +214,11 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
                         }));
                     }
                 } else {
-                    return Err(Error::Unexpected(Spanned {
-                        data: c as char,
+                    tokens.push(Spanned {
+                        data: Token::Dot,
                         span: index..index + 1,
-                    }));
+                    });
+                    index += 1;
                 }
             }
             _ if c.is_ascii_alphanumeric() || c == b'_' => {
@@ -245,6 +249,7 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
                     "double" => Token::Double,
                     "char" => Token::Char,
                     "sizeof" => Token::Sizeof,
+                    "struct" => Token::Struct,
                     _ => Token::Ident(EcoString::from(ident)),
                 };
                 tokens.push(Spanned {
@@ -336,6 +341,12 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
                     index += 1;
                     tokens.push(Spanned {
                         data: Token::TwoHyphens,
+                        span: index - 2..index,
+                    });
+                } else if index < src.len() && src[index] == b'>' {
+                    index += 1;
+                    tokens.push(Spanned {
+                        data: Token::Arrow,
                         span: index - 2..index,
                     });
                 } else {

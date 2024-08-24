@@ -1,12 +1,10 @@
-use std::collections::HashMap;
-
 use ecow::EcoString;
 
 use crate::{
-    ast::{self, Block, Expression, Initializer, VarType},
+    ast::{self, BaseType, Block, Expression, Initializer, Ty, VarType},
     semantics::{
         self,
-        type_check::{Attr, SymbolTable},
+        type_check::{Attr, StaticInit, SymbolTable},
     },
     span::Spanned,
 };
@@ -130,6 +128,11 @@ pub enum Instruction {
         dst: EcoString,
         offset: usize,
     },
+    CopyFromOffset {
+        src: EcoString,
+        offset: usize,
+        dst: Val,
+    },
 }
 
 #[derive(Debug)]
@@ -154,25 +157,31 @@ pub enum BinaryOp {
     GreaterOrEqual,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Val {
     Constant(ast::Const),
     Var(EcoString),
 }
 
 impl Val {
-    pub fn ty<'a>(&self, symbol_table: &'a SymbolTable) -> &'a ast::VarType {
+    pub fn ty(&self, symbol_table: &SymbolTable) -> ast::VarType {
         match self {
             Val::Constant(c) => match c {
-                ast::Const::Int(_) => &ast::VarType::Int,
-                ast::Const::Long(_) => &ast::VarType::Long,
-                ast::Const::Uint(_) => &ast::VarType::Uint,
-                ast::Const::Ulong(_) => &ast::VarType::Ulong,
-                ast::Const::Double(_) => &ast::VarType::Double,
-                ast::Const::Char(_) => &ast::VarType::Char,
-                ast::Const::UChar(_) => &ast::VarType::UChar,
+                ast::Const::Int(_) => ast::BaseType::Int.into(),
+                ast::Const::Long(_) => ast::BaseType::Long.into(),
+                ast::Const::Uint(_) => ast::BaseType::Uint.into(),
+                ast::Const::Ulong(_) => ast::BaseType::Ulong.into(),
+                ast::Const::Double(_) => ast::BaseType::Double.into(),
+                ast::Const::Char(_) => ast::BaseType::Char.into(),
+                ast::Const::UChar(_) => ast::BaseType::UChar.into(),
             },
-            Val::Var(var) => symbol_table[var].ty(),
+            Val::Var(var) => match &symbol_table[var] {
+                Attr::Fun { ty, .. } => ty.ret.clone(),
+                Attr::Static { ty, .. } => ty.clone(),
+                Attr::Local(ty) => ty.clone(),
+                Attr::Constant { ty, .. } => ty.clone(),
+                Attr::Struct(_) => ast::VarType::Struct(var.clone()),
+            },
         }
     }
 }
@@ -183,9 +192,11 @@ struct InstructionGenerator<'a> {
     symbol_table: &'a mut SymbolTable,
 }
 
+#[derive(Debug)]
 enum ExpResult {
     PlainOperand(Val),
     DereferencedPointer(Val),
+    SubObject { base: EcoString, offset: usize },
 }
 
 impl<'a> InstructionGenerator<'a> {
@@ -217,6 +228,7 @@ impl<'a> InstructionGenerator<'a> {
                     self.add_var_declaration(decl);
                 }
                 ast::Declaration::FunDecl(_) => {}
+                ast::Declaration::StructDecl(_) => {}
             },
             ast::BlockItem::Statement(stmt) => {
                 self.add_statement(stmt);
@@ -224,56 +236,78 @@ impl<'a> InstructionGenerator<'a> {
         }
     }
 
-    fn copy_initializers(&mut self, inits: &[Initializer], name: EcoString, offset: &mut usize) {
-        for init in inits {
-            match init {
-                Initializer::SingleInit(Expression::String(data, ty @ VarType::Array { .. })) => {
-                    for chunk in data
-                        .data
-                        .iter()
-                        .chain(std::iter::repeat(&0))
-                        .take(ty.size())
-                        .copied()
-                        .collect::<Vec<_>>()
-                        .chunks(4)
-                    {
-                        if chunk.len() == 4 {
-                            let val = Val::Constant(ast::Const::Uint(u32::from_le_bytes([
-                                chunk[0], chunk[1], chunk[2], chunk[3],
-                            ])));
+    fn copy_initializers(
+        &mut self,
+        init: &Initializer,
+        name: EcoString,
+        target: &VarType,
+        offset: &mut usize,
+    ) {
+        match init {
+            Initializer::SingleInit(Expression::String(data, ty @ VarType::Array { .. })) => {
+                for chunk in data
+                    .data
+                    .iter()
+                    .chain(std::iter::repeat(&0))
+                    .take(self.symbol_table.size(ty))
+                    .copied()
+                    .collect::<Vec<_>>()
+                    .chunks(4)
+                {
+                    if chunk.len() == 4 {
+                        let val = Val::Constant(ast::Const::Uint(u32::from_le_bytes([
+                            chunk[0], chunk[1], chunk[2], chunk[3],
+                        ])));
+                        self.instructions.push(Instruction::CopyToOffset {
+                            src: val,
+                            dst: name.clone(),
+                            offset: *offset,
+                        });
+                        *offset += chunk.len();
+                    } else {
+                        for byte in chunk {
+                            let val = Val::Constant(ast::Const::UChar(*byte));
                             self.instructions.push(Instruction::CopyToOffset {
                                 src: val,
                                 dst: name.clone(),
                                 offset: *offset,
                             });
-                            *offset += chunk.len();
-                        } else {
-                            for byte in chunk {
-                                let val = Val::Constant(ast::Const::UChar(*byte));
-                                self.instructions.push(Instruction::CopyToOffset {
-                                    src: val,
-                                    dst: name.clone(),
-                                    offset: *offset,
-                                });
-                                *offset += 1;
-                            }
+                            *offset += 1;
                         }
                     }
                 }
-                Initializer::SingleInit(exp) => {
-                    let val = self.add_expression_and_convert(exp);
-                    let size = val.ty(self.symbol_table).size();
-                    self.instructions.push(Instruction::CopyToOffset {
-                        src: val,
-                        dst: name.clone(),
-                        offset: *offset,
-                    });
-                    *offset += size;
-                }
-                Initializer::CompoundInit(inits) => {
-                    self.copy_initializers(inits, name.clone(), offset);
-                }
             }
+            Initializer::SingleInit(exp) => {
+                let val = self.add_expression_and_convert(exp);
+                let size = self.symbol_table.size(&val.ty(self.symbol_table));
+                self.instructions.push(Instruction::CopyToOffset {
+                    src: val,
+                    dst: name.clone(),
+                    offset: *offset,
+                });
+                *offset += size;
+            }
+            Initializer::CompoundInit(inits) => match target {
+                VarType::Array { element, .. } => {
+                    for init in inits {
+                        self.copy_initializers(init, name.clone(), element, offset);
+                    }
+                }
+                VarType::Struct(struct_name) => {
+                    let struct_def = self.symbol_table.struct_def(struct_name).clone();
+                    let offset_start = *offset;
+                    for (member, init) in struct_def.members.iter().zip(inits) {
+                        self.copy_initializers(
+                            init,
+                            name.clone(),
+                            &member.ty,
+                            &mut (offset_start + member.offset),
+                        );
+                    }
+                    *offset = offset_start + struct_def.size;
+                }
+                _ => unreachable!(),
+            },
         }
     }
 
@@ -281,22 +315,9 @@ impl<'a> InstructionGenerator<'a> {
         if decl.storage_class.is_some() {
             return;
         }
-        if let Some(init) = &decl.init {
-            match init {
-                ast::Initializer::SingleInit(Expression::String(..)) => {
-                    self.copy_initializers(&[init.clone()], decl.ident.data.clone(), &mut 0);
-                }
-                ast::Initializer::SingleInit(exp) => {
-                    let val = self.add_expression_and_convert(exp);
-                    self.instructions.push(Instruction::Copy {
-                        src: val,
-                        dst: Val::Var(decl.ident.data.clone()),
-                    });
-                }
-                ast::Initializer::CompoundInit(inits) => {
-                    self.copy_initializers(inits, decl.ident.data.clone(), &mut 0);
-                }
-            }
+
+        if let Some(init) = decl.init.as_ref() {
+            self.copy_initializers(init, decl.ident.data.clone(), &decl.ty, &mut 0);
         }
     }
 
@@ -530,6 +551,9 @@ impl<'a> InstructionGenerator<'a> {
                 let dst = self.make_tmp_local(ty.clone());
 
                 if let ast::VarType::Pointer(elem) = ty {
+                    let ast::Ty::Var(elem) = elem.as_ref() else {
+                        unreachable!()
+                    };
                     match op {
                         ast::BinaryOp::Add => {
                             let (lhs, rhs) = if lhs.ty(self.symbol_table).is_pointer() {
@@ -540,7 +564,7 @@ impl<'a> InstructionGenerator<'a> {
                             self.instructions.push(Instruction::AddPtr {
                                 ptr: lhs,
                                 index: rhs,
-                                scale: elem.size(),
+                                scale: self.symbol_table.size(elem),
                                 dst: dst.clone(),
                             });
                             return ExpResult::PlainOperand(dst);
@@ -548,7 +572,7 @@ impl<'a> InstructionGenerator<'a> {
                         ast::BinaryOp::Subtract => {
                             // ptr - int
 
-                            let neg = self.make_tmp_local(ast::VarType::Long);
+                            let neg = self.make_tmp_local(ast::BaseType::Long.into());
                             self.instructions.push(Instruction::Unary {
                                 op: UnaryOp::Negate,
                                 src: rhs.clone(),
@@ -557,7 +581,7 @@ impl<'a> InstructionGenerator<'a> {
                             self.instructions.push(Instruction::AddPtr {
                                 ptr: lhs,
                                 index: neg,
-                                scale: elem.size(),
+                                scale: self.symbol_table.size(elem),
                                 dst: dst.clone(),
                             });
                             return ExpResult::PlainOperand(dst);
@@ -573,9 +597,9 @@ impl<'a> InstructionGenerator<'a> {
                     let VarType::Pointer(elem) = lhs.ty(self.symbol_table) else {
                         unreachable!()
                     };
-                    let elem_size = elem.size();
+                    let elem_size = self.symbol_table.ty_size(&elem);
                     // ptr - ptr
-                    let diff = self.make_tmp_local(ast::VarType::Long);
+                    let diff = self.make_tmp_local(ast::BaseType::Long.into());
                     self.instructions.push(Instruction::Binary {
                         op: BinaryOp::Subtract,
                         lhs: lhs.clone(),
@@ -644,6 +668,14 @@ impl<'a> InstructionGenerator<'a> {
                         });
                         ExpResult::PlainOperand(rhs)
                     }
+                    ExpResult::SubObject { base, offset } => {
+                        self.instructions.push(Instruction::CopyToOffset {
+                            src: rhs.clone(),
+                            dst: base.clone(),
+                            offset: *offset,
+                        });
+                        ExpResult::PlainOperand(rhs)
+                    }
                 }
             }
             ast::Expression::Conditional {
@@ -704,11 +736,10 @@ impl<'a> InstructionGenerator<'a> {
                     }
                     (from, to) if from == to => ExpResult::PlainOperand(val),
                     (
-                        ast::VarType::Double,
-                        to @ (ast::VarType::Int
-                        | ast::VarType::Long
-                        | ast::VarType::Char
-                        | ast::VarType::SChar),
+                        ast::VarType::Base(ast::BaseType::Double),
+                        to @ ast::VarType::Base(
+                            BaseType::Int | BaseType::Long | BaseType::Char | BaseType::SChar,
+                        ),
                     ) => {
                         let dst = self.make_tmp_local(to.clone());
                         self.instructions.push(Instruction::DoubleToInt {
@@ -718,8 +749,10 @@ impl<'a> InstructionGenerator<'a> {
                         ExpResult::PlainOperand(dst)
                     }
                     (
-                        ast::VarType::Double,
-                        to @ (ast::VarType::Uint | ast::VarType::Ulong | ast::VarType::UChar),
+                        ast::VarType::Base(ast::BaseType::Double),
+                        to @ ast::VarType::Base(
+                            ast::BaseType::Uint | ast::BaseType::Ulong | ast::BaseType::UChar,
+                        ),
                     ) => {
                         let dst = self.make_tmp_local(to.clone());
                         self.instructions.push(Instruction::DoubleToUint {
@@ -729,13 +762,12 @@ impl<'a> InstructionGenerator<'a> {
                         ExpResult::PlainOperand(dst)
                     }
                     (
-                        ast::VarType::Int
-                        | ast::VarType::Long
-                        | ast::VarType::Char
-                        | ast::VarType::SChar,
-                        ast::VarType::Double,
+                        ast::VarType::Base(
+                            BaseType::Int | BaseType::Long | BaseType::Char | BaseType::SChar,
+                        ),
+                        ast::VarType::Base(ast::BaseType::Double),
                     ) => {
-                        let dst = self.make_tmp_local(ast::VarType::Double);
+                        let dst = self.make_tmp_local(ast::VarType::Base(BaseType::Double));
                         self.instructions.push(Instruction::IntToDouble {
                             src: val,
                             dst: dst.clone(),
@@ -743,17 +775,19 @@ impl<'a> InstructionGenerator<'a> {
                         ExpResult::PlainOperand(dst)
                     }
                     (
-                        ast::VarType::Uint | ast::VarType::Ulong | ast::VarType::UChar,
-                        ast::VarType::Double,
+                        ast::VarType::Base(
+                            ast::BaseType::Uint | ast::BaseType::Ulong | ast::BaseType::UChar,
+                        ),
+                        ast::VarType::Base(ast::BaseType::Double),
                     ) => {
-                        let dst = self.make_tmp_local(ast::VarType::Double);
+                        let dst = self.make_tmp_local(ast::VarType::Base(ast::BaseType::Double));
                         self.instructions.push(Instruction::UintToDouble {
                             src: val,
                             dst: dst.clone(),
                         });
                         ExpResult::PlainOperand(dst)
                     }
-                    (from, to) if from.size() == to.size() => {
+                    (from, to) if self.symbol_table.size(from) == self.symbol_table.size(to) => {
                         let dst = self.make_tmp_local(to.clone());
                         self.instructions.push(Instruction::Copy {
                             src: val,
@@ -761,7 +795,7 @@ impl<'a> InstructionGenerator<'a> {
                         });
                         ExpResult::PlainOperand(dst)
                     }
-                    (from, to) if from.size() > to.size() => {
+                    (from, to) if self.symbol_table.size(from) > self.symbol_table.size(to) => {
                         let dst = self.make_tmp_local(to.clone());
                         self.instructions.push(Instruction::Truncate {
                             src: val,
@@ -804,6 +838,24 @@ impl<'a> InstructionGenerator<'a> {
                         ExpResult::PlainOperand(dst)
                     }
                     ExpResult::DereferencedPointer(ptr) => ExpResult::PlainOperand(ptr),
+                    ExpResult::SubObject { base, offset } => {
+                        let dst = self.make_tmp_local(ty.clone());
+                        let ptr = self.make_tmp_local(ast::VarType::Pointer(Box::new(
+                            ast::Ty::Var(ty.clone()),
+                        )));
+
+                        self.instructions.push(Instruction::GetAddress {
+                            src: Val::Var(base),
+                            dst: ptr.clone(),
+                        });
+                        self.instructions.push(Instruction::AddPtr {
+                            ptr,
+                            index: Val::Constant(ast::Const::Int(offset as _)),
+                            scale: 1,
+                            dst: dst.clone(),
+                        });
+                        ExpResult::PlainOperand(dst)
+                    }
                 }
             }
             ast::Expression::Subscript { array, index, ty } => {
@@ -821,7 +873,7 @@ impl<'a> InstructionGenerator<'a> {
                 self.instructions.push(Instruction::AddPtr {
                     ptr,
                     index,
-                    scale: ty.size(),
+                    scale: self.symbol_table.size(ty),
                     dst: dst.clone(),
                 });
 
@@ -829,13 +881,14 @@ impl<'a> InstructionGenerator<'a> {
             }
             ast::Expression::String(data, ty) => {
                 let name = self.new_label("tacky.string");
+                let pad = self.symbol_table.size(ty) - data.data.len();
                 self.symbol_table.insert(
                     name.clone(),
                     semantics::type_check::Attr::Constant {
                         ty: ty.clone(),
                         init: semantics::type_check::StaticInit::String {
                             data: data.data.clone(),
-                            pad: ty.size() - data.data.len(),
+                            pad,
                         },
                     },
                 );
@@ -843,12 +896,87 @@ impl<'a> InstructionGenerator<'a> {
                 ExpResult::PlainOperand(Val::Var(name))
             }
             ast::Expression::Sizeof(exp) => {
-                let size = exp.ty().size();
+                let size = self.symbol_table.size(exp.ty());
                 ExpResult::PlainOperand(Val::Constant(ast::Const::Ulong(size as _)))
             }
             ast::Expression::SizeofType(ty) => {
-                let size = ty.data.size();
+                let size = self.symbol_table.size(&ty.data);
                 ExpResult::PlainOperand(Val::Constant(ast::Const::Ulong(size as _)))
+            }
+            ast::Expression::Dot {
+                structure,
+                member,
+                ty,
+            } => {
+                let ast::VarType::Struct(struct_name) = structure.ty() else {
+                    unreachable!()
+                };
+                let struct_def = self.symbol_table.struct_def(struct_name);
+                let member_offset = struct_def
+                    .members
+                    .iter()
+                    .find(|m| &m.name == &member.data)
+                    .unwrap()
+                    .offset;
+
+                match self.add_expression(structure) {
+                    ExpResult::PlainOperand(Val::Var(v)) => ExpResult::SubObject {
+                        base: v,
+                        offset: member_offset,
+                    },
+                    ExpResult::PlainOperand(Val::Constant(_)) => unreachable!(),
+                    ExpResult::SubObject { base, offset } => ExpResult::SubObject {
+                        base,
+                        offset: offset + member_offset,
+                    },
+                    ExpResult::DereferencedPointer(ptr) => {
+                        let dst_ptr = self.make_tmp_local(ast::VarType::Pointer(Box::new(
+                            ast::Ty::Var(ty.clone()),
+                        )));
+
+                        self.instructions.push(Instruction::AddPtr {
+                            ptr,
+                            index: Val::Constant(ast::Const::Int(member_offset as _)),
+                            scale: 1,
+                            dst: dst_ptr.clone(),
+                        });
+
+                        ExpResult::DereferencedPointer(dst_ptr)
+                    }
+                }
+            }
+            ast::Expression::Arrow {
+                pointer,
+                member,
+                ty,
+            } => {
+                let struct_name = if let ast::VarType::Pointer(ty) = pointer.ty() {
+                    let ast::Ty::Var(ast::VarType::Struct(struct_name)) = ty.as_ref() else {
+                        unreachable!()
+                    };
+                    struct_name
+                } else {
+                    unreachable!()
+                };
+                let struct_def = self.symbol_table.struct_def(&struct_name);
+                let member_offset = struct_def
+                    .members
+                    .iter()
+                    .find(|m| &m.name == &member.data)
+                    .unwrap()
+                    .offset;
+
+                let ptr = self.add_expression_and_convert(&pointer);
+                let dst_ptr = self.make_tmp_local(VarType::Pointer(Box::new(Ty::Var(ty.clone()))));
+
+                self.instructions.push(Instruction::AddPtr {
+                    ptr,
+                    index: Val::Constant(ast::Const::Int(member_offset as _)),
+                    scale: 1,
+                    dst: dst_ptr.clone(),
+                });
+
+                ExpResult::DereferencedPointer(dst_ptr)
             }
         }
     }
@@ -864,11 +992,20 @@ impl<'a> InstructionGenerator<'a> {
                 });
                 dst
             }
+            ExpResult::SubObject { base, offset } => {
+                let dst = self.make_tmp_local(expression.ty().clone());
+                self.instructions.push(Instruction::CopyFromOffset {
+                    src: base,
+                    offset,
+                    dst: dst.clone(),
+                });
+                dst
+            }
         }
     }
 }
 
-pub fn gen_program(program: &ast::Program, symbol_table: &mut HashMap<EcoString, Attr>) -> Program {
+pub fn gen_program(program: &ast::Program, symbol_table: &mut SymbolTable) -> Program {
     let mut generator = InstructionGenerator::new(symbol_table);
 
     let functions: Vec<_> = program
@@ -888,13 +1025,15 @@ pub fn gen_program(program: &ast::Program, symbol_table: &mut HashMap<EcoString,
                 Attr::Static { init, global, ty } => {
                     let init = match init {
                         semantics::type_check::InitialValue::Initial(i) => i.clone(),
-                        semantics::type_check::InitialValue::Tentative => vec![ty.zero()],
+                        semantics::type_check::InitialValue::Tentative => {
+                            vec![StaticInit::Zero(generator.symbol_table.size(ty))]
+                        }
                         semantics::type_check::InitialValue::NoInitializer => return None,
                     };
                     Some(TopLevelItem::StaticVariable(StaticVariable {
                         global: *global,
                         name: key.clone(),
-                        alignment: ty.alignment(),
+                        alignment: generator.symbol_table.alignment(ty),
                         init,
                     }))
                 }
@@ -917,7 +1056,7 @@ fn gen_function(generator: &mut InstructionGenerator, function: &ast::FunDecl) -
         }
         generator.add_statement(&ast::Statement::Return(match function.ty.ret {
             ast::VarType::Void => None,
-            ast::VarType::Double => Some(ast::Expression::Constant(Spanned {
+            ast::VarType::Base(BaseType::Double) => Some(ast::Expression::Constant(Spanned {
                 data: ast::Const::Double(0.0),
                 span: 0..0,
             })),
