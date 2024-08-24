@@ -1278,20 +1278,27 @@ impl<'a> CodeGen<'a> {
                 }
                 tacky::Instruction::Store { src, dst } => {
                     let size = self.symbol_table.size(&src.ty(self.symbol_table));
-                    let Val::Var(src) = src else { unreachable!() };
-                    body.push(Instruction::Mov {
-                        ty: AssemblyType::QuadWord,
-                        src: dst.into(),
-                        dst: Operand::Reg(Register::Ax),
-                    });
-                    for (asm, offset) in divide_into_assembly_sizes(size) {
+                    if let Val::Var(src) = src {
                         body.push(Instruction::Mov {
-                            ty: asm,
-                            src: Operand::Pseudo(Pseudo::Mem {
-                                name: src.clone(),
-                                offset,
-                            }),
-                            dst: Operand::Memory(Register::Ax, offset as i32),
+                            ty: AssemblyType::QuadWord,
+                            src: dst.into(),
+                            dst: Operand::Reg(Register::Ax),
+                        });
+                        for (asm, offset) in divide_into_assembly_sizes(size) {
+                            body.push(Instruction::Mov {
+                                ty: asm,
+                                src: Operand::Pseudo(Pseudo::Mem {
+                                    name: src.clone(),
+                                    offset,
+                                }),
+                                dst: Operand::Memory(Register::Ax, offset as i32),
+                            });
+                        }
+                    } else {
+                        body.push(Instruction::Mov {
+                            ty: self.val_asm_type(&src),
+                            src: src.into(),
+                            dst: dst.into(),
                         });
                     }
                 }
@@ -1608,7 +1615,10 @@ impl<'a> CodeGen<'a> {
                 let Val::Var(name) = retval else {
                     unreachable!()
                 };
-                let struct_def = self.symbol_table.struct_def(&name);
+                let VarType::Struct(struct_name) = &ty else {
+                    unreachable!()
+                };
+                let struct_def = self.symbol_table.struct_def(&struct_name);
                 let classes = self.classify_struct(struct_def);
                 let struct_size = struct_def.size;
 

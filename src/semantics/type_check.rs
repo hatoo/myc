@@ -35,7 +35,7 @@ impl SymbolTable {
         if let Attr::Struct(def) = self.get(tag).unwrap() {
             def
         } else {
-            unreachable!()
+            unreachable!("{}", tag)
         }
     }
 
