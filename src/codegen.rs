@@ -423,16 +423,50 @@ impl<'a> CodeGen<'a> {
         byte_count: usize,
         body: &mut Vec<Instruction>,
     ) {
-        todo!()
+        let mut offset = byte_count as i32 - 1;
+        while offset >= 0 {
+            let src_byte = op.offset(offset);
+            body.push(Instruction::Mov {
+                ty: AssemblyType::Byte,
+                src: src_byte,
+                dst: Operand::Reg(dst_reg),
+            });
+            if offset > 0 {
+                body.push(Instruction::Binary {
+                    op: BinaryOp::Shl,
+                    ty: AssemblyType::QuadWord,
+                    lhs: Operand::Imm(8),
+                    rhs: Operand::Reg(dst_reg),
+                });
+            }
+            offset -= 1;
+        }
     }
     fn copy_bytes_from_reg(
         &self,
         op: &Operand,
-        dst_reg: Register,
+        src_reg: Register,
         byte_count: usize,
         body: &mut Vec<Instruction>,
     ) {
-        todo!()
+        let mut offset = 0;
+        while offset < byte_count {
+            let dst_byte = op.offset(offset as i32);
+            body.push(Instruction::Mov {
+                ty: AssemblyType::Byte,
+                src: Operand::Reg(src_reg),
+                dst: dst_byte,
+            });
+            if offset < byte_count - 1 {
+                body.push(Instruction::Binary {
+                    op: BinaryOp::ShrTwo,
+                    ty: AssemblyType::QuadWord,
+                    lhs: Operand::Imm(8),
+                    rhs: Operand::Reg(src_reg),
+                });
+            }
+            offset += 1;
+        }
     }
 
     fn gen_function(&mut self, function: &tacky::Function) -> Function {
