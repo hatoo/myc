@@ -216,6 +216,21 @@ impl Operand {
     fn sized(&self, size: AssemblyType) -> SizedOperand {
         SizedOperand { ty: size, op: self }
     }
+
+    fn offset(&self, offset: i32) -> Self {
+        match self {
+            Operand::Pseudo(Pseudo::Mem { name, offset: off }) => Operand::Pseudo(Pseudo::Mem {
+                name: name.clone(),
+                offset: *off + offset as usize,
+            }),
+            Operand::Pseudo(Pseudo::Var(name)) => Operand::Pseudo(Pseudo::Mem {
+                name: name.clone(),
+                offset: offset as usize,
+            }),
+            Operand::Memory(base, off) => Operand::Memory(*base, *off + offset),
+            _ => unreachable!(),
+        }
+    }
 }
 
 impl From<tacky::Val> for Operand {
@@ -401,7 +416,22 @@ impl<'a> CodeGen<'a> {
                 .collect(),
         }
     }
-    fn copy_bytes_to_reg(&self, op: &Operand, dst_reg: Register, byte_count: usize) {
+    fn copy_bytes_to_reg(
+        &self,
+        op: &Operand,
+        dst_reg: Register,
+        byte_count: usize,
+        body: &mut Vec<Instruction>,
+    ) {
+        todo!()
+    }
+    fn copy_bytes_from_reg(
+        &self,
+        op: &Operand,
+        dst_reg: Register,
+        byte_count: usize,
+        body: &mut Vec<Instruction>,
+    ) {
         todo!()
     }
 
@@ -829,7 +859,7 @@ impl<'a> CodeGen<'a> {
 
                     for (i, (asm_ty, op)) in int_reg_args.into_iter().enumerate() {
                         if let AssemblyType::ByteArray { size, .. } = asm_ty {
-                            self.copy_bytes_to_reg(&op, param_regs[i], size);
+                            self.copy_bytes_to_reg(&op, param_regs[i], size, &mut body);
                         } else {
                             body.push(Instruction::Mov {
                                 ty: asm_ty,
@@ -856,7 +886,14 @@ impl<'a> CodeGen<'a> {
                                 lhs: Operand::Imm(8),
                                 rhs: Operand::Reg(Register::SP),
                             });
-                            todo!()
+                            debug_assert!(size <= 8);
+                            divide_into_assembly_sizes(size).for_each(|(asm_ty, offset)| {
+                                body.push(Instruction::Mov {
+                                    ty: asm_ty,
+                                    src: op.offset(offset as _),
+                                    dst: Operand::Memory(Register::SP, offset as _),
+                                });
+                            });
                         } else if matches!(op, Operand::Reg(_) | Operand::Imm(_))
                             || asm_ty == AssemblyType::QuadWord
                             || asm_ty == AssemblyType::Double
@@ -886,18 +923,36 @@ impl<'a> CodeGen<'a> {
                     }
 
                     if let Some(dst) = dst {
-                        if ty.ret == VarType::Base(BaseType::Double) {
-                            body.push(Instruction::Mov {
-                                ty: AssemblyType::Double,
-                                src: Operand::Reg(Register::Xmm(0)),
-                                dst: dst.into(),
-                            });
-                        } else {
-                            body.push(Instruction::Mov {
-                                ty: ty.ret.clone().into(),
-                                src: Operand::Reg(Register::Ax),
-                                dst: dst.into(),
-                            });
+                        if !return_in_memory {
+                            let int_return_regs = [Register::Ax, Register::Dx];
+
+                            for (i, (asm_ty, op)) in int_dests.into_iter().enumerate() {
+                                match asm_ty {
+                                    AssemblyType::ByteArray { size, .. } => {
+                                        self.copy_bytes_from_reg(
+                                            &op,
+                                            int_return_regs[i],
+                                            size,
+                                            &mut body,
+                                        );
+                                    }
+                                    _ => {
+                                        body.push(Instruction::Mov {
+                                            ty: asm_ty,
+                                            src: Operand::Reg(int_return_regs[i]),
+                                            dst: op,
+                                        });
+                                    }
+                                }
+                            }
+
+                            for (i, op) in double_dests.into_iter().enumerate() {
+                                body.push(Instruction::Mov {
+                                    ty: AssemblyType::Double,
+                                    src: Operand::Reg(Register::Xmm(i as _)),
+                                    dst: op,
+                                });
+                            }
                         }
                     }
                 }
