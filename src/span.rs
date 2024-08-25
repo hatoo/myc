@@ -6,10 +6,12 @@ use std::{
     sync::Arc,
 };
 
+pub type Span = Range<usize>;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Spanned<T> {
     pub data: T,
-    pub span: Range<usize>,
+    pub span: Span,
 }
 
 impl<T> Display for Spanned<T>
