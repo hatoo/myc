@@ -34,14 +34,18 @@ struct Opts {
 fn main() {
     let opts = Opts::parse();
 
+    let src = std::fs::read(&opts.input).unwrap();
+
     // TODO implement a proper preprocessor
-    let preped = process::Command::new("gcc")
+    let mut preped = process::Command::new("gcc")
         .arg("-E")
-        .arg(&opts.input)
+        .arg("-")
+        .stdin(process::Stdio::piped())
         .stdout(process::Stdio::piped())
         .spawn()
         .unwrap();
 
+    preped.stdin.take().unwrap().write_all(&src).unwrap();
     let src = preped.wait_with_output().unwrap().stdout;
 
     let src = Arc::new(src);
