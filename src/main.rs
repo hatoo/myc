@@ -1,4 +1,10 @@
-use std::{fs::File, io::Write, path::PathBuf, process, sync::Arc};
+use std::{
+    fs::File,
+    io::{stdin, Read, Write},
+    path::PathBuf,
+    process,
+    sync::Arc,
+};
 
 use clap::Parser;
 
@@ -35,7 +41,8 @@ fn main() {
     let opts = Opts::parse();
 
     let src = if opts.input == PathBuf::from("-") {
-        let src = std::fs::read(&opts.input).unwrap();
+        let mut src = Vec::new();
+        stdin().read_to_end(&mut src).unwrap();
 
         // TODO implement a proper preprocessor
         let mut preped = process::Command::new("gcc")

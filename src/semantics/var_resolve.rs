@@ -431,7 +431,7 @@ impl VarResolver {
                     *name = new_name.clone();
                     Ok(())
                 } else {
-                    Err(Error::VariableNotDeclared(Spanned {
+                    Err(Error::StructNotDeclared(Spanned {
                         data: name.clone(),
                         span,
                     }))
