@@ -34,20 +34,32 @@ struct Opts {
 fn main() {
     let opts = Opts::parse();
 
-    let src = std::fs::read(&opts.input).unwrap();
+    let src = if opts.input == PathBuf::from("-") {
+        let src = std::fs::read(&opts.input).unwrap();
 
-    // TODO implement a proper preprocessor
-    let mut preped = process::Command::new("gcc")
-        .arg("-E")
-        .arg("-P")
-        .arg("-")
-        .stdin(process::Stdio::piped())
-        .stdout(process::Stdio::piped())
-        .spawn()
-        .unwrap();
+        // TODO implement a proper preprocessor
+        let mut preped = process::Command::new("gcc")
+            .arg("-E")
+            .arg("-P")
+            .arg("-")
+            .stdin(process::Stdio::piped())
+            .stdout(process::Stdio::piped())
+            .spawn()
+            .unwrap();
 
-    preped.stdin.take().unwrap().write_all(&src).unwrap();
-    let src = preped.wait_with_output().unwrap().stdout;
+        preped.stdin.take().unwrap().write_all(&src).unwrap();
+        preped.wait_with_output().unwrap().stdout
+    } else {
+        let preped = process::Command::new("gcc")
+            .arg("-E")
+            .arg("-P")
+            .arg(&opts.input)
+            .stdout(process::Stdio::piped())
+            .spawn()
+            .unwrap();
+
+        preped.wait_with_output().unwrap().stdout
+    };
 
     let src = Arc::new(src);
 

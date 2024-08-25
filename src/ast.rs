@@ -1274,7 +1274,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_param(&mut self) -> Result<ParamInfo, Error> {
-        let ty = self.parse_type_specifiers()?;
+        let ty = self.parse_specifiers(false)?.0;
         let decl = self.parse_declarator()?;
         Ok(ParamInfo { ty, decl })
     }
@@ -1312,7 +1312,10 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_specifiers(&mut self) -> Result<(VarType, Option<StorageClass>), Error> {
+    fn parse_specifiers(
+        &mut self,
+        allow_storage_class: bool,
+    ) -> Result<(VarType, Option<StorageClass>), Error> {
         let mut ty = Vec::new();
         let mut storage_class = None;
         let start = if let Some(spanned) = self.peek() {
@@ -1370,7 +1373,7 @@ impl<'a> Parser<'a> {
                     });
                 }
                 Token::Static => {
-                    if storage_class.is_some() {
+                    if storage_class.is_some() || !allow_storage_class {
                         return Err(Error::ConflictingSpecifier(s.span.clone()));
                     }
                     end = s.span.end;
@@ -1378,7 +1381,7 @@ impl<'a> Parser<'a> {
                     self.advance();
                 }
                 Token::Extern => {
-                    if storage_class.is_some() {
+                    if storage_class.is_some() || !allow_storage_class {
                         return Err(Error::ConflictingSpecifier(s.span.clone()));
                     }
                     end = s.span.end;
@@ -1424,7 +1427,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_var_decl(&mut self) -> Result<VarDecl, Error> {
-        let (ty, storage_class) = self.parse_specifiers()?;
+        let (ty, storage_class) = self.parse_specifiers(true)?;
         let decl = self.parse_declarator()?;
         let (ident, ty, _) = process_declarator(decl, ty)?;
 
@@ -1453,67 +1456,8 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_type_specifiers(&mut self) -> Result<VarType, Error> {
-        let mut ty = Vec::new();
-        loop {
-            if let Some(s) = self.peek() {
-                match &s.data {
-                    Token::Void => {
-                        ty.push(s.clone().map(|_| TypeSpecifier::Void));
-                        self.advance();
-                    }
-                    Token::Char => {
-                        ty.push(s.clone().map(|_| TypeSpecifier::Char));
-                        self.advance();
-                    }
-                    Token::Int => {
-                        ty.push(s.clone().map(|_| TypeSpecifier::Int));
-                        self.advance();
-                    }
-                    Token::Long => {
-                        ty.push(s.clone().map(|_| TypeSpecifier::Long));
-                        self.advance();
-                    }
-                    Token::Signed => {
-                        ty.push(s.clone().map(|_| TypeSpecifier::Signed));
-                        self.advance();
-                    }
-                    Token::Unsigned => {
-                        ty.push(s.clone().map(|_| TypeSpecifier::Unsigned));
-                        self.advance();
-                    }
-                    Token::Double => {
-                        ty.push(s.clone().map(|_| TypeSpecifier::Double));
-                        self.advance();
-                    }
-                    Token::Struct => {
-                        self.advance();
-                        let tag = self.expect_ident()?;
-                        ty.push(Spanned {
-                            data: TypeSpecifier::Struct(tag.data),
-                            span: tag.span,
-                        });
-                    }
-                    _ => {
-                        if ty.is_empty() {
-                            return Err(Error::UnexpectedSpecifier(s.clone()));
-                        } else {
-                            break;
-                        }
-                    }
-                }
-            } else if ty.is_empty() {
-                return Err(Error::UnexpectedEof);
-            } else {
-                break;
-            }
-        }
-
-        solve_type_specifier(&ty)
-    }
-
     fn parse_fun_decl(&mut self) -> Result<FunDecl, Error> {
-        let (return_type, storage_class) = self.parse_specifiers()?;
+        let (return_type, storage_class) = self.parse_specifiers(true)?;
         let decl = self.parse_declarator()?;
         let span = decl.span.clone();
 
@@ -1901,7 +1845,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_type_name(&mut self) -> Result<VarType, Error> {
-        let base_type = self.parse_type_specifiers()?;
+        let base_type = self.parse_specifiers(false)?.0;
         if let Ok(decl) = self.atomic(|s| s.parse_abstract_declarator()) {
             let span = decl.span.clone();
 
@@ -2004,7 +1948,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_struct_member(&mut self) -> Result<MemberDecl, Error> {
-        let ty = self.parse_type_specifiers()?;
+        let ty = self.parse_specifiers(false)?.0;
         let decl = self.parse_declarator()?;
         let (ident, ty, _) = process_declarator(decl, ty)?;
         self.expect(Token::SemiColon)?;
