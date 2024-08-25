@@ -44,14 +44,14 @@ impl SymbolTable {
 
         match ty {
             VarType::Base(base) => {
-                ret.push(base.clone());
+                ret.push(*base);
             }
             VarType::Pointer(_) => {
                 ret.push(BaseType::Ulong);
             }
             VarType::Array { element, size } => {
                 for _ in 0..*size {
-                    ret.extend(self.flatten(&element));
+                    ret.extend(self.flatten(element));
                 }
             }
             VarType::Struct(name) => {
@@ -114,11 +114,7 @@ impl SymbolTable {
         match ty {
             ast::VarType::Void => false,
             ast::VarType::Struct(tag) => {
-                if let Some(Attr::Struct(_)) = self.get(tag) {
-                    true
-                } else {
-                    false
-                }
+                matches!(self.get(tag), Some(Attr::Struct(_)))
             }
             _ => true,
         }
@@ -149,7 +145,7 @@ impl SymbolTable {
                 ast::Initializer::CompoundInit(inits)
             }
             VarType::Struct(tag) => {
-                let StructDef { members, .. } = self.struct_def(&tag);
+                let StructDef { members, .. } = self.struct_def(tag);
                 let inits = members
                     .iter()
                     .map(|member| self.zero_init(&member.ty))
@@ -293,10 +289,9 @@ fn common_pointer_type<'a>(
         Some(ty0)
     } else if e0.is_null_pointer_constant() {
         Some(ty1)
-    } else if e1.is_null_pointer_constant() {
-        Some(ty0)
-    } else if ty0 == &ast::VarType::Pointer(Box::new(ast::Ty::Var(ast::VarType::Void)))
-        && ty1.is_pointer()
+    } else if e1.is_null_pointer_constant()
+        || ty0 == &ast::VarType::Pointer(Box::new(ast::Ty::Var(ast::VarType::Void)))
+            && ty1.is_pointer()
     {
         Some(ty0)
     } else if ty1 == &ast::VarType::Pointer(Box::new(ast::Ty::Var(ast::VarType::Void)))
@@ -909,12 +904,12 @@ impl TypeChecker {
                             } else {
                                 return Err(Error::IncompatibleTypes(exp.span()));
                             }
+                        } else if let (ast::VarType::Base(tyl), ast::VarType::Base(tyr)) =
+                            (tyl, tyr)
+                        {
+                            common_base_type(tyl, tyr).into()
                         } else {
-                            if let (ast::VarType::Base(tyl), ast::VarType::Base(tyr)) = (tyl, tyr) {
-                                common_base_type(tyl, tyr).into()
-                            } else {
-                                return Err(Error::IncompatibleTypes(exp.span()));
-                            }
+                            return Err(Error::IncompatibleTypes(exp.span()));
                         };
 
                         convert_to(lhs, &cty);
@@ -959,7 +954,7 @@ impl TypeChecker {
                     _ => match op {
                         ast::BinaryOp::Multiply | ast::BinaryOp::Divide => {
                             if let (ast::VarType::Base(tyl), ast::VarType::Base(tyr)) = (tyl, tyr) {
-                                let cty = common_base_type(tyl.clone(), tyr.clone()).into();
+                                let cty = common_base_type(tyl, tyr).into();
                                 convert_to(lhs, &cty);
                                 convert_to(rhs, &cty);
                                 *ty = cty;
@@ -969,8 +964,8 @@ impl TypeChecker {
                         }
                         ast::BinaryOp::Remainder => {
                             if let (ast::VarType::Base(tyl), ast::VarType::Base(tyr)) = (tyl, tyr) {
-                                let cty = common_base_type(tyl.clone(), tyr.clone());
-                                if cty == ast::BaseType::Double.into() {
+                                let cty = common_base_type(tyl, tyr);
+                                if cty == ast::BaseType::Double {
                                     return Err(Error::IncompatibleTypes(exp.span()));
                                 }
                                 let cty = cty.into();
@@ -1111,9 +1106,7 @@ impl TypeChecker {
 
                 if target == &VarType::Void {
                     Ok(target.clone())
-                } else if !target.is_scalar() {
-                    Err(Error::IncompatibleTypes(exp.span()))
-                } else if !ty.is_scalar() {
+                } else if !target.is_scalar() || !ty.is_scalar() {
                     Err(Error::IncompatibleTypes(exp.span()))
                 } else {
                     Ok(target.clone())
@@ -1220,7 +1213,7 @@ impl TypeChecker {
                 let structure_ty = self.check_expression_and_convert(structure)?;
                 if let ast::VarType::Struct(s) = structure_ty {
                     let StructDef { members, .. } = self.sym_table.struct_def(&s);
-                    if let Some(member) = members.iter().find(|name| &name.name == &member.data) {
+                    if let Some(member) = members.iter().find(|name| name.name == member.data) {
                         *ty = member.ty.clone();
                         Ok(ty.clone())
                     } else {
@@ -1241,8 +1234,8 @@ impl TypeChecker {
                     } else {
                         return Err(Error::IncompatibleTypes(exp.span()));
                     };
-                    let StructDef { members, .. } = self.sym_table.struct_def(&s);
-                    if let Some(member) = members.iter().find(|name| &name.name == &member.data) {
+                    let StructDef { members, .. } = self.sym_table.struct_def(s);
+                    if let Some(member) = members.iter().find(|name| name.name == member.data) {
                         *ty = member.ty.clone();
                         Ok(ty.clone())
                     } else {
@@ -1286,9 +1279,7 @@ impl TypeChecker {
     ) -> Result<(), Error> {
         match stmt {
             crate::ast::Statement::Return(exp) => match (ret_type, exp) {
-                (ast::VarType::Void, Some(exp)) => {
-                    return Err(Error::IncompatibleTypes(exp.span()));
-                }
+                (ast::VarType::Void, Some(exp)) => Err(Error::IncompatibleTypes(exp.span())),
                 (ast::VarType::Void, None) => Ok(()),
                 (ret_type, Some(exp)) => {
                     self.check_expression_and_convert(exp)?;
@@ -1459,7 +1450,7 @@ impl TypeChecker {
                 if !self.sym_table.is_complete(element) {
                     return Err(());
                 }
-                self.validate_var_type(&element, allow_incomplete_struct)?;
+                self.validate_var_type(element, allow_incomplete_struct)?;
             }
             VarType::Pointer(ty) => match ty.as_ref() {
                 ast::Ty::Fun(ty) => {

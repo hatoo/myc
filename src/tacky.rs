@@ -915,7 +915,7 @@ impl<'a> InstructionGenerator<'a> {
                 let member_offset = struct_def
                     .members
                     .iter()
-                    .find(|m| &m.name == &member.data)
+                    .find(|m| m.name == member.data)
                     .unwrap()
                     .offset;
 
@@ -958,15 +958,15 @@ impl<'a> InstructionGenerator<'a> {
                 } else {
                     unreachable!()
                 };
-                let struct_def = self.symbol_table.struct_def(&struct_name);
+                let struct_def = self.symbol_table.struct_def(struct_name);
                 let member_offset = struct_def
                     .members
                     .iter()
-                    .find(|m| &m.name == &member.data)
+                    .find(|m| m.name == member.data)
                     .unwrap()
                     .offset;
 
-                let ptr = self.add_expression_and_convert(&pointer);
+                let ptr = self.add_expression_and_convert(pointer);
                 let dst_ptr = self.make_tmp_local(VarType::Pointer(Box::new(Ty::Var(ty.clone()))));
 
                 self.instructions.push(Instruction::AddPtr {

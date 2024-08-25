@@ -1258,26 +1258,19 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_square_exp(&mut self) -> Result<Expression, Error> {
-        self.expect(Token::OpenSquareBracket)?;
-        let exp = self.parse_expression(0)?;
-        self.expect(Token::CloseSquareBracket)?;
-
-        Ok(exp)
-    }
-
     fn parse_param_list(&mut self) -> Result<Vec<ParamInfo>, Error> {
         let mut params = Vec::new();
         self.expect(Token::OpenParen)?;
 
-        if self
+        let is_void = self
             .atomic(|s| {
                 s.expect(Token::Void)?;
                 s.expect(Token::CloseParen)?;
                 Ok(())
             })
-            .is_ok()
-        {
+            .is_ok();
+
+        if is_void {
             return Ok(params);
         }
 

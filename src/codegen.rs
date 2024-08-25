@@ -7,7 +7,7 @@ use std::{
 use ecow::EcoString;
 
 use crate::{
-    ast::{self, BaseType, Const, Ty, VarType},
+    ast::{self, BaseType, Const, VarType},
     math::round_up,
     semantics::{
         self,
@@ -27,8 +27,6 @@ pub enum AssemblyType {
     LongWord,
     QuadWord,
     Double,
-    // Not used at all.
-    // TODO: Delete this variant
     ByteArray { size: usize, alignment: usize },
 }
 
@@ -157,11 +155,15 @@ pub enum BinaryOp {
 
 #[derive(Debug, Clone)]
 pub enum Pseudo {
-    // TODO: Replace to Mem with 0 offset
-    Var(EcoString),
     // Must be placed in read only section
     Double { value: f64, alignment: usize },
     Mem { name: EcoString, offset: usize },
+}
+
+impl Pseudo {
+    fn var(name: EcoString) -> Self {
+        Pseudo::Mem { name, offset: 0 }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -194,10 +196,6 @@ impl Operand {
                 name: name.clone(),
                 offset: *off + offset as usize,
             }),
-            Operand::Pseudo(Pseudo::Var(name)) => Operand::Pseudo(Pseudo::Mem {
-                name: name.clone(),
-                offset: offset as usize,
-            }),
             Operand::Memory(base, off) => Operand::Memory(*base, *off + offset),
             _ => unreachable!(),
         }
@@ -212,7 +210,7 @@ impl From<tacky::Val> for Operand {
                 alignment: 8,
             }),
             tacky::Val::Constant(imm) => Operand::Imm(imm.get_ulong()),
-            tacky::Val::Var(var) => Operand::Pseudo(Pseudo::Var(var)),
+            tacky::Val::Var(var) => Operand::Pseudo(Pseudo::var(var)),
         }
     }
 }
@@ -225,7 +223,7 @@ impl<'a> From<&'a tacky::Val> for Operand {
                 alignment: 8,
             }),
             tacky::Val::Constant(imm) => Operand::Imm(imm.get_ulong()),
-            tacky::Val::Var(var) => Operand::Pseudo(Pseudo::Var(var.clone())),
+            tacky::Val::Var(var) => Operand::Pseudo(Pseudo::var(var.clone())),
         }
     }
 }
@@ -509,7 +507,7 @@ impl<'a> CodeGen<'a> {
             }
         }
 
-        for (i, (asm_ty, op)) in double_reg_args.into_iter().enumerate() {
+        for (i, (_asm_ty, op)) in double_reg_args.into_iter().enumerate() {
             body.push(Instruction::Mov {
                 ty: AssemblyType::Double,
                 src: Operand::Reg(Register::Xmm(i as _)),
@@ -550,7 +548,7 @@ impl<'a> CodeGen<'a> {
                             });
                             let return_storage = Operand::Memory(Register::Ax, 0);
                             let ret_operand: Operand = val.into();
-                            let size = self.symbol_table.size(&val.ty(&self.symbol_table));
+                            let size = self.symbol_table.size(&val.ty(self.symbol_table));
                             for (asm_ty, offset) in divide_into_assembly_sizes(size) {
                                 body.push(Instruction::Mov {
                                     ty: asm_ty,
@@ -639,19 +637,19 @@ impl<'a> CodeGen<'a> {
                             match op {
                                 Unary::Simple(op) => {
                                     body.push(Instruction::Mov {
-                                        ty: self.val_asm_type(&src),
+                                        ty: self.val_asm_type(src),
                                         src: src.into(),
                                         dst: dst.into(),
                                     });
                                     body.push(Instruction::Unary {
-                                        ty: self.val_asm_type(&src),
+                                        ty: self.val_asm_type(src),
                                         op,
                                         src: dst.into(),
                                     });
                                 }
                                 Unary::Not => {
                                     body.push(Instruction::Cmp(
-                                        self.val_asm_type(&src),
+                                        self.val_asm_type(src),
                                         Operand::Imm(0),
                                         src.into(),
                                     ));
@@ -709,7 +707,7 @@ impl<'a> CodeGen<'a> {
                     match op {
                         Binary::Simple(op) => {
                             body.push(Instruction::Mov {
-                                ty: self.val_asm_type(&lhs),
+                                ty: self.val_asm_type(lhs),
                                 src: lhs.into(),
                                 dst: dst.into(),
                             });
@@ -812,12 +810,12 @@ impl<'a> CodeGen<'a> {
                         }
                         Binary::Compare(cond) => {
                             body.push(Instruction::Cmp(
-                                self.val_asm_type(&lhs),
+                                self.val_asm_type(lhs),
                                 rhs.into(),
                                 lhs.into(),
                             ));
                             body.push(Instruction::Mov {
-                                ty: self.val_asm_type(&dst),
+                                ty: self.val_asm_type(dst),
                                 src: Operand::Imm(0),
                                 dst: dst.into(),
                             });
@@ -828,7 +826,7 @@ impl<'a> CodeGen<'a> {
                 tacky::Instruction::Copy { src, dst } => match src {
                     Val::Constant(_) => {
                         body.push(Instruction::Mov {
-                            ty: self.val_asm_type(&src),
+                            ty: self.val_asm_type(src),
                             src: src.into(),
                             dst: dst.into(),
                         });
@@ -870,7 +868,7 @@ impl<'a> CodeGen<'a> {
                         body.push(Instruction::JmpCc(CondCode::E, dst.clone()));
                     } else {
                         body.push(Instruction::Cmp(
-                            self.val_asm_type(&src),
+                            self.val_asm_type(src),
                             Operand::Imm(0),
                             src.into(),
                         ));
@@ -893,7 +891,7 @@ impl<'a> CodeGen<'a> {
                         body.push(Instruction::JmpCc(CondCode::Ne, dst.clone()));
                     } else {
                         body.push(Instruction::Cmp(
-                            self.val_asm_type(&src),
+                            self.val_asm_type(src),
                             Operand::Imm(0),
                             src.into(),
                         ));
@@ -913,14 +911,14 @@ impl<'a> CodeGen<'a> {
                             ty: ast::VarType::Pointer(ty),
                             ..
                         } => match ty.as_ref() {
-                            ast::Ty::Fun(ty) => (Operand::Pseudo(Pseudo::Var(name.clone())), ty),
+                            ast::Ty::Fun(ty) => (Operand::Pseudo(Pseudo::var(name.clone())), ty),
                             _ => unreachable!(),
                         },
                         _ => unreachable!(),
                     };
 
                     let (int_dests, double_dests, return_in_memory) = if let Some(retval) = dst {
-                        self.classify_return_value(&retval)
+                        self.classify_return_value(retval)
                     } else {
                         (Vec::new(), Vec::new(), false)
                     };
@@ -1014,59 +1012,57 @@ impl<'a> CodeGen<'a> {
                         });
                     }
 
-                    if let Some(dst) = dst {
-                        if !return_in_memory {
-                            let int_return_regs = [Register::Ax, Register::Dx];
+                    if dst.is_some() && !return_in_memory {
+                        let int_return_regs = [Register::Ax, Register::Dx];
 
-                            for (i, (asm_ty, op)) in int_dests.into_iter().enumerate() {
-                                match asm_ty {
-                                    AssemblyType::ByteArray { size, .. } => {
-                                        self.copy_bytes_from_reg(
-                                            &op,
-                                            int_return_regs[i],
-                                            size,
-                                            &mut body,
-                                        );
-                                    }
-                                    _ => {
-                                        body.push(Instruction::Mov {
-                                            ty: asm_ty,
-                                            src: Operand::Reg(int_return_regs[i]),
-                                            dst: op,
-                                        });
-                                    }
+                        for (i, (asm_ty, op)) in int_dests.into_iter().enumerate() {
+                            match asm_ty {
+                                AssemblyType::ByteArray { size, .. } => {
+                                    self.copy_bytes_from_reg(
+                                        &op,
+                                        int_return_regs[i],
+                                        size,
+                                        &mut body,
+                                    );
+                                }
+                                _ => {
+                                    body.push(Instruction::Mov {
+                                        ty: asm_ty,
+                                        src: Operand::Reg(int_return_regs[i]),
+                                        dst: op,
+                                    });
                                 }
                             }
+                        }
 
-                            for (i, op) in double_dests.into_iter().enumerate() {
-                                body.push(Instruction::Mov {
-                                    ty: AssemblyType::Double,
-                                    src: Operand::Reg(Register::Xmm(i as _)),
-                                    dst: op,
-                                });
-                            }
+                        for (i, op) in double_dests.into_iter().enumerate() {
+                            body.push(Instruction::Mov {
+                                ty: AssemblyType::Double,
+                                src: Operand::Reg(Register::Xmm(i as _)),
+                                dst: op,
+                            });
                         }
                     }
                 }
                 tacky::Instruction::SignExtend { src, dst } => {
                     body.push(Instruction::Movsx {
-                        src_type: self.val_asm_type(&src),
-                        dst_type: self.val_asm_type(&dst),
+                        src_type: self.val_asm_type(src),
+                        dst_type: self.val_asm_type(dst),
                         src: src.into(),
                         dst: dst.into(),
                     });
                 }
                 tacky::Instruction::Truncate { src, dst } => {
                     body.push(Instruction::Mov {
-                        ty: self.val_asm_type(&dst),
+                        ty: self.val_asm_type(dst),
                         src: src.into(),
                         dst: dst.into(),
                     });
                 }
                 tacky::Instruction::ZeroExtend { src, dst } => {
                     body.push(Instruction::MovZeroExtend {
-                        src_type: self.val_asm_type(&src),
-                        dst_type: self.val_asm_type(&dst),
+                        src_type: self.val_asm_type(src),
+                        dst_type: self.val_asm_type(dst),
                         src: src.into(),
                         dst: dst.into(),
                     });
@@ -1085,7 +1081,7 @@ impl<'a> CodeGen<'a> {
                         });
                     } else {
                         body.push(Instruction::Cvttsd2si {
-                            ty: self.val_asm_type(&dst),
+                            ty: self.val_asm_type(dst),
                             src: src.into(),
                             dst: dst.into(),
                         });
@@ -1181,7 +1177,7 @@ impl<'a> CodeGen<'a> {
                         });
                     } else {
                         body.push(Instruction::Cvtsi2sd {
-                            ty: self.val_asm_type(&src),
+                            ty: self.val_asm_type(src),
                             src: src.into(),
                             dst: dst.into(),
                         });
@@ -1316,7 +1312,7 @@ impl<'a> CodeGen<'a> {
                             dst: Operand::Reg(Register::Ax),
                         });
                         body.push(Instruction::Mov {
-                            ty: self.val_asm_type(&src),
+                            ty: self.val_asm_type(src),
                             src: src.into(),
                             dst: Operand::Memory(Register::Ax, 0),
                         });
@@ -1335,7 +1331,7 @@ impl<'a> CodeGen<'a> {
                 tacky::Instruction::CopyToOffset { src, dst, offset } => match src {
                     Val::Constant(_) => {
                         body.push(Instruction::Mov {
-                            ty: self.val_asm_type(&src),
+                            ty: self.val_asm_type(src),
                             src: src.into(),
                             dst: Operand::Pseudo(Pseudo::Mem {
                                 name: dst.clone(),
@@ -1516,7 +1512,7 @@ impl<'a> CodeGen<'a> {
         let int_regs_available = if return_in_memory { 5 } else { 6 };
 
         for val in iter {
-            let ty = val.ty(&self.symbol_table);
+            let ty = val.ty(self.symbol_table);
             let asm_ty = self.asm_type(&ty);
             match &ty {
                 VarType::Base(BaseType::Double) => {
@@ -1527,7 +1523,7 @@ impl<'a> CodeGen<'a> {
                     }
                 }
                 VarType::Struct(name) => {
-                    let structure = self.symbol_table.struct_def(&name);
+                    let structure = self.symbol_table.struct_def(name);
                     let classes = self.classify_struct(structure);
                     let mut use_stack = true;
                     let struct_size = structure.size;
@@ -1603,7 +1599,7 @@ impl<'a> CodeGen<'a> {
         &self,
         retval: &Val,
     ) -> (Vec<(AssemblyType, Operand)>, Vec<Operand>, bool) {
-        let ty = retval.ty(&self.symbol_table);
+        let ty = retval.ty(self.symbol_table);
         let asm_ty: AssemblyType = self.asm_type(&ty);
 
         match asm_ty {
@@ -1615,7 +1611,7 @@ impl<'a> CodeGen<'a> {
                 let VarType::Struct(struct_name) = &ty else {
                     unreachable!()
                 };
-                let struct_def = self.symbol_table.struct_def(&struct_name);
+                let struct_def = self.symbol_table.struct_def(struct_name);
                 let classes = self.classify_struct(struct_def);
                 let struct_size = struct_def.size;
 
@@ -1675,36 +1671,6 @@ enum Class {
     Integer,
 }
 
-#[allow(clippy::type_complexity)]
-fn classify_parameters<'a, T>(
-    iter: impl Iterator<Item = (T, &'a VarType)>,
-) -> (Vec<(T, VarType)>, Vec<(T, VarType)>, Vec<(T, VarType)>) {
-    let mut int_reg_args = Vec::new();
-    let mut double_reg_args = Vec::new();
-    let mut stack_args = Vec::new();
-
-    for (param, ty) in iter {
-        match ty {
-            VarType::Base(BaseType::Double) => {
-                if double_reg_args.len() < 8 {
-                    double_reg_args.push((param, ty.clone()));
-                } else {
-                    stack_args.push((param, ty.clone()));
-                }
-            }
-            _ => {
-                if int_reg_args.len() < 6 {
-                    int_reg_args.push((param, ty.clone()));
-                } else {
-                    stack_args.push((param, ty.clone()));
-                }
-            }
-        }
-    }
-
-    (int_reg_args, double_reg_args, stack_args)
-}
-
 const PARAM_REGISTERS: [Register; 6] = [
     Register::Di,
     Register::Si,
@@ -1726,46 +1692,6 @@ fn pseudo_to_stack(
     let mut remove_pseudo = |operand: &mut Operand| {
         if let Operand::Pseudo(var) = operand {
             match var {
-                Pseudo::Var(name) => match &symbol_table[name] {
-                    semantics::type_check::Attr::Static { .. } => {
-                        *operand = Operand::Data(name.clone(), 0)
-                    }
-                    semantics::type_check::Attr::Local(ty) => {
-                        match known_vars.entry(name.clone()) {
-                            Entry::Occupied(entry) => {
-                                let addr = *entry.get();
-                                *operand = Operand::stack(addr);
-                            }
-                            Entry::Vacant(entry) => {
-                                let size = symbol_table.size(ty) as i32;
-                                let align = symbol_table.alignment(ty) as i32;
-                                total += size;
-                                total = round_up(total as usize, align as usize) as i32;
-                                entry.insert(-total);
-                                *operand = Operand::stack(-total);
-                            }
-                        }
-                    }
-                    semantics::type_check::Attr::Constant { .. } => {
-                        *operand = Operand::Data(name.clone(), 0)
-                    }
-                    semantics::type_check::Attr::Fun { .. } => todo!(),
-                    semantics::type_check::Attr::Struct(StructDef {
-                        alignment, size, ..
-                    }) => match known_vars.entry(name.clone()) {
-                        Entry::Occupied(entry) => {
-                            let addr = *entry.get();
-                            *operand = Operand::stack(addr);
-                        }
-                        Entry::Vacant(entry) => {
-                            let align = *alignment as i32;
-                            total += *size as i32;
-                            total = round_up(total as usize, align as usize) as i32;
-                            entry.insert(-total);
-                            *operand = Operand::stack(-total);
-                        }
-                    },
-                },
                 Pseudo::Double {
                     value: d,
                     alignment,
