@@ -39,6 +39,7 @@ fn main() {
     // TODO implement a proper preprocessor
     let mut preped = process::Command::new("gcc")
         .arg("-E")
+        .arg("-P")
         .arg("-")
         .stdin(process::Stdio::piped())
         .stdout(process::Stdio::piped())
