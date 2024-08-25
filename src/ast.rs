@@ -641,8 +641,6 @@ pub enum Error {
     Unexpected(Spanned<Token>, ExpectedToken),
     #[error("Unexpected Eof")]
     UnexpectedEof,
-    #[error(transparent)]
-    ParseIntError(#[from] std::num::ParseIntError),
     #[error("Malformed expression: {0:?}")]
     MalformedExpression(Spanned<Token>),
     #[error("Malformed body: {0:?}")]
@@ -668,7 +666,6 @@ impl MayHasSpan for Error {
         match self {
             Error::Unexpected(spanned, _) => Some(spanned.span.clone()),
             Error::UnexpectedEof => None,
-            Error::ParseIntError(_) => None,
             Error::MalformedExpression(spanned) => Some(spanned.span.clone()),
             Error::MalformedBody(spanned) => Some(spanned.span.clone()),
             Error::ConflictingSpecifier(span) => Some(span.clone()),
