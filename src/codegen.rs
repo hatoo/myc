@@ -155,11 +155,15 @@ pub enum BinaryOp {
 
 #[derive(Debug, Clone)]
 pub enum Pseudo {
-    // TODO: Replace to Mem with 0 offset
-    Var(EcoString),
     // Must be placed in read only section
     Double { value: f64, alignment: usize },
     Mem { name: EcoString, offset: usize },
+}
+
+impl Pseudo {
+    fn var(name: EcoString) -> Self {
+        Pseudo::Mem { name, offset: 0 }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -192,10 +196,6 @@ impl Operand {
                 name: name.clone(),
                 offset: *off + offset as usize,
             }),
-            Operand::Pseudo(Pseudo::Var(name)) => Operand::Pseudo(Pseudo::Mem {
-                name: name.clone(),
-                offset: offset as usize,
-            }),
             Operand::Memory(base, off) => Operand::Memory(*base, *off + offset),
             _ => unreachable!(),
         }
@@ -210,7 +210,7 @@ impl From<tacky::Val> for Operand {
                 alignment: 8,
             }),
             tacky::Val::Constant(imm) => Operand::Imm(imm.get_ulong()),
-            tacky::Val::Var(var) => Operand::Pseudo(Pseudo::Var(var)),
+            tacky::Val::Var(var) => Operand::Pseudo(Pseudo::var(var)),
         }
     }
 }
@@ -223,7 +223,7 @@ impl<'a> From<&'a tacky::Val> for Operand {
                 alignment: 8,
             }),
             tacky::Val::Constant(imm) => Operand::Imm(imm.get_ulong()),
-            tacky::Val::Var(var) => Operand::Pseudo(Pseudo::Var(var.clone())),
+            tacky::Val::Var(var) => Operand::Pseudo(Pseudo::var(var.clone())),
         }
     }
 }
@@ -911,7 +911,7 @@ impl<'a> CodeGen<'a> {
                             ty: ast::VarType::Pointer(ty),
                             ..
                         } => match ty.as_ref() {
-                            ast::Ty::Fun(ty) => (Operand::Pseudo(Pseudo::Var(name.clone())), ty),
+                            ast::Ty::Fun(ty) => (Operand::Pseudo(Pseudo::var(name.clone())), ty),
                             _ => unreachable!(),
                         },
                         _ => unreachable!(),
@@ -1692,46 +1692,6 @@ fn pseudo_to_stack(
     let mut remove_pseudo = |operand: &mut Operand| {
         if let Operand::Pseudo(var) = operand {
             match var {
-                Pseudo::Var(name) => match &symbol_table[name] {
-                    semantics::type_check::Attr::Static { .. } => {
-                        *operand = Operand::Data(name.clone(), 0)
-                    }
-                    semantics::type_check::Attr::Local(ty) => {
-                        match known_vars.entry(name.clone()) {
-                            Entry::Occupied(entry) => {
-                                let addr = *entry.get();
-                                *operand = Operand::stack(addr);
-                            }
-                            Entry::Vacant(entry) => {
-                                let size = symbol_table.size(ty) as i32;
-                                let align = symbol_table.alignment(ty) as i32;
-                                total += size;
-                                total = round_up(total as usize, align as usize) as i32;
-                                entry.insert(-total);
-                                *operand = Operand::stack(-total);
-                            }
-                        }
-                    }
-                    semantics::type_check::Attr::Constant { .. } => {
-                        *operand = Operand::Data(name.clone(), 0)
-                    }
-                    semantics::type_check::Attr::Fun { .. } => todo!(),
-                    semantics::type_check::Attr::Struct(StructDef {
-                        alignment, size, ..
-                    }) => match known_vars.entry(name.clone()) {
-                        Entry::Occupied(entry) => {
-                            let addr = *entry.get();
-                            *operand = Operand::stack(addr);
-                        }
-                        Entry::Vacant(entry) => {
-                            let align = *alignment as i32;
-                            total += *size as i32;
-                            total = round_up(total as usize, align as usize) as i32;
-                            entry.insert(-total);
-                            *operand = Operand::stack(-total);
-                        }
-                    },
-                },
                 Pseudo::Double {
                     value: d,
                     alignment,
