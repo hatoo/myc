@@ -114,11 +114,7 @@ impl SymbolTable {
         match ty {
             ast::VarType::Void => false,
             ast::VarType::Struct(tag) => {
-                if let Some(Attr::Struct(_)) = self.get(tag) {
-                    true
-                } else {
-                    false
-                }
+                matches!(self.get(tag), Some(Attr::Struct(_)))
             }
             _ => true,
         }
@@ -293,10 +289,9 @@ fn common_pointer_type<'a>(
         Some(ty0)
     } else if e0.is_null_pointer_constant() {
         Some(ty1)
-    } else if e1.is_null_pointer_constant() {
-        Some(ty0)
-    } else if ty0 == &ast::VarType::Pointer(Box::new(ast::Ty::Var(ast::VarType::Void)))
-        && ty1.is_pointer()
+    } else if e1.is_null_pointer_constant()
+        || ty0 == &ast::VarType::Pointer(Box::new(ast::Ty::Var(ast::VarType::Void)))
+            && ty1.is_pointer()
     {
         Some(ty0)
     } else if ty1 == &ast::VarType::Pointer(Box::new(ast::Ty::Var(ast::VarType::Void)))
@@ -1111,9 +1106,7 @@ impl TypeChecker {
 
                 if target == &VarType::Void {
                     Ok(target.clone())
-                } else if !target.is_scalar() {
-                    Err(Error::IncompatibleTypes(exp.span()))
-                } else if !ty.is_scalar() {
+                } else if !target.is_scalar() || !ty.is_scalar() {
                     Err(Error::IncompatibleTypes(exp.span()))
                 } else {
                     Ok(target.clone())
@@ -1220,7 +1213,7 @@ impl TypeChecker {
                 let structure_ty = self.check_expression_and_convert(structure)?;
                 if let ast::VarType::Struct(s) = structure_ty {
                     let StructDef { members, .. } = self.sym_table.struct_def(&s);
-                    if let Some(member) = members.iter().find(|name| &name.name == &member.data) {
+                    if let Some(member) = members.iter().find(|name| name.name == member.data) {
                         *ty = member.ty.clone();
                         Ok(ty.clone())
                     } else {
@@ -1242,7 +1235,7 @@ impl TypeChecker {
                         return Err(Error::IncompatibleTypes(exp.span()));
                     };
                     let StructDef { members, .. } = self.sym_table.struct_def(s);
-                    if let Some(member) = members.iter().find(|name| &name.name == &member.data) {
+                    if let Some(member) = members.iter().find(|name| name.name == member.data) {
                         *ty = member.ty.clone();
                         Ok(ty.clone())
                     } else {

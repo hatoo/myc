@@ -1262,14 +1262,15 @@ impl<'a> Parser<'a> {
         let mut params = Vec::new();
         self.expect(Token::OpenParen)?;
 
-        if self
+        let is_void = self
             .atomic(|s| {
                 s.expect(Token::Void)?;
                 s.expect(Token::CloseParen)?;
                 Ok(())
             })
-            .is_ok()
-        {
+            .is_ok();
+
+        if is_void {
             return Ok(params);
         }
 

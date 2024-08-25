@@ -915,7 +915,7 @@ impl<'a> InstructionGenerator<'a> {
                 let member_offset = struct_def
                     .members
                     .iter()
-                    .find(|m| &m.name == &member.data)
+                    .find(|m| m.name == member.data)
                     .unwrap()
                     .offset;
 
@@ -962,7 +962,7 @@ impl<'a> InstructionGenerator<'a> {
                 let member_offset = struct_def
                     .members
                     .iter()
-                    .find(|m| &m.name == &member.data)
+                    .find(|m| m.name == member.data)
                     .unwrap()
                     .offset;
 
