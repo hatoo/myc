@@ -661,6 +661,10 @@ pub enum Error {
     BadArrayLength(std::ops::Range<usize>),
 }
 
+impl From<Error> for () {
+    fn from(_: Error) {}
+}
+
 impl MayHasSpan for Error {
     fn may_span(&self) -> Option<std::ops::Range<usize>> {
         match self {
@@ -877,7 +881,7 @@ fn process_declarator(
 }
 
 impl<'a> Parser<'a> {
-    fn atomic<T>(&mut self, f: impl FnOnce(&mut Self) -> Result<T, Error>) -> Result<T, Error> {
+    fn atomic<T, E>(&mut self, f: impl FnOnce(&mut Self) -> Result<T, E>) -> Result<T, E> {
         let index = self.index;
         match f(self) {
             Ok(t) => Ok(t),
@@ -888,7 +892,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn many0<T>(&mut self, mut f: impl FnMut(&mut Self) -> Result<T, Error>) -> Vec<T> {
+    fn many0<T, E>(&mut self, mut f: impl FnMut(&mut Self) -> Result<T, E>) -> Vec<T> {
         let mut res = Vec::new();
 
         while let Ok(t) = self.atomic(&mut f) {
@@ -898,10 +902,7 @@ impl<'a> Parser<'a> {
         res
     }
 
-    fn many1<T>(
-        &mut self,
-        mut f: impl FnMut(&mut Self) -> Result<T, Error>,
-    ) -> Result<Vec<T>, Error> {
+    fn many1<T, E>(&mut self, mut f: impl FnMut(&mut Self) -> Result<T, E>) -> Result<Vec<T>, E> {
         let mut res = Vec::new();
         res.push(self.atomic(&mut f)?);
 
@@ -1255,7 +1256,7 @@ impl<'a> Parser<'a> {
             .atomic(|s| {
                 s.expect(Token::Void)?;
                 s.expect(Token::CloseParen)?;
-                Ok(())
+                Ok::<_, Error>(())
             })
             .is_ok();
 
@@ -1680,7 +1681,7 @@ impl<'a> Parser<'a> {
         Ok(exp)
     }
 
-    fn parse_postfix_op(&mut self) -> Result<PostfixOp, Error> {
+    fn parse_postfix_op(&mut self) -> Result<PostfixOp, ()> {
         match self.peek() {
             Some(Spanned {
                 data: Token::OpenSquareBracket,
@@ -1705,12 +1706,7 @@ impl<'a> Parser<'a> {
                 let ident = self.expect_ident()?;
                 Ok(PostfixOp::Arrow(ident))
             }
-            Some(tok) => Err(Error::Unexpected(
-                tok.clone(),
-                // todo
-                ExpectedToken::Ident,
-            )),
-            None => Err(Error::UnexpectedEof),
+            _ => Err(()),
         }
     }
 
@@ -1720,7 +1716,7 @@ impl<'a> Parser<'a> {
             let ty = s.parse_type_name()?;
             s.expect(Token::CloseParen)?;
             let exp = s.parse_cast_exp()?;
-            Ok(Expression::Cast {
+            Ok::<_, Error>(Expression::Cast {
                 target: ty,
                 exp: Box::new(exp),
             })
@@ -1819,7 +1815,7 @@ impl<'a> Parser<'a> {
                     span: s.span,
                 };
             }
-            Ok(decl)
+            Ok::<_, Error>(decl)
         });
 
         if let Ok(r) = r {
@@ -1937,7 +1933,7 @@ impl<'a> Parser<'a> {
             s.expect(Token::OpenBrace)?;
             let member_decls = s.many1(|s| s.parse_struct_member())?;
             s.expect(Token::CloseBrace)?;
-            Ok(member_decls)
+            Ok::<_, Error>(member_decls)
         });
         self.expect(Token::SemiColon)?;
 
