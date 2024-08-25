@@ -7,7 +7,7 @@ use std::{
 use ecow::EcoString;
 
 use crate::{
-    ast::{self, BaseType, Const, Ty, VarType},
+    ast::{self, BaseType, Const, VarType},
     math::round_up,
     semantics::{
         self,
@@ -509,7 +509,7 @@ impl<'a> CodeGen<'a> {
             }
         }
 
-        for (i, (asm_ty, op)) in double_reg_args.into_iter().enumerate() {
+        for (i, (_asm_ty, op)) in double_reg_args.into_iter().enumerate() {
             body.push(Instruction::Mov {
                 ty: AssemblyType::Double,
                 src: Operand::Reg(Register::Xmm(i as _)),
@@ -1014,7 +1014,7 @@ impl<'a> CodeGen<'a> {
                         });
                     }
 
-                    if let Some(dst) = dst {
+                    if dst.is_some() {
                         if !return_in_memory {
                             let int_return_regs = [Register::Ax, Register::Dx];
 
@@ -1673,36 +1673,6 @@ enum Class {
     Memory,
     Sse,
     Integer,
-}
-
-#[allow(clippy::type_complexity)]
-fn classify_parameters<'a, T>(
-    iter: impl Iterator<Item = (T, &'a VarType)>,
-) -> (Vec<(T, VarType)>, Vec<(T, VarType)>, Vec<(T, VarType)>) {
-    let mut int_reg_args = Vec::new();
-    let mut double_reg_args = Vec::new();
-    let mut stack_args = Vec::new();
-
-    for (param, ty) in iter {
-        match ty {
-            VarType::Base(BaseType::Double) => {
-                if double_reg_args.len() < 8 {
-                    double_reg_args.push((param, ty.clone()));
-                } else {
-                    stack_args.push((param, ty.clone()));
-                }
-            }
-            _ => {
-                if int_reg_args.len() < 6 {
-                    int_reg_args.push((param, ty.clone()));
-                } else {
-                    stack_args.push((param, ty.clone()));
-                }
-            }
-        }
-    }
-
-    (int_reg_args, double_reg_args, stack_args)
 }
 
 const PARAM_REGISTERS: [Register; 6] = [

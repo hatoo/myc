@@ -1258,14 +1258,6 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_square_exp(&mut self) -> Result<Expression, Error> {
-        self.expect(Token::OpenSquareBracket)?;
-        let exp = self.parse_expression(0)?;
-        self.expect(Token::CloseSquareBracket)?;
-
-        Ok(exp)
-    }
-
     fn parse_param_list(&mut self) -> Result<Vec<ParamInfo>, Error> {
         let mut params = Vec::new();
         self.expect(Token::OpenParen)?;
