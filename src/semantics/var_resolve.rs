@@ -427,7 +427,7 @@ impl VarResolver {
     ) -> Result<(), Error> {
         match ty {
             ast::VarType::Struct(name) => {
-                if let Some((_, new_name)) = self.lookup_struct(&name) {
+                if let Some((_, new_name)) = self.lookup_struct(name) {
                     *name = new_name.clone();
                     Ok(())
                 } else {

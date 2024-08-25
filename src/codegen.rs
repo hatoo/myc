@@ -550,7 +550,7 @@ impl<'a> CodeGen<'a> {
                             });
                             let return_storage = Operand::Memory(Register::Ax, 0);
                             let ret_operand: Operand = val.into();
-                            let size = self.symbol_table.size(&val.ty(&self.symbol_table));
+                            let size = self.symbol_table.size(&val.ty(self.symbol_table));
                             for (asm_ty, offset) in divide_into_assembly_sizes(size) {
                                 body.push(Instruction::Mov {
                                     ty: asm_ty,
@@ -639,19 +639,19 @@ impl<'a> CodeGen<'a> {
                             match op {
                                 Unary::Simple(op) => {
                                     body.push(Instruction::Mov {
-                                        ty: self.val_asm_type(&src),
+                                        ty: self.val_asm_type(src),
                                         src: src.into(),
                                         dst: dst.into(),
                                     });
                                     body.push(Instruction::Unary {
-                                        ty: self.val_asm_type(&src),
+                                        ty: self.val_asm_type(src),
                                         op,
                                         src: dst.into(),
                                     });
                                 }
                                 Unary::Not => {
                                     body.push(Instruction::Cmp(
-                                        self.val_asm_type(&src),
+                                        self.val_asm_type(src),
                                         Operand::Imm(0),
                                         src.into(),
                                     ));
@@ -709,7 +709,7 @@ impl<'a> CodeGen<'a> {
                     match op {
                         Binary::Simple(op) => {
                             body.push(Instruction::Mov {
-                                ty: self.val_asm_type(&lhs),
+                                ty: self.val_asm_type(lhs),
                                 src: lhs.into(),
                                 dst: dst.into(),
                             });
@@ -812,12 +812,12 @@ impl<'a> CodeGen<'a> {
                         }
                         Binary::Compare(cond) => {
                             body.push(Instruction::Cmp(
-                                self.val_asm_type(&lhs),
+                                self.val_asm_type(lhs),
                                 rhs.into(),
                                 lhs.into(),
                             ));
                             body.push(Instruction::Mov {
-                                ty: self.val_asm_type(&dst),
+                                ty: self.val_asm_type(dst),
                                 src: Operand::Imm(0),
                                 dst: dst.into(),
                             });
@@ -828,7 +828,7 @@ impl<'a> CodeGen<'a> {
                 tacky::Instruction::Copy { src, dst } => match src {
                     Val::Constant(_) => {
                         body.push(Instruction::Mov {
-                            ty: self.val_asm_type(&src),
+                            ty: self.val_asm_type(src),
                             src: src.into(),
                             dst: dst.into(),
                         });
@@ -870,7 +870,7 @@ impl<'a> CodeGen<'a> {
                         body.push(Instruction::JmpCc(CondCode::E, dst.clone()));
                     } else {
                         body.push(Instruction::Cmp(
-                            self.val_asm_type(&src),
+                            self.val_asm_type(src),
                             Operand::Imm(0),
                             src.into(),
                         ));
@@ -893,7 +893,7 @@ impl<'a> CodeGen<'a> {
                         body.push(Instruction::JmpCc(CondCode::Ne, dst.clone()));
                     } else {
                         body.push(Instruction::Cmp(
-                            self.val_asm_type(&src),
+                            self.val_asm_type(src),
                             Operand::Imm(0),
                             src.into(),
                         ));
@@ -920,7 +920,7 @@ impl<'a> CodeGen<'a> {
                     };
 
                     let (int_dests, double_dests, return_in_memory) = if let Some(retval) = dst {
-                        self.classify_return_value(&retval)
+                        self.classify_return_value(retval)
                     } else {
                         (Vec::new(), Vec::new(), false)
                     };
@@ -1014,59 +1014,57 @@ impl<'a> CodeGen<'a> {
                         });
                     }
 
-                    if dst.is_some() {
-                        if !return_in_memory {
-                            let int_return_regs = [Register::Ax, Register::Dx];
+                    if dst.is_some() && !return_in_memory {
+                        let int_return_regs = [Register::Ax, Register::Dx];
 
-                            for (i, (asm_ty, op)) in int_dests.into_iter().enumerate() {
-                                match asm_ty {
-                                    AssemblyType::ByteArray { size, .. } => {
-                                        self.copy_bytes_from_reg(
-                                            &op,
-                                            int_return_regs[i],
-                                            size,
-                                            &mut body,
-                                        );
-                                    }
-                                    _ => {
-                                        body.push(Instruction::Mov {
-                                            ty: asm_ty,
-                                            src: Operand::Reg(int_return_regs[i]),
-                                            dst: op,
-                                        });
-                                    }
+                        for (i, (asm_ty, op)) in int_dests.into_iter().enumerate() {
+                            match asm_ty {
+                                AssemblyType::ByteArray { size, .. } => {
+                                    self.copy_bytes_from_reg(
+                                        &op,
+                                        int_return_regs[i],
+                                        size,
+                                        &mut body,
+                                    );
+                                }
+                                _ => {
+                                    body.push(Instruction::Mov {
+                                        ty: asm_ty,
+                                        src: Operand::Reg(int_return_regs[i]),
+                                        dst: op,
+                                    });
                                 }
                             }
+                        }
 
-                            for (i, op) in double_dests.into_iter().enumerate() {
-                                body.push(Instruction::Mov {
-                                    ty: AssemblyType::Double,
-                                    src: Operand::Reg(Register::Xmm(i as _)),
-                                    dst: op,
-                                });
-                            }
+                        for (i, op) in double_dests.into_iter().enumerate() {
+                            body.push(Instruction::Mov {
+                                ty: AssemblyType::Double,
+                                src: Operand::Reg(Register::Xmm(i as _)),
+                                dst: op,
+                            });
                         }
                     }
                 }
                 tacky::Instruction::SignExtend { src, dst } => {
                     body.push(Instruction::Movsx {
-                        src_type: self.val_asm_type(&src),
-                        dst_type: self.val_asm_type(&dst),
+                        src_type: self.val_asm_type(src),
+                        dst_type: self.val_asm_type(dst),
                         src: src.into(),
                         dst: dst.into(),
                     });
                 }
                 tacky::Instruction::Truncate { src, dst } => {
                     body.push(Instruction::Mov {
-                        ty: self.val_asm_type(&dst),
+                        ty: self.val_asm_type(dst),
                         src: src.into(),
                         dst: dst.into(),
                     });
                 }
                 tacky::Instruction::ZeroExtend { src, dst } => {
                     body.push(Instruction::MovZeroExtend {
-                        src_type: self.val_asm_type(&src),
-                        dst_type: self.val_asm_type(&dst),
+                        src_type: self.val_asm_type(src),
+                        dst_type: self.val_asm_type(dst),
                         src: src.into(),
                         dst: dst.into(),
                     });
@@ -1085,7 +1083,7 @@ impl<'a> CodeGen<'a> {
                         });
                     } else {
                         body.push(Instruction::Cvttsd2si {
-                            ty: self.val_asm_type(&dst),
+                            ty: self.val_asm_type(dst),
                             src: src.into(),
                             dst: dst.into(),
                         });
@@ -1181,7 +1179,7 @@ impl<'a> CodeGen<'a> {
                         });
                     } else {
                         body.push(Instruction::Cvtsi2sd {
-                            ty: self.val_asm_type(&src),
+                            ty: self.val_asm_type(src),
                             src: src.into(),
                             dst: dst.into(),
                         });
@@ -1316,7 +1314,7 @@ impl<'a> CodeGen<'a> {
                             dst: Operand::Reg(Register::Ax),
                         });
                         body.push(Instruction::Mov {
-                            ty: self.val_asm_type(&src),
+                            ty: self.val_asm_type(src),
                             src: src.into(),
                             dst: Operand::Memory(Register::Ax, 0),
                         });
@@ -1335,7 +1333,7 @@ impl<'a> CodeGen<'a> {
                 tacky::Instruction::CopyToOffset { src, dst, offset } => match src {
                     Val::Constant(_) => {
                         body.push(Instruction::Mov {
-                            ty: self.val_asm_type(&src),
+                            ty: self.val_asm_type(src),
                             src: src.into(),
                             dst: Operand::Pseudo(Pseudo::Mem {
                                 name: dst.clone(),
@@ -1516,7 +1514,7 @@ impl<'a> CodeGen<'a> {
         let int_regs_available = if return_in_memory { 5 } else { 6 };
 
         for val in iter {
-            let ty = val.ty(&self.symbol_table);
+            let ty = val.ty(self.symbol_table);
             let asm_ty = self.asm_type(&ty);
             match &ty {
                 VarType::Base(BaseType::Double) => {
@@ -1527,7 +1525,7 @@ impl<'a> CodeGen<'a> {
                     }
                 }
                 VarType::Struct(name) => {
-                    let structure = self.symbol_table.struct_def(&name);
+                    let structure = self.symbol_table.struct_def(name);
                     let classes = self.classify_struct(structure);
                     let mut use_stack = true;
                     let struct_size = structure.size;
@@ -1603,7 +1601,7 @@ impl<'a> CodeGen<'a> {
         &self,
         retval: &Val,
     ) -> (Vec<(AssemblyType, Operand)>, Vec<Operand>, bool) {
-        let ty = retval.ty(&self.symbol_table);
+        let ty = retval.ty(self.symbol_table);
         let asm_ty: AssemblyType = self.asm_type(&ty);
 
         match asm_ty {
@@ -1615,7 +1613,7 @@ impl<'a> CodeGen<'a> {
                 let VarType::Struct(struct_name) = &ty else {
                     unreachable!()
                 };
-                let struct_def = self.symbol_table.struct_def(&struct_name);
+                let struct_def = self.symbol_table.struct_def(struct_name);
                 let classes = self.classify_struct(struct_def);
                 let struct_size = struct_def.size;
 

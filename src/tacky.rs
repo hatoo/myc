@@ -958,7 +958,7 @@ impl<'a> InstructionGenerator<'a> {
                 } else {
                     unreachable!()
                 };
-                let struct_def = self.symbol_table.struct_def(&struct_name);
+                let struct_def = self.symbol_table.struct_def(struct_name);
                 let member_offset = struct_def
                     .members
                     .iter()
@@ -966,7 +966,7 @@ impl<'a> InstructionGenerator<'a> {
                     .unwrap()
                     .offset;
 
-                let ptr = self.add_expression_and_convert(&pointer);
+                let ptr = self.add_expression_and_convert(pointer);
                 let dst_ptr = self.make_tmp_local(VarType::Pointer(Box::new(Ty::Var(ty.clone()))));
 
                 self.instructions.push(Instruction::AddPtr {
