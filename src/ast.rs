@@ -56,38 +56,30 @@ pub enum Initializer {
 impl Initializer {
     pub fn zero_base(ty: BaseType) -> Self {
         match ty {
-            BaseType::Char => Self::SingleInit(Expression::Constant(Spanned {
-                data: Const::Char(0),
-                span: 0..0,
-            })),
-            BaseType::SChar => Self::SingleInit(Expression::Constant(Spanned {
-                data: Const::Char(0),
-                span: 0..0,
-            })),
-            BaseType::UChar => Self::SingleInit(Expression::Constant(Spanned {
-                data: Const::UChar(0),
-                span: 0..0,
-            })),
-            BaseType::Int => Self::SingleInit(Expression::Constant(Spanned {
-                data: Const::Int(0),
-                span: 0..0,
-            })),
-            BaseType::Uint => Self::SingleInit(Expression::Constant(Spanned {
-                data: Const::Uint(0),
-                span: 0..0,
-            })),
-            BaseType::Long => Self::SingleInit(Expression::Constant(Spanned {
-                data: Const::Long(0),
-                span: 0..0,
-            })),
-            BaseType::Ulong => Self::SingleInit(Expression::Constant(Spanned {
-                data: Const::Ulong(0),
-                span: 0..0,
-            })),
-            BaseType::Double => Self::SingleInit(Expression::Constant(Spanned {
-                data: Const::Double(0.0),
-                span: 0..0,
-            })),
+            BaseType::Char => {
+                Self::SingleInit(Expression::Constant(Spanned::new_null(Const::Char(0))))
+            }
+            BaseType::SChar => {
+                Self::SingleInit(Expression::Constant(Spanned::new_null(Const::Char(0))))
+            }
+            BaseType::UChar => {
+                Self::SingleInit(Expression::Constant(Spanned::new_null(Const::UChar(0))))
+            }
+            BaseType::Int => {
+                Self::SingleInit(Expression::Constant(Spanned::new_null(Const::Int(0))))
+            }
+            BaseType::Uint => {
+                Self::SingleInit(Expression::Constant(Spanned::new_null(Const::Uint(0))))
+            }
+            BaseType::Long => {
+                Self::SingleInit(Expression::Constant(Spanned::new_null(Const::Long(0))))
+            }
+            BaseType::Ulong => {
+                Self::SingleInit(Expression::Constant(Spanned::new_null(Const::Ulong(0))))
+            }
+            BaseType::Double => {
+                Self::SingleInit(Expression::Constant(Spanned::new_null(Const::Double(0.0))))
+            }
         }
     }
 }

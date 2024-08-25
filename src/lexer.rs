@@ -77,9 +77,9 @@ pub struct Suffix {
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("Unexpected character: {0:?}")]
+    #[error("Unexpected character: {0}")]
     Unexpected(Spanned<char>),
-    #[error("Failed to parse integer: {0:?}")]
+    #[error("Failed to parse integer: {0}")]
     ParseIntError(Spanned<std::num::ParseIntError>),
 }
 

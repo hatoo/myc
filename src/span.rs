@@ -24,6 +24,10 @@ where
 }
 
 impl<T> Spanned<T> {
+    pub fn new_null(data: T) -> Self {
+        Self { data, span: 0..0 }
+    }
+
     pub fn map<U>(self, f: impl FnOnce(T) -> U) -> Spanned<U> {
         Spanned {
             data: f(self.data),
