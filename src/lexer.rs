@@ -1,9 +1,31 @@
-use std::sync::LazyLock;
+use std::{ops::Range, sync::LazyLock};
 
 use ecow::EcoString;
 use regex::bytes::Regex;
 
 use crate::span::{MayHasSpan, Spanned};
+
+pub struct TokenSpanned<T> {
+    pub data: T,
+    pub span: Range<usize>,
+}
+
+pub trait HasTokenSpan {
+    fn token_span(&self) -> Range<usize>;
+}
+
+pub trait MayHasTokenSpan {
+    fn may_token_span(&self) -> Option<Range<usize>>;
+}
+
+impl<T> MayHasTokenSpan for T
+where
+    T: HasTokenSpan,
+{
+    fn may_token_span(&self) -> Option<Range<usize>> {
+        Some(self.token_span())
+    }
+}
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Constant {
