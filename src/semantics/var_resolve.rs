@@ -4,7 +4,7 @@ use ecow::EcoString;
 
 use crate::{
     ast::{self, Expression, StructDecl},
-    span::{HasSpan, Spanned},
+    lexer::{HasTokenSpan, TokenSpanned},
 };
 #[derive(Debug, Default)]
 pub struct VarResolver {
@@ -21,26 +21,26 @@ struct VarInfo {
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("Variable not declared: {0}")]
-    VariableNotDeclared(Spanned<EcoString>),
+    VariableNotDeclared(TokenSpanned<EcoString>),
     #[error("Variable already declared: {0}")]
-    VariableAlreadyDeclared(Spanned<EcoString>),
+    VariableAlreadyDeclared(TokenSpanned<EcoString>),
     #[error("Invalid lvalue: {0:?}")]
     InvalidLValue(Expression),
     #[error("Undeclared function: {0:?}")]
     UndeclaredFunction(Expression),
     #[error("Static function declaration in block scope: {0}")]
-    StaticFunInBlock(Spanned<EcoString>),
+    StaticFunInBlock(TokenSpanned<EcoString>),
     #[error("Struct not declared: {0}")]
-    StructNotDeclared(Spanned<EcoString>),
+    StructNotDeclared(TokenSpanned<EcoString>),
 }
 
-impl HasSpan for Error {
-    fn span(&self) -> std::ops::Range<usize> {
+impl HasTokenSpan for Error {
+    fn token_span(&self) -> std::ops::Range<usize> {
         match self {
             Error::VariableNotDeclared(ident) => ident.span.clone(),
             Error::VariableAlreadyDeclared(ident) => ident.span.clone(),
-            Error::InvalidLValue(exp) => exp.span(),
-            Error::UndeclaredFunction(exp) => exp.span(),
+            Error::InvalidLValue(exp) => exp.token_span(),
+            Error::UndeclaredFunction(exp) => exp.token_span(),
             Error::StaticFunInBlock(ident) => ident.span.clone(),
             Error::StructNotDeclared(ident) => ident.span.clone(),
         }
@@ -370,7 +370,7 @@ impl VarResolver {
                 }
             }
             ast::Expression::Cast { target, exp } => {
-                self.resolve_var_type(target, exp.span())?;
+                self.resolve_var_type(target, exp.token_span())?;
                 self.resolve_expression(exp)?;
                 Ok(())
             }
@@ -431,7 +431,7 @@ impl VarResolver {
                     *name = new_name.clone();
                     Ok(())
                 } else {
-                    Err(Error::StructNotDeclared(Spanned {
+                    Err(Error::StructNotDeclared(TokenSpanned {
                         data: name.clone(),
                         span,
                     }))

@@ -1,4 +1,4 @@
-use std::{ops::Range, sync::LazyLock};
+use std::{fmt::Display, ops::Range, sync::LazyLock};
 
 use ecow::EcoString;
 use regex::bytes::Regex;
@@ -21,6 +21,12 @@ impl<T> TokenSpanned<T> {
             data: f(self.data),
             span: self.span,
         }
+    }
+}
+
+impl<T: Display> Display for TokenSpanned<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", self.data)
     }
 }
 
