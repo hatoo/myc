@@ -918,24 +918,21 @@ impl<'a> Parser<'a> {
     }
 
     fn expect(&mut self, token: Token) -> Result<TokenSpanned<&Token>, Error> {
-        if let Some(spanned) = self.peek() {
-            if *spanned.data == token {
-                self.index += 1;
-                Ok(TokenSpanned {
-                    data: &self.tokens[self.index - 1].data,
-                    span: self.index - 1..self.index,
-                })
-            } else {
-                Err(Error::Unexpected(
-                    TokenSpanned {
-                        data: spanned.data.clone(),
-                        span: self.index..self.index + 1,
-                    },
-                    ExpectedToken::Token(token),
-                ))
-            }
+        let spanned = self.peek()?;
+        if *spanned.data == token {
+            self.index += 1;
+            Ok(TokenSpanned {
+                data: &self.tokens[self.index - 1].data,
+                span: self.index - 1..self.index,
+            })
         } else {
-            Err(Error::UnexpectedEof)
+            Err(Error::Unexpected(
+                TokenSpanned {
+                    data: spanned.data.clone(),
+                    span: self.index..self.index + 1,
+                },
+                ExpectedToken::Token(token),
+            ))
         }
     }
 
@@ -1002,7 +999,7 @@ impl<'a> Parser<'a> {
         let mut body = Vec::new();
         while !matches!(
             self.peek(),
-            Some(TokenSpanned {
+            Ok(TokenSpanned {
                 data: Token::CloseBrace,
                 ..
             })
@@ -1055,11 +1052,14 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn peek(&self) -> Option<TokenSpanned<&Token>> {
-        self.tokens.get(self.index).map(|t| TokenSpanned {
-            data: &t.data,
-            span: self.index..self.index + 1,
-        })
+    fn peek(&self) -> Result<TokenSpanned<&Token>, Error> {
+        self.tokens
+            .get(self.index)
+            .map(|t| TokenSpanned {
+                data: &t.data,
+                span: self.index..self.index + 1,
+            })
+            .ok_or(Error::UnexpectedEof)
     }
 
     fn advance(&mut self) {
@@ -1079,32 +1079,32 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_statement(&mut self) -> Result<Statement, Error> {
-        match self.peek() {
-            Some(TokenSpanned {
+        match self.peek()? {
+            TokenSpanned {
                 data: Token::Return,
                 ..
-            }) => {
+            } => {
                 self.advance();
                 let expr = self.atomic(|s| s.parse_expression(0));
                 self.expect(Token::SemiColon)?;
                 Ok(Statement::Return(expr.ok()))
             }
-            Some(TokenSpanned {
+            TokenSpanned {
                 data: Token::SemiColon,
                 ..
-            }) => {
+            } => {
                 self.advance();
                 Ok(Statement::Null)
             }
-            Some(TokenSpanned {
+            TokenSpanned {
                 data: Token::If, ..
-            }) => {
+            } => {
                 self.advance();
                 self.expect(Token::OpenParen)?;
                 let condition = self.parse_expression(0)?;
                 self.expect(Token::CloseParen)?;
                 let then_branch = Box::new(self.parse_statement()?);
-                let else_branch = if let Some(TokenSpanned {
+                let else_branch = if let Ok(TokenSpanned {
                     data: Token::Else, ..
                 }) = self.peek()
                 {
@@ -1119,14 +1119,14 @@ impl<'a> Parser<'a> {
                     else_branch,
                 })
             }
-            Some(TokenSpanned {
+            (TokenSpanned {
                 data: Token::OpenBrace,
                 ..
             }) => {
                 let block = self.expect_block()?;
                 Ok(Statement::Compound(block))
             }
-            Some(TokenSpanned {
+            (TokenSpanned {
                 data: Token::Break,
                 span,
             }) => {
@@ -1138,10 +1138,10 @@ impl<'a> Parser<'a> {
                     span,
                 })
             }
-            Some(TokenSpanned {
+            TokenSpanned {
                 data: Token::Continue,
                 span,
-            }) => {
+            } => {
                 let span = span.clone();
                 self.advance();
                 self.expect(Token::SemiColon)?;
@@ -1150,9 +1150,9 @@ impl<'a> Parser<'a> {
                     span,
                 })
             }
-            Some(TokenSpanned {
+            TokenSpanned {
                 data: Token::While, ..
-            }) => {
+            } => {
                 self.advance();
                 self.expect(Token::OpenParen)?;
                 let condition = self.parse_expression(0)?;
@@ -1164,9 +1164,9 @@ impl<'a> Parser<'a> {
                     body,
                 })
             }
-            Some(TokenSpanned {
+            TokenSpanned {
                 data: Token::Do, ..
-            }) => {
+            } => {
                 self.advance();
                 let body = Box::new(self.parse_statement()?);
                 self.expect(Token::While)?;
@@ -1180,9 +1180,9 @@ impl<'a> Parser<'a> {
                     body,
                 })
             }
-            Some(TokenSpanned {
+            TokenSpanned {
                 data: Token::For, ..
-            }) => {
+            } => {
                 self.advance();
                 self.expect(Token::OpenParen)?;
                 let init = self.expect_for_init()?;
@@ -1209,12 +1209,11 @@ impl<'a> Parser<'a> {
                     body,
                 })
             }
-            Some(_) => {
+            _ => {
                 let exp = self.parse_expression(0)?;
                 self.expect(Token::SemiColon)?;
                 Ok(Statement::Expression(exp))
             }
-            None => Err(Error::UnexpectedEof),
         }
     }
 
@@ -1312,11 +1311,11 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_simple_declarator(&mut self) -> Result<TokenSpanned<Declarator>, Error> {
-        match self.peek() {
-            Some(TokenSpanned {
+        match self.peek()? {
+            TokenSpanned {
                 data: Token::Ident(ident),
                 span,
-            }) => {
+            } => {
                 let ident = ident.clone();
                 let decl = Declarator::Ident(ident);
                 let span = span.clone();
@@ -1326,10 +1325,10 @@ impl<'a> Parser<'a> {
                     span: span.clone(),
                 })
             }
-            Some(TokenSpanned {
+            TokenSpanned {
                 data: Token::OpenParen,
                 span,
-            }) => {
+            } => {
                 let start = span.start;
                 self.advance();
                 let decl = self.parse_declarator()?;
@@ -1339,11 +1338,10 @@ impl<'a> Parser<'a> {
                     span: start..end,
                 })
             }
-            Some(s) => Err(Error::Unexpected(
+            s => Err(Error::Unexpected(
                 s.map(Clone::clone),
                 ExpectedToken::Declarator,
             )),
-            _ => Err(Error::UnexpectedEof),
         }
     }
 
@@ -1353,15 +1351,11 @@ impl<'a> Parser<'a> {
     ) -> Result<(VarType, Option<StorageClass>), Error> {
         let mut ty = Vec::new();
         let mut storage_class = None;
-        let start = if let Some(spanned) = self.peek() {
-            spanned.span.start
-        } else {
-            return Err(Error::UnexpectedEof);
-        };
+        let start = self.peek()?.span.start;
 
         let mut end = start;
 
-        while let Some(s) = self.peek() {
+        while let Ok(s) = self.peek() {
             match &s.data {
                 Token::Void => {
                     ty.push(s.clone().map(|_| TypeSpecifier::Void));
@@ -1555,131 +1549,128 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_primary_exp(&mut self) -> Result<Expression, Error> {
-        if let Some(token) = self.peek() {
-            match &token.data {
-                Token::Constant(constant) => match constant {
-                    Constant::Integer { value, suffix } => match suffix {
-                        Suffix { u: true, l: true } => {
+        let token = self.peek()?;
+        match &token.data {
+            Token::Constant(constant) => match constant {
+                Constant::Integer { value, suffix } => match suffix {
+                    Suffix { u: true, l: true } => {
+                        let constant = token.clone().map(|_| Const::Ulong(*value));
+                        self.advance();
+                        Ok(Expression::Constant(constant))
+                    }
+                    Suffix { u: true, l: false } => {
+                        if let Ok(value) = u32::try_from(*value) {
+                            let constant = token.clone().map(|_| Const::Uint(value));
+                            self.advance();
+                            Ok(Expression::Constant(constant))
+                        } else {
                             let constant = token.clone().map(|_| Const::Ulong(*value));
                             self.advance();
                             Ok(Expression::Constant(constant))
                         }
-                        Suffix { u: true, l: false } => {
-                            if let Ok(value) = u32::try_from(*value) {
-                                let constant = token.clone().map(|_| Const::Uint(value));
-                                self.advance();
-                                Ok(Expression::Constant(constant))
-                            } else {
-                                let constant = token.clone().map(|_| Const::Ulong(*value));
-                                self.advance();
-                                Ok(Expression::Constant(constant))
-                            }
-                        }
-                        Suffix { u: false, l: true } => {
+                    }
+                    Suffix { u: false, l: true } => {
+                        let constant = token.clone().map(|_| Const::Long(*value as i64));
+                        self.advance();
+                        Ok(Expression::Constant(constant))
+                    }
+                    Suffix { u: false, l: false } => {
+                        if let Ok(value) = i32::try_from(*value) {
+                            let constant = token.clone().map(|_| Const::Int(value));
+                            self.advance();
+                            Ok(Expression::Constant(constant))
+                        } else {
                             let constant = token.clone().map(|_| Const::Long(*value as i64));
                             self.advance();
                             Ok(Expression::Constant(constant))
                         }
-                        Suffix { u: false, l: false } => {
-                            if let Ok(value) = i32::try_from(*value) {
-                                let constant = token.clone().map(|_| Const::Int(value));
-                                self.advance();
-                                Ok(Expression::Constant(constant))
-                            } else {
-                                let constant = token.clone().map(|_| Const::Long(*value as i64));
-                                self.advance();
-                                Ok(Expression::Constant(constant))
-                            }
-                        }
-                    },
-                    Constant::Float(value) => {
-                        let constant = token.clone().map(|_| Const::Double(*value));
-                        self.advance();
-                        Ok(Expression::Constant(constant))
-                    }
-                    Constant::Char(value) => {
-                        let constant = token.clone().map(|_| Const::Int(*value as _));
-                        self.advance();
-                        Ok(Expression::Constant(constant))
-                    }
-                    Constant::String(value) => {
-                        let start = token.span.start;
-                        let mut end = token.span.end;
-                        let mut s = value.clone();
-                        self.advance();
-                        // adjacent string literals must be concatenated
-                        while let Some(TokenSpanned {
-                            data: Token::Constant(Constant::String(s2)),
-                            span,
-                        }) = self.peek()
-                        {
-                            s.extend(s2);
-                            end = span.end;
-                            self.advance();
-                        }
-
-                        let len = s.len();
-
-                        Ok(Expression::String(
-                            TokenSpanned {
-                                data: s,
-                                span: start..end,
-                            },
-                            VarType::Array {
-                                element: Box::new(BaseType::Char.into()),
-                                size: len + 1,
-                            },
-                        ))
                     }
                 },
-                Token::OpenParen => {
+                Constant::Float(value) => {
+                    let constant = token.clone().map(|_| Const::Double(*value));
                     self.advance();
-                    let exp = self.parse_expression(0)?;
-                    self.expect(Token::CloseParen)?;
-                    Ok(exp)
+                    Ok(Expression::Constant(constant))
                 }
-                Token::Ident(ident) => {
-                    let ident = ident.clone();
-                    let span = token.span.clone();
-
+                Constant::Char(value) => {
+                    let constant = token.clone().map(|_| Const::Int(*value as _));
                     self.advance();
-
-                    if let Some(TokenSpanned {
-                        data: Token::OpenParen,
-                        ..
+                    Ok(Expression::Constant(constant))
+                }
+                Constant::String(value) => {
+                    let start = token.span.start;
+                    let mut end = token.span.end;
+                    let mut s = value.clone();
+                    self.advance();
+                    // adjacent string literals must be concatenated
+                    while let Ok(TokenSpanned {
+                        data: Token::Constant(Constant::String(s2)),
+                        span,
                     }) = self.peek()
                     {
+                        s.extend(s2);
+                        end = span.end;
                         self.advance();
-                        let mut args = Vec::new();
-                        if self.expect(Token::CloseParen).is_err() {
-                            loop {
-                                args.push(self.parse_expression(0)?);
-                                if self.expect(Token::Comma).is_err() {
-                                    break;
-                                }
-                            }
-                            self.expect(Token::CloseParen)?;
-                        }
-
-                        Ok(Expression::FunctionCall {
-                            name: TokenSpanned { data: ident, span },
-                            args,
-                            ty: VarType::Void,
-                        })
-                    } else {
-                        Ok(Expression::Var(
-                            TokenSpanned {
-                                data: ident,
-                                span: span.clone(),
-                            },
-                            VarType::Void,
-                        ))
                     }
+
+                    let len = s.len();
+
+                    Ok(Expression::String(
+                        TokenSpanned {
+                            data: s,
+                            span: start..end,
+                        },
+                        VarType::Array {
+                            element: Box::new(BaseType::Char.into()),
+                            size: len + 1,
+                        },
+                    ))
                 }
-                _ => Err(Error::MalformedExpression(token.map(Clone::clone))),
+            },
+            Token::OpenParen => {
+                self.advance();
+                let exp = self.parse_expression(0)?;
+                self.expect(Token::CloseParen)?;
+                Ok(exp)
             }
-        } else {
-            Err(Error::UnexpectedEof)
+            Token::Ident(ident) => {
+                let ident = ident.clone();
+                let span = token.span.clone();
+
+                self.advance();
+
+                if let Ok(TokenSpanned {
+                    data: Token::OpenParen,
+                    ..
+                }) = self.peek()
+                {
+                    self.advance();
+                    let mut args = Vec::new();
+                    if self.expect(Token::CloseParen).is_err() {
+                        loop {
+                            args.push(self.parse_expression(0)?);
+                            if self.expect(Token::Comma).is_err() {
+                                break;
+                            }
+                        }
+                        self.expect(Token::CloseParen)?;
+                    }
+
+                    Ok(Expression::FunctionCall {
+                        name: TokenSpanned { data: ident, span },
+                        args,
+                        ty: VarType::Void,
+                    })
+                } else {
+                    Ok(Expression::Var(
+                        TokenSpanned {
+                            data: ident,
+                            span: span.clone(),
+                        },
+                        VarType::Void,
+                    ))
+                }
+            }
+            _ => Err(Error::MalformedExpression(token.map(Clone::clone))),
         }
     }
 
@@ -1717,26 +1708,26 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_postfix_op(&mut self) -> Result<PostfixOp, ()> {
-        match self.peek() {
-            Some(TokenSpanned {
+        match self.peek()? {
+            TokenSpanned {
                 data: Token::OpenSquareBracket,
                 ..
-            }) => {
+            } => {
                 self.advance();
                 let exp = self.parse_expression(0)?;
                 self.expect(Token::CloseSquareBracket)?;
                 Ok(PostfixOp::Subscript(exp))
             }
-            Some(TokenSpanned {
+            TokenSpanned {
                 data: Token::Dot, ..
-            }) => {
+            } => {
                 self.advance();
                 let ident = self.expect_ident()?;
                 Ok(PostfixOp::Dot(ident))
             }
-            Some(TokenSpanned {
+            TokenSpanned {
                 data: Token::Arrow, ..
-            }) => {
+            } => {
                 self.advance();
                 let ident = self.expect_ident()?;
                 Ok(PostfixOp::Arrow(ident))
@@ -1760,52 +1751,49 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_unary_exp(&mut self) -> Result<Expression, Error> {
-        if let Some(token) = self.peek() {
-            match &token.data {
-                _ if UnaryOp::try_from(token.data).is_ok() => {
-                    let op = UnaryOp::try_from(token.data).unwrap();
-                    let op = token.clone().map(|_| op);
-                    self.advance();
-                    let exp = self.parse_cast_exp()?;
-                    Ok(Expression::Unary {
-                        op,
-                        exp: Box::new(exp),
-                        // Fixed in type check pass
-                        ty: VarType::Void,
-                    })
-                }
-                Token::Ampersands => {
-                    self.advance();
-                    let exp = self.parse_cast_exp()?;
-                    Ok(Expression::AddrOf {
-                        exp: Box::new(exp),
-                        // Fixed in type check pass
-                        ty: VarType::Void,
-                    })
-                }
-                Token::Asterisk => {
-                    self.advance();
-                    let exp = self.parse_cast_exp()?;
-                    Ok(Expression::Dereference(Box::new(exp)))
-                }
-                Token::Sizeof => {
-                    self.advance();
-                    if let Ok(exp) = self.atomic(|s| s.parse_unary_exp()) {
-                        Ok(Expression::Sizeof(Box::new(exp)))
-                    } else {
-                        let start = self.expect(Token::OpenParen)?.span.start;
-                        let ty = self.parse_type_name()?;
-                        let end = self.expect(Token::CloseParen)?.span.end;
-                        Ok(Expression::SizeofType(TokenSpanned {
-                            data: ty,
-                            span: start..end,
-                        }))
-                    }
-                }
-                _ => self.parse_postfix_exp(),
+        let token = self.peek()?;
+        match &token.data {
+            _ if UnaryOp::try_from(token.data).is_ok() => {
+                let op = UnaryOp::try_from(token.data).unwrap();
+                let op = token.clone().map(|_| op);
+                self.advance();
+                let exp = self.parse_cast_exp()?;
+                Ok(Expression::Unary {
+                    op,
+                    exp: Box::new(exp),
+                    // Fixed in type check pass
+                    ty: VarType::Void,
+                })
             }
-        } else {
-            Err(Error::UnexpectedEof)
+            Token::Ampersands => {
+                self.advance();
+                let exp = self.parse_cast_exp()?;
+                Ok(Expression::AddrOf {
+                    exp: Box::new(exp),
+                    // Fixed in type check pass
+                    ty: VarType::Void,
+                })
+            }
+            Token::Asterisk => {
+                self.advance();
+                let exp = self.parse_cast_exp()?;
+                Ok(Expression::Dereference(Box::new(exp)))
+            }
+            Token::Sizeof => {
+                self.advance();
+                if let Ok(exp) = self.atomic(|s| s.parse_unary_exp()) {
+                    Ok(Expression::Sizeof(Box::new(exp)))
+                } else {
+                    let start = self.expect(Token::OpenParen)?.span.start;
+                    let ty = self.parse_type_name()?;
+                    let end = self.expect(Token::CloseParen)?.span.end;
+                    Ok(Expression::SizeofType(TokenSpanned {
+                        data: ty,
+                        span: start..end,
+                    }))
+                }
+            }
+            _ => self.parse_postfix_exp(),
         }
     }
 
@@ -1895,7 +1883,7 @@ impl<'a> Parser<'a> {
     fn parse_expression(&mut self, min_prec: usize) -> Result<Expression, Error> {
         let mut left = self.parse_cast_exp()?;
         loop {
-            let Some(token) = self.peek() else {
+            let Ok(token) = self.peek() else {
                 break;
             };
 
