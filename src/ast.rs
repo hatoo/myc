@@ -1233,7 +1233,7 @@ impl<'a> Parser<'a> {
         let mut decl = self.parse_simple_declarator()?;
 
         if let Ok(params) = self.atomic(|s| s.parse_param_list()) {
-            let span = decl.span.start..self.tokens[self.index - 1].span.end;
+            let span = decl.span.start..self.index;
             return Ok(TokenSpanned {
                 data: Declarator::Fun {
                     params,
