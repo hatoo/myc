@@ -7,6 +7,7 @@ use std::{
 use ecow::EcoString;
 use miette::{Error as MietteError, LabeledSpan, MietteDiagnostic};
 use regex::bytes::Regex;
+use thiserror::Error;
 
 use crate::span::{self, MayHasSpan, Spanned};
 
@@ -35,30 +36,18 @@ impl<T: Display> Display for TokenSpanned<T> {
     }
 }
 
-pub struct TokenSpannedError<'a, E> {
+#[derive(Error)]
+pub struct TokenSpannedError<E> {
     pub error: E,
     pub src: Arc<Vec<u8>>,
-    pub tokens: &'a [span::Spanned<Token>],
+    pub tokens: Arc<Vec<span::Spanned<Token>>>,
 }
 
-impl<'a, E: Display + MayHasTokenSpan> std::fmt::Debug for TokenSpannedError<'a, E> {
+impl<E: Display + MayHasTokenSpan> std::fmt::Debug for TokenSpannedError<E> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         if let Some(span) = self.error.may_token_span() {
             let span = self.tokens[span.start].span.start..self.tokens[span.end - 1].span.end;
             writeln!(f)?;
-            /*
-            write!(
-                f,
-                "{}",
-                span::SpannedError::new(
-                    span::Spanned {
-                        data: &self.error,
-                        span,
-                    },
-                    self.src.clone()
-                )
-            )?
-            */
             let report = MietteDiagnostic {
                 message: self.error.to_string(),
                 code: None,
@@ -78,6 +67,12 @@ impl<'a, E: Display + MayHasTokenSpan> std::fmt::Debug for TokenSpannedError<'a,
         }
 
         Ok(())
+    }
+}
+
+impl<E: Display + MayHasTokenSpan> Display for TokenSpannedError<E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
     }
 }
 

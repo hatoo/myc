@@ -6,6 +6,8 @@ use std::{
     sync::Arc,
 };
 
+use miette::{LabeledSpan, MietteDiagnostic};
+
 pub type Span = Range<usize>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -79,7 +81,20 @@ where
     fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
         writeln!(f)?;
         if let Some(span) = self.error.may_span() {
-            pretty_print(f, &self.src, span, &self.error)?;
+            let report = MietteDiagnostic {
+                message: self.error.to_string(),
+                code: None,
+                severity: None,
+                help: None,
+                url: None,
+                labels: Some(vec![LabeledSpan::new(None, span.start, span.len())]),
+            };
+
+            write!(
+                f,
+                "{:?}",
+                miette::Error::new(report).with_source_code(self.src.clone())
+            )?;
         }
         Ok(())
     }
@@ -90,61 +105,7 @@ where
     E: Display + MayHasSpan,
 {
     fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
-        if let Some(span) = self.error.may_span() {
-            pretty_print(f, &self.src, span, &self.error)?;
-        }
+        write!(f, "{:?}", self)?;
         Ok(())
     }
-}
-
-pub fn pretty_print<E: Display>(
-    f: &mut Formatter,
-    src: &[u8],
-    span: Range<usize>,
-    error: E,
-) -> std::fmt::Result {
-    let (ln, col, last_line_start) = if let Some((line_number, last_line_start)) = src[..span.start]
-        .iter()
-        .enumerate()
-        .filter(|t| t.1 == &b'\n')
-        .map(|t| t.0)
-        .enumerate()
-        .last()
-    {
-        (
-            line_number + 2,
-            span.start - last_line_start,
-            last_line_start + 1,
-        )
-    } else {
-        (1, span.start + 1, 0)
-    };
-
-    writeln!(f, "{}:{} {}", ln, col, error)?;
-    writeln!(
-        f,
-        "{}",
-        String::from_utf8(
-            src[last_line_start..]
-                .iter()
-                .copied()
-                .take_while(|c| *c != b'\n')
-                .collect::<Vec<u8>>()
-        )
-        .unwrap()
-    )?;
-    let width: usize = src[last_line_start..]
-        .iter()
-        .copied()
-        .take(col - 1)
-        .map(|c| if c == b'\t' { 8 } else { 1 })
-        .sum();
-    for _ in 0..width {
-        write!(f, " ")?;
-    }
-    for _ in span {
-        write!(f, "^")?;
-    }
-    writeln!(f)?;
-    Ok(())
 }

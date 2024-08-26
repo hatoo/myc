@@ -37,12 +37,12 @@ struct Opts {
     l: Vec<String>,
 }
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let opts = Opts::parse();
 
     let src = if opts.input == PathBuf::from("-") {
         let mut src = Vec::new();
-        stdin().read_to_end(&mut src).unwrap();
+        stdin().read_to_end(&mut src)?;
 
         // TODO implement a proper preprocessor
         let mut preped = process::Command::new("gcc")
@@ -51,58 +51,54 @@ fn main() {
             .arg("-")
             .stdin(process::Stdio::piped())
             .stdout(process::Stdio::piped())
-            .spawn()
-            .unwrap();
+            .spawn()?;
 
-        preped.stdin.take().unwrap().write_all(&src).unwrap();
-        preped.wait_with_output().unwrap().stdout
+        preped.stdin.take().unwrap().write_all(&src)?;
+        preped.wait_with_output()?.stdout
     } else {
         let preped = process::Command::new("gcc")
             .arg("-E")
             .arg("-P")
             .arg(&opts.input)
             .stdout(process::Stdio::piped())
-            .spawn()
-            .unwrap();
+            .spawn()?;
 
-        preped.wait_with_output().unwrap().stdout
+        preped.wait_with_output()?.stdout
     };
 
     let src = Arc::new(src);
 
-    let tokens = lexer(&src)
-        .map_err(|err| SpannedError::new(err, src.clone()))
-        .unwrap();
+    let tokens = lexer(&src).map_err(|err| SpannedError::new(err, src.clone()))?;
 
     if opts.lex {
         dbg!(tokens);
-        return;
+        return Ok(());
     }
 
-    let mut program = parse(&tokens).unwrap();
+    let mut program = parse(&tokens)?;
 
     if opts.parse {
         dbg!(program);
-        return;
+        return Ok(());
     }
+
+    let tokens = Arc::new(tokens);
 
     VarResolver::default()
         .resolve_program(&mut program)
         .map_err(|e| TokenSpannedError {
             error: e,
             src: src.clone(),
-            tokens: &tokens,
-        })
-        .unwrap();
+            tokens: tokens.clone(),
+        })?;
 
     LoopLabel::default()
         .label_program(&mut program)
         .map_err(|e| TokenSpannedError {
             error: e,
             src: src.clone(),
-            tokens: &tokens,
-        })
-        .unwrap();
+            tokens: tokens.clone(),
+        })?;
 
     let mut type_checker = TypeChecker::default();
     type_checker
@@ -110,13 +106,12 @@ fn main() {
         .map_err(|e| TokenSpannedError {
             error: e,
             src: src.clone(),
-            tokens: &tokens,
-        })
-        .unwrap();
+            tokens: tokens.clone(),
+        })?;
 
     if opts.validate {
         dbg!(program);
-        return;
+        return Ok(());
     }
 
     let tacky = myc::tacky::gen_program(&program, &mut type_checker.sym_table);
@@ -150,7 +145,7 @@ fn main() {
                 }
             }
         }
-        return;
+        return Ok(());
     }
 
     let mut codegen = CodeGen::new(&type_checker.sym_table);
@@ -158,12 +153,12 @@ fn main() {
 
     if opts.codegen {
         dbg!(code);
-        return;
+        return Ok(());
     }
 
     if opts.asm {
         println!("{}", code);
-        return;
+        return Ok(());
     }
 
     File::create(opts.input.with_extension("s"))
@@ -181,7 +176,7 @@ fn main() {
         for lib in opts.l {
             command.arg(format!("-l{}", lib));
         }
-        command.status().unwrap();
+        command.status()?;
     } else {
         let mut command = process::Command::new("gcc");
         command
@@ -191,6 +186,8 @@ fn main() {
         for lib in opts.l {
             command.arg(format!("-l{}", lib));
         }
-        command.status().unwrap();
+        command.status()?;
     }
+
+    Ok(())
 }
