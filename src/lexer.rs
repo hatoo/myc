@@ -5,9 +5,23 @@ use regex::bytes::Regex;
 
 use crate::span::{MayHasSpan, Spanned};
 
+#[derive(Debug, Clone, PartialEq)]
 pub struct TokenSpanned<T> {
     pub data: T,
     pub span: Range<usize>,
+}
+
+impl<T> TokenSpanned<T> {
+    pub fn new_null(data: T) -> Self {
+        Self { data, span: 0..0 }
+    }
+
+    pub fn map<U>(self, f: impl FnOnce(T) -> U) -> Spanned<U> {
+        Spanned {
+            data: f(self.data),
+            span: self.span,
+        }
+    }
 }
 
 pub trait HasTokenSpan {

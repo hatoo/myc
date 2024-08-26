@@ -1,9 +1,9 @@
 use ecow::EcoString;
 
 use crate::{
-    lexer::{Constant, Suffix, Token},
+    lexer::{Constant, HasTokenSpan, MayHasTokenSpan, Suffix, Token, TokenSpanned},
     semantics::type_check::StaticInit,
-    span::{HasSpan, MayHasSpan, Spanned},
+    span::Spanned,
 };
 
 #[derive(Debug)]
@@ -20,7 +20,7 @@ pub enum Declaration {
 
 #[derive(Debug)]
 pub struct VarDecl {
-    pub ident: Spanned<EcoString>,
+    pub ident: TokenSpanned<EcoString>,
     pub init: Option<Initializer>,
     pub ty: VarType,
     pub storage_class: Option<StorageClass>,
@@ -28,8 +28,8 @@ pub struct VarDecl {
 
 #[derive(Debug)]
 pub struct FunDecl {
-    pub name: Spanned<EcoString>,
-    pub params: Vec<Spanned<EcoString>>,
+    pub name: TokenSpanned<EcoString>,
+    pub params: Vec<TokenSpanned<EcoString>>,
     pub body: Option<Block>,
     pub ty: FunType,
     pub storage_class: Option<StorageClass>,
@@ -37,7 +37,7 @@ pub struct FunDecl {
 
 #[derive(Debug)]
 pub struct StructDecl {
-    pub tag: Spanned<EcoString>,
+    pub tag: TokenSpanned<EcoString>,
     pub member_decls: Vec<MemberDecl>,
 }
 
@@ -57,40 +57,40 @@ impl Initializer {
     pub fn zero_base(ty: BaseType) -> Self {
         match ty {
             BaseType::Char => {
-                Self::SingleInit(Expression::Constant(Spanned::new_null(Const::Char(0))))
+                Self::SingleInit(Expression::Constant(TokenSpanned::new_null(Const::Char(0))))
             }
             BaseType::SChar => {
-                Self::SingleInit(Expression::Constant(Spanned::new_null(Const::Char(0))))
+                Self::SingleInit(Expression::Constant(TokenSpanned::new_null(Const::Char(0))))
             }
-            BaseType::UChar => {
-                Self::SingleInit(Expression::Constant(Spanned::new_null(Const::UChar(0))))
-            }
+            BaseType::UChar => Self::SingleInit(Expression::Constant(TokenSpanned::new_null(
+                Const::UChar(0),
+            ))),
             BaseType::Int => {
-                Self::SingleInit(Expression::Constant(Spanned::new_null(Const::Int(0))))
+                Self::SingleInit(Expression::Constant(TokenSpanned::new_null(Const::Int(0))))
             }
             BaseType::Uint => {
-                Self::SingleInit(Expression::Constant(Spanned::new_null(Const::Uint(0))))
+                Self::SingleInit(Expression::Constant(TokenSpanned::new_null(Const::Uint(0))))
             }
             BaseType::Long => {
-                Self::SingleInit(Expression::Constant(Spanned::new_null(Const::Long(0))))
+                Self::SingleInit(Expression::Constant(TokenSpanned::new_null(Const::Long(0))))
             }
-            BaseType::Ulong => {
-                Self::SingleInit(Expression::Constant(Spanned::new_null(Const::Ulong(0))))
-            }
-            BaseType::Double => {
-                Self::SingleInit(Expression::Constant(Spanned::new_null(Const::Double(0.0))))
-            }
+            BaseType::Ulong => Self::SingleInit(Expression::Constant(TokenSpanned::new_null(
+                Const::Ulong(0),
+            ))),
+            BaseType::Double => Self::SingleInit(Expression::Constant(TokenSpanned::new_null(
+                Const::Double(0.0),
+            ))),
         }
     }
 }
 
-impl MayHasSpan for Initializer {
-    fn may_span(&self) -> Option<std::ops::Range<usize>> {
+impl MayHasTokenSpan for Initializer {
+    fn may_token_span(&self) -> Option<std::ops::Range<usize>> {
         match self {
             Self::SingleInit(exp) => Some(exp.span()),
             Self::CompoundInit(inits) => {
-                let start = inits.first()?.may_span()?.start;
-                let end = inits.last()?.may_span()?.end;
+                let start = inits.first()?.may_token_span()?.start;
+                let end = inits.last()?.may_token_span()?.end;
                 Some(start..end)
             }
         }
@@ -252,14 +252,14 @@ impl Const {
 
 #[derive(Debug, Clone)]
 pub enum Expression {
-    Var(Spanned<EcoString>, VarType),
+    Var(TokenSpanned<EcoString>, VarType),
     Cast {
         target: VarType,
         exp: Box<Expression>,
     },
-    Constant(Spanned<Const>),
+    Constant(TokenSpanned<Const>),
     Unary {
-        op: Spanned<UnaryOp>,
+        op: TokenSpanned<UnaryOp>,
         exp: Box<Expression>,
         ty: VarType,
     },
@@ -279,7 +279,7 @@ pub enum Expression {
         else_branch: Box<Expression>,
     },
     FunctionCall {
-        name: Spanned<EcoString>,
+        name: TokenSpanned<EcoString>,
         args: Vec<Expression>,
         ty: VarType,
     },
@@ -293,17 +293,17 @@ pub enum Expression {
         index: Box<Expression>,
         ty: VarType,
     },
-    String(Spanned<Vec<u8>>, VarType),
+    String(TokenSpanned<Vec<u8>>, VarType),
     Sizeof(Box<Expression>),
-    SizeofType(Spanned<VarType>),
+    SizeofType(TokenSpanned<VarType>),
     Dot {
         structure: Box<Expression>,
-        member: Spanned<EcoString>,
+        member: TokenSpanned<EcoString>,
         ty: VarType,
     },
     Arrow {
         pointer: Box<Expression>,
-        member: Spanned<EcoString>,
+        member: TokenSpanned<EcoString>,
         ty: VarType,
     },
 }
@@ -313,7 +313,7 @@ impl Expression {
         match self {
             Self::Var(_, ty) => ty,
             Self::Cast { target, .. } => target,
-            Self::Constant(Spanned { data, .. }) => match data {
+            Self::Constant(TokenSpanned { data, .. }) => match data {
                 Const::Int(_) => &VarType::Base(BaseType::Int),
                 Const::Long(_) => &VarType::Base(BaseType::Long),
                 Const::Uint(_) => &VarType::Base(BaseType::Uint),
@@ -350,16 +350,16 @@ impl Expression {
         // TODO: const expr
         matches!(
             self,
-            Self::Constant(Spanned {
+            Self::Constant(TokenSpanned {
                 data: Const::Int(0),
                 ..
-            }) | Self::Constant(Spanned {
+            }) | Self::Constant(TokenSpanned {
                 data: Const::Uint(0),
                 ..
-            }) | Self::Constant(Spanned {
+            }) | Self::Constant(TokenSpanned {
                 data: Const::Long(0),
                 ..
-            }) | Self::Constant(Spanned {
+            }) | Self::Constant(TokenSpanned {
                 data: Const::Ulong(0),
                 ..
             })
@@ -379,8 +379,8 @@ impl Expression {
     }
 }
 
-impl HasSpan for Expression {
-    fn span(&self) -> std::ops::Range<usize> {
+impl HasTokenSpan for Expression {
+    fn token_span(&self) -> std::ops::Range<usize> {
         match self {
             Self::Var(ident, ..) => ident.span.clone(),
             Self::Constant(constant) => constant.span.clone(),
@@ -638,13 +638,13 @@ enum TypeSpecifier {
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("Unexpected token: {0:?}, expected {1:?}")]
-    Unexpected(Spanned<Token>, ExpectedToken),
+    Unexpected(TokenSpanned<Token>, ExpectedToken),
     #[error("Unexpected Eof")]
     UnexpectedEof,
     #[error("Malformed expression: {0:?}")]
-    MalformedExpression(Spanned<Token>),
+    MalformedExpression(TokenSpanned<Token>),
     #[error("Malformed body: {0:?}")]
-    MalformedBody(Spanned<Token>),
+    MalformedBody(TokenSpanned<Token>),
     #[error("Conflicting specifier: {0:?}")]
     ConflictingSpecifier(std::ops::Range<usize>),
     #[error("No type specifier")]
@@ -652,7 +652,7 @@ pub enum Error {
     #[error("Bad type specifier")]
     BadTypeSpecifier(std::ops::Range<usize>),
     #[error("Unexpected specifier")]
-    UnexpectedSpecifier(Spanned<Token>),
+    UnexpectedSpecifier(TokenSpanned<Token>),
     #[error("Function type isn't allowed here")]
     NotVarType(std::ops::Range<usize>),
     #[error("Variable type isn't allowed here")]
@@ -665,8 +665,8 @@ impl From<Error> for () {
     fn from(_: Error) {}
 }
 
-impl MayHasSpan for Error {
-    fn may_span(&self) -> Option<std::ops::Range<usize>> {
+impl MayHasTokenSpan for Error {
+    fn may_token_span(&self) -> Option<std::ops::Range<usize>> {
         match self {
             Error::Unexpected(spanned, _) => Some(spanned.span.clone()),
             Error::UnexpectedEof => None,
@@ -683,7 +683,7 @@ impl MayHasSpan for Error {
     }
 }
 
-fn solve_type_specifier(ty: &[Spanned<TypeSpecifier>]) -> Result<VarType, Error> {
+fn solve_type_specifier(ty: &[TokenSpanned<TypeSpecifier>]) -> Result<VarType, Error> {
     debug_assert!(!ty.is_empty());
 
     let mut int = false;
@@ -694,7 +694,7 @@ fn solve_type_specifier(ty: &[Spanned<TypeSpecifier>]) -> Result<VarType, Error>
 
     if matches!(
         ty,
-        [Spanned {
+        [TokenSpanned {
             data: TypeSpecifier::Double,
             ..
         }]
@@ -704,7 +704,7 @@ fn solve_type_specifier(ty: &[Spanned<TypeSpecifier>]) -> Result<VarType, Error>
 
     if matches!(
         ty,
-        [Spanned {
+        [TokenSpanned {
             data: TypeSpecifier::Void,
             ..
         }]
@@ -712,7 +712,7 @@ fn solve_type_specifier(ty: &[Spanned<TypeSpecifier>]) -> Result<VarType, Error>
         return Ok(VarType::Void);
     }
 
-    if let [Spanned {
+    if let [TokenSpanned {
         data: TypeSpecifier::Struct(tag),
         ..
     }] = ty
@@ -802,33 +802,35 @@ fn solve_type_specifier(ty: &[Spanned<TypeSpecifier>]) -> Result<VarType, Error>
 #[derive(Debug)]
 enum Declarator {
     Ident(EcoString),
-    Pointer(Spanned<Box<Declarator>>),
+    Pointer(TokenSpanned<Box<Declarator>>),
     Array {
-        decl: Spanned<Box<Declarator>>,
+        decl: TokenSpanned<Box<Declarator>>,
         size: usize,
     },
     Fun {
         params: Vec<ParamInfo>,
-        decl: Spanned<Box<Declarator>>,
+        decl: TokenSpanned<Box<Declarator>>,
     },
 }
 
 #[derive(Debug)]
 struct ParamInfo {
     ty: VarType,
-    decl: Spanned<Declarator>,
+    decl: TokenSpanned<Declarator>,
 }
 
 #[allow(clippy::type_complexity)]
 fn process_declarator(
-    decl: Spanned<Declarator>,
+    decl: TokenSpanned<Declarator>,
     base_type: VarType,
-) -> Result<(Spanned<EcoString>, Ty, Vec<Spanned<EcoString>>), Error> {
+) -> Result<(TokenSpanned<EcoString>, Ty, Vec<TokenSpanned<EcoString>>), Error> {
     let span = decl.span.clone();
     match decl.data {
-        Declarator::Ident(name) => {
-            Ok((Spanned { data: name, span }, Ty::Var(base_type), Vec::new()))
-        }
+        Declarator::Ident(name) => Ok((
+            TokenSpanned { data: name, span },
+            Ty::Var(base_type),
+            Vec::new(),
+        )),
         Declarator::Pointer(d) => {
             let derived_type = VarType::Pointer(Box::new(Ty::Var(base_type)));
             process_declarator(d.map(|d| *d), derived_type)
@@ -855,7 +857,7 @@ fn process_declarator(
                         ret: base_type,
                     });
 
-                    Ok((Spanned { data: name, span }, derived_type, param_names))
+                    Ok((TokenSpanned { data: name, span }, derived_type, param_names))
                 }
                 Declarator::Pointer(decl) => {
                     let fun_ptr = VarType::Pointer(Box::new(Ty::Fun(FunType {
@@ -913,14 +915,20 @@ impl<'a> Parser<'a> {
         Ok(res)
     }
 
-    fn expect(&mut self, token: Token) -> Result<&Spanned<Token>, Error> {
-        if let Some(spanned) = self.tokens.get(self.index) {
-            if spanned.data == token {
+    fn expect(&mut self, token: Token) -> Result<TokenSpanned<&Token>, Error> {
+        if let Some(spanned) = self.peek() {
+            if *spanned.data == token {
                 self.index += 1;
-                Ok(&self.tokens[self.index - 1])
+                Ok(TokenSpanned {
+                    data: &self.tokens[self.index - 1].data,
+                    span: self.index - 1..self.index,
+                })
             } else {
                 Err(Error::Unexpected(
-                    spanned.clone(),
+                    TokenSpanned {
+                        data: spanned.data.clone(),
+                        span: self.index..self.index + 1,
+                    },
                     ExpectedToken::Token(token),
                 ))
             }
@@ -1027,8 +1035,11 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn peek(&self) -> Option<&Spanned<Token>> {
-        self.tokens.get(self.index)
+    fn peek(&self) -> Option<TokenSpanned<&Token>> {
+        self.tokens.get(self.index).map(|t| TokenSpanned {
+            data: &t.data,
+            span: self.index..self.index + 1,
+        })
     }
 
     fn advance(&mut self) {
