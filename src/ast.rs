@@ -3,7 +3,7 @@ use ecow::EcoString;
 use crate::{
     lexer::{Constant, HasTokenSpan, MayHasTokenSpan, Suffix, Token, TokenSpanned},
     semantics::type_check::StaticInit,
-    span::Spanned,
+    span,
 };
 
 #[derive(Debug)]
@@ -87,7 +87,7 @@ impl Initializer {
 impl MayHasTokenSpan for Initializer {
     fn may_token_span(&self) -> Option<std::ops::Range<usize>> {
         match self {
-            Self::SingleInit(exp) => Some(exp.span()),
+            Self::SingleInit(exp) => Some(exp.token_span()),
             Self::CompoundInit(inits) => {
                 let start = inits.first()?.may_token_span()?.start;
                 let end = inits.last()?.may_token_span()?.end;
@@ -384,28 +384,30 @@ impl HasTokenSpan for Expression {
         match self {
             Self::Var(ident, ..) => ident.span.clone(),
             Self::Constant(constant) => constant.span.clone(),
-            Self::Unary { op, exp, .. } => op.span.start..exp.span().end,
-            Self::Binary { lhs, rhs, .. } => lhs.span().start..rhs.span().end,
-            Self::Assignment { lhs, rhs, .. } => lhs.span().start..rhs.span().end,
+            Self::Unary { op, exp, .. } => op.span.start..exp.token_span().end,
+            Self::Binary { lhs, rhs, .. } => lhs.token_span().start..rhs.token_span().end,
+            Self::Assignment { lhs, rhs, .. } => lhs.token_span().start..rhs.token_span().end,
             Self::Conditional {
                 condition,
                 else_branch,
                 ..
-            } => condition.span().start..else_branch.span().end,
+            } => condition.token_span().start..else_branch.token_span().end,
             Self::FunctionCall { name, .. } => name.span.clone(),
-            Self::Cast { exp, .. } => exp.span(),
-            Self::Dereference(exp) => exp.span(),
-            Self::AddrOf { exp, .. } => exp.span(),
-            Self::Subscript { array, index, .. } => array.span().start..index.span().end,
+            Self::Cast { exp, .. } => exp.token_span(),
+            Self::Dereference(exp) => exp.token_span(),
+            Self::AddrOf { exp, .. } => exp.token_span(),
+            Self::Subscript { array, index, .. } => {
+                array.token_span().start..index.token_span().end
+            }
             Self::String(s, _) => s.span.clone(),
-            Self::Sizeof(exp) => exp.span(),
+            Self::Sizeof(exp) => exp.token_span(),
             Self::SizeofType(ty) => ty.span.clone(),
             Self::Dot {
                 structure, member, ..
-            } => structure.span().start..member.span.end,
+            } => structure.token_span().start..member.span.end,
             Self::Arrow {
                 pointer, member, ..
-            } => pointer.span().start..member.span.end,
+            } => pointer.token_span().start..member.span.end,
         }
     }
 }
@@ -604,13 +606,13 @@ impl TryFrom<&Token> for BinaryOp {
     }
 }
 
-pub fn parse(tokens: &[Spanned<Token>]) -> Result<Program, Error> {
+pub fn parse(tokens: &[span::Spanned<Token>]) -> Result<Program, Error> {
     let mut parser = Parser { tokens, index: 0 };
     parser.parse_program()
 }
 
 struct Parser<'a> {
-    tokens: &'a [Spanned<Token>],
+    tokens: &'a [span::Spanned<Token>],
     index: usize,
 }
 
@@ -937,32 +939,44 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn expect_ident(&mut self) -> Result<Spanned<EcoString>, Error> {
+    fn expect_ident(&mut self) -> Result<TokenSpanned<EcoString>, Error> {
         if let Some(spanned) = self.tokens.get(self.index) {
             if let Token::Ident(t) = &spanned.data {
                 self.index += 1;
-                Ok(Spanned {
+                Ok(TokenSpanned {
                     data: t.clone(),
-                    span: spanned.span.clone(),
+                    span: self.index - 1..self.index,
                 })
             } else {
-                Err(Error::Unexpected(spanned.clone(), ExpectedToken::Ident))
+                Err(Error::Unexpected(
+                    TokenSpanned {
+                        data: spanned.data.clone(),
+                        span: self.index..self.index + 1,
+                    },
+                    ExpectedToken::Ident,
+                ))
             }
         } else {
             Err(Error::UnexpectedEof)
         }
     }
 
-    fn expect_constant(&mut self) -> Result<Spanned<Constant>, Error> {
+    fn expect_constant(&mut self) -> Result<TokenSpanned<Constant>, Error> {
         if let Some(spanned) = self.tokens.get(self.index) {
             if let Token::Constant(c) = &spanned.data {
                 self.index += 1;
-                Ok(Spanned {
+                Ok(TokenSpanned {
                     data: c.clone(),
-                    span: spanned.span.clone(),
+                    span: self.index - 1..self.index,
                 })
             } else {
-                Err(Error::Unexpected(spanned.clone(), ExpectedToken::Constant))
+                Err(Error::Unexpected(
+                    TokenSpanned {
+                        data: spanned.data.clone(),
+                        span: self.index..self.index + 1,
+                    },
+                    ExpectedToken::Constant,
+                ))
             }
         } else {
             Err(Error::UnexpectedEof)
@@ -971,7 +985,13 @@ impl<'a> Parser<'a> {
 
     fn expect_eof(&mut self) -> Result<(), Error> {
         if let Some(spanned) = self.tokens.get(self.index) {
-            Err(Error::Unexpected(spanned.clone(), ExpectedToken::Eof))
+            Err(Error::Unexpected(
+                TokenSpanned {
+                    data: spanned.data.clone(),
+                    span: self.index..self.index + 1,
+                },
+                ExpectedToken::Eof,
+            ))
         } else {
             Ok(())
         }
@@ -982,7 +1002,7 @@ impl<'a> Parser<'a> {
         let mut body = Vec::new();
         while !matches!(
             self.peek(),
-            Some(Spanned {
+            Some(TokenSpanned {
                 data: Token::CloseBrace,
                 ..
             })
@@ -1060,7 +1080,7 @@ impl<'a> Parser<'a> {
 
     fn parse_statement(&mut self) -> Result<Statement, Error> {
         match self.peek() {
-            Some(Spanned {
+            Some(TokenSpanned {
                 data: Token::Return,
                 ..
             }) => {
@@ -1069,14 +1089,14 @@ impl<'a> Parser<'a> {
                 self.expect(Token::SemiColon)?;
                 Ok(Statement::Return(expr.ok()))
             }
-            Some(Spanned {
+            Some(TokenSpanned {
                 data: Token::SemiColon,
                 ..
             }) => {
                 self.advance();
                 Ok(Statement::Null)
             }
-            Some(Spanned {
+            Some(TokenSpanned {
                 data: Token::If, ..
             }) => {
                 self.advance();
@@ -1084,7 +1104,7 @@ impl<'a> Parser<'a> {
                 let condition = self.parse_expression(0)?;
                 self.expect(Token::CloseParen)?;
                 let then_branch = Box::new(self.parse_statement()?);
-                let else_branch = if let Some(Spanned {
+                let else_branch = if let Some(TokenSpanned {
                     data: Token::Else, ..
                 }) = self.peek()
                 {
@@ -1099,14 +1119,14 @@ impl<'a> Parser<'a> {
                     else_branch,
                 })
             }
-            Some(Spanned {
+            Some(TokenSpanned {
                 data: Token::OpenBrace,
                 ..
             }) => {
                 let block = self.expect_block()?;
                 Ok(Statement::Compound(block))
             }
-            Some(Spanned {
+            Some(TokenSpanned {
                 data: Token::Break,
                 span,
             }) => {
@@ -1118,7 +1138,7 @@ impl<'a> Parser<'a> {
                     span,
                 })
             }
-            Some(Spanned {
+            Some(TokenSpanned {
                 data: Token::Continue,
                 span,
             }) => {
@@ -1130,7 +1150,7 @@ impl<'a> Parser<'a> {
                     span,
                 })
             }
-            Some(Spanned {
+            Some(TokenSpanned {
                 data: Token::While, ..
             }) => {
                 self.advance();
@@ -1144,7 +1164,7 @@ impl<'a> Parser<'a> {
                     body,
                 })
             }
-            Some(Spanned {
+            Some(TokenSpanned {
                 data: Token::Do, ..
             }) => {
                 self.advance();
@@ -1160,7 +1180,7 @@ impl<'a> Parser<'a> {
                     body,
                 })
             }
-            Some(Spanned {
+            Some(TokenSpanned {
                 data: Token::For, ..
             }) => {
                 self.advance();
@@ -1198,12 +1218,12 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_declarator(&mut self) -> Result<Spanned<Declarator>, Error> {
-        if let Ok(Spanned { span: aspan, .. }) = self.expect(Token::Asterisk) {
+    fn parse_declarator(&mut self) -> Result<TokenSpanned<Declarator>, Error> {
+        if let Ok(TokenSpanned { span: aspan, .. }) = self.expect(Token::Asterisk) {
             let aspan = aspan.clone();
-            let Spanned { data, span } = self.parse_declarator()?;
-            Ok(Spanned {
-                data: Declarator::Pointer(Spanned {
+            let TokenSpanned { data, span } = self.parse_declarator()?;
+            Ok(TokenSpanned {
+                data: Declarator::Pointer(TokenSpanned {
                     data: Box::new(data),
                     span: span.clone(),
                 }),
@@ -1214,12 +1234,12 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_direct_declarator(&mut self) -> Result<Spanned<Declarator>, Error> {
+    fn parse_direct_declarator(&mut self) -> Result<TokenSpanned<Declarator>, Error> {
         let mut decl = self.parse_simple_declarator()?;
 
         if let Ok(params) = self.atomic(|s| s.parse_param_list()) {
             let span = decl.span.start..self.tokens[self.index - 1].span.end;
-            return Ok(Spanned {
+            return Ok(TokenSpanned {
                 data: Declarator::Fun {
                     params,
                     decl: decl.map(Box::new),
@@ -1231,7 +1251,7 @@ impl<'a> Parser<'a> {
         let sizes = self.many0(|s| s.parse_square_constant());
 
         for s in sizes {
-            decl = Spanned {
+            decl = TokenSpanned {
                 data: Declarator::Array {
                     decl: decl.map(Box::new),
                     size: s.data,
@@ -1243,7 +1263,7 @@ impl<'a> Parser<'a> {
         Ok(decl)
     }
 
-    fn parse_square_constant(&mut self) -> Result<Spanned<usize>, Error> {
+    fn parse_square_constant(&mut self) -> Result<TokenSpanned<usize>, Error> {
         let start = self.expect(Token::OpenSquareBracket)?.span.start;
         let c = self.expect_constant()?;
         let index = match c.data {
@@ -1253,7 +1273,7 @@ impl<'a> Parser<'a> {
         };
         let end = self.expect(Token::CloseSquareBracket)?.span.end;
 
-        Ok(Spanned {
+        Ok(TokenSpanned {
             data: index,
             span: start..end,
         })
@@ -1291,9 +1311,9 @@ impl<'a> Parser<'a> {
         Ok(ParamInfo { ty, decl })
     }
 
-    fn parse_simple_declarator(&mut self) -> Result<Spanned<Declarator>, Error> {
+    fn parse_simple_declarator(&mut self) -> Result<TokenSpanned<Declarator>, Error> {
         match self.peek() {
-            Some(Spanned {
+            Some(TokenSpanned {
                 data: Token::Ident(ident),
                 span,
             }) => {
@@ -1301,12 +1321,12 @@ impl<'a> Parser<'a> {
                 let decl = Declarator::Ident(ident);
                 let span = span.clone();
                 self.advance();
-                Ok(Spanned {
+                Ok(TokenSpanned {
                     data: decl,
                     span: span.clone(),
                 })
             }
-            Some(Spanned {
+            Some(TokenSpanned {
                 data: Token::OpenParen,
                 span,
             }) => {
@@ -1314,12 +1334,15 @@ impl<'a> Parser<'a> {
                 self.advance();
                 let decl = self.parse_declarator()?;
                 let end = self.expect(Token::CloseParen)?.span.end;
-                Ok(Spanned {
+                Ok(TokenSpanned {
                     data: decl.data,
                     span: start..end,
                 })
             }
-            Some(s) => Err(Error::Unexpected(s.clone(), ExpectedToken::Declarator)),
+            Some(s) => Err(Error::Unexpected(
+                s.map(Clone::clone),
+                ExpectedToken::Declarator,
+            )),
             _ => Err(Error::UnexpectedEof),
         }
     }
@@ -1379,7 +1402,7 @@ impl<'a> Parser<'a> {
                     self.advance();
                     let tag = self.expect_ident()?;
                     end = tag.span.end;
-                    ty.push(Spanned {
+                    ty.push(TokenSpanned {
                         data: TypeSpecifier::Struct(tag.data.clone()),
                         span: tag.span,
                     });

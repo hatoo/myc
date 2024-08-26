@@ -16,8 +16,8 @@ impl<T> TokenSpanned<T> {
         Self { data, span: 0..0 }
     }
 
-    pub fn map<U>(self, f: impl FnOnce(T) -> U) -> Spanned<U> {
-        Spanned {
+    pub fn map<U>(self, f: impl FnOnce(T) -> U) -> TokenSpanned<U> {
+        TokenSpanned {
             data: f(self.data),
             span: self.span,
         }
