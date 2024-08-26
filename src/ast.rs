@@ -1104,11 +1104,7 @@ impl<'a> Parser<'a> {
                 let condition = self.parse_expression(0)?;
                 self.expect(Token::CloseParen)?;
                 let then_branch = Box::new(self.parse_statement()?);
-                let else_branch = if let Ok(TokenSpanned {
-                    data: Token::Else, ..
-                }) = self.peek()
-                {
-                    self.advance();
+                let else_branch = if self.expect(Token::Else).is_ok() {
                     Some(Box::new(self.parse_statement()?))
                 } else {
                     None
@@ -1638,12 +1634,7 @@ impl<'a> Parser<'a> {
 
                 self.advance();
 
-                if let Ok(TokenSpanned {
-                    data: Token::OpenParen,
-                    ..
-                }) = self.peek()
-                {
-                    self.advance();
+                if self.expect(Token::OpenParen).is_ok() {
                     let mut args = Vec::new();
                     if self.expect(Token::CloseParen).is_err() {
                         loop {
