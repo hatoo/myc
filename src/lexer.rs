@@ -5,6 +5,7 @@ use std::{
 };
 
 use ecow::EcoString;
+use miette::{Error as MietteError, LabeledSpan, MietteDiagnostic};
 use regex::bytes::Regex;
 
 use crate::span::{self, MayHasSpan, Spanned};
@@ -45,6 +46,7 @@ impl<'a, E: Display + MayHasTokenSpan> std::fmt::Debug for TokenSpannedError<'a,
         if let Some(span) = self.error.may_token_span() {
             let span = self.tokens[span.start].span.start..self.tokens[span.end - 1].span.end;
             writeln!(f)?;
+            /*
             write!(
                 f,
                 "{}",
@@ -56,6 +58,21 @@ impl<'a, E: Display + MayHasTokenSpan> std::fmt::Debug for TokenSpannedError<'a,
                     self.src.clone()
                 )
             )?
+            */
+            let report = MietteDiagnostic {
+                message: self.error.to_string(),
+                code: None,
+                severity: None,
+                help: None,
+                url: None,
+                labels: Some(vec![LabeledSpan::new(None, span.start, span.len())]),
+            };
+
+            write!(
+                f,
+                "{:?}",
+                MietteError::new(report).with_source_code(self.src.clone())
+            )?;
         } else {
             todo!()
         }
