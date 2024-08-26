@@ -79,9 +79,7 @@ fn main() {
         return;
     }
 
-    let mut program = parse(&tokens)
-        .map_err(|err| SpannedError::new(err, src.clone()))
-        .unwrap();
+    let mut program = parse(&tokens).unwrap();
 
     if opts.parse {
         dbg!(program);
@@ -90,7 +88,6 @@ fn main() {
 
     VarResolver::default()
         .resolve_program(&mut program)
-        .map_err(|err| SpannedError::new(err, src.clone()))
         .unwrap();
 
     LoopLabel::default()
@@ -99,10 +96,7 @@ fn main() {
         .unwrap();
 
     let mut type_checker = TypeChecker::default();
-    type_checker
-        .check_program(&mut program)
-        .map_err(|err| SpannedError::new(err, src.clone()))
-        .unwrap();
+    type_checker.check_program(&mut program).unwrap();
 
     if opts.validate {
         dbg!(program);

@@ -2,11 +2,11 @@ use ecow::EcoString;
 
 use crate::{
     ast::{self, BaseType, Block, Expression, Initializer, Ty, VarType},
+    lexer::TokenSpanned,
     semantics::{
         self,
         type_check::{Attr, StaticInit, SymbolTable},
     },
-    span::Spanned,
 };
 
 #[derive(Debug)]
@@ -463,7 +463,7 @@ impl<'a> InstructionGenerator<'a> {
     fn add_expression(&mut self, expression: &ast::Expression) -> ExpResult {
         match expression {
             ast::Expression::Unary {
-                op: Spanned { data: op, .. },
+                op: TokenSpanned { data: op, .. },
                 exp,
                 ty,
             } => {
@@ -636,7 +636,7 @@ impl<'a> InstructionGenerator<'a> {
                 });
                 ExpResult::PlainOperand(dst)
             }
-            ast::Expression::Var(Spanned { data: var, .. }, _) => {
+            ast::Expression::Var(TokenSpanned { data: var, .. }, _) => {
                 if let semantics::type_check::Attr::Fun { ty, .. } = &self.symbol_table[var] {
                     let tmp = self
                         .make_tmp_local(ast::VarType::Pointer(Box::new(ast::Ty::Fun(ty.clone()))));
@@ -1056,11 +1056,11 @@ fn gen_function(generator: &mut InstructionGenerator, function: &ast::FunDecl) -
         }
         generator.add_statement(&ast::Statement::Return(match function.ty.ret {
             ast::VarType::Void => None,
-            ast::VarType::Base(BaseType::Double) => Some(ast::Expression::Constant(Spanned {
+            ast::VarType::Base(BaseType::Double) => Some(ast::Expression::Constant(TokenSpanned {
                 data: ast::Const::Double(0.0),
                 span: 0..0,
             })),
-            _ => Some(ast::Expression::Constant(Spanned {
+            _ => Some(ast::Expression::Constant(TokenSpanned {
                 data: ast::Const::Int(0),
                 span: 0..0,
             })),
