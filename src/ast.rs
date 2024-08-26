@@ -1119,17 +1119,17 @@ impl<'a> Parser<'a> {
                     else_branch,
                 })
             }
-            (TokenSpanned {
+            TokenSpanned {
                 data: Token::OpenBrace,
                 ..
-            }) => {
+            } => {
                 let block = self.expect_block()?;
                 Ok(Statement::Compound(block))
             }
-            (TokenSpanned {
+            TokenSpanned {
                 data: Token::Break,
                 span,
-            }) => {
+            } => {
                 let span = span.clone();
                 self.advance();
                 self.expect(Token::SemiColon)?;
