@@ -75,14 +75,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    let mut program = parse(&tokens)?;
+    let tokens = Arc::new(tokens);
+
+    let mut program = parse(&tokens).map_err(|e| TokenSpannedError {
+        error: e,
+        src: src.clone(),
+        tokens: tokens.clone(),
+    })?;
 
     if opts.parse {
         dbg!(program);
         return Ok(());
     }
-
-    let tokens = Arc::new(tokens);
 
     VarResolver::default()
         .resolve_program(&mut program)
@@ -163,8 +167,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     File::create(opts.input.with_extension("s"))
         .unwrap()
-        .write_all(code.to_string().as_bytes())
-        .unwrap();
+        .write_all(code.to_string().as_bytes())?;
 
     if opts.compile {
         let mut command = process::Command::new("gcc");
