@@ -9,8 +9,8 @@ use ecow::EcoString;
 
 use crate::{
     ast::{self, BaseType, Expression, Initializer, Ty, VarType},
+    lexer::{HasTokenSpan, MayHasTokenSpan, TokenSpanned},
     math::round_up,
-    span::{HasSpan, MayHasSpan, Spanned},
 };
 
 #[derive(Debug, Default)]
@@ -134,12 +134,9 @@ impl SymbolTable {
         match ty {
             VarType::Void => panic!("Zero init void"),
             VarType::Base(base) => ast::Initializer::zero_base(*base),
-            VarType::Pointer(_) => {
-                ast::Initializer::SingleInit(ast::Expression::Constant(Spanned {
-                    data: ast::Const::Ulong(0),
-                    span: 0..0,
-                }))
-            }
+            VarType::Pointer(_) => ast::Initializer::SingleInit(ast::Expression::Constant(
+                TokenSpanned::new_null(ast::Const::Ulong(0)),
+            )),
             VarType::Array { element, size } => {
                 let inits = vec![self.zero_init(element); *size];
                 ast::Initializer::CompoundInit(inits)
@@ -251,21 +248,21 @@ pub enum Error {
     #[error("Incompatible types: {0:?}")]
     IncompatibleTypes(std::ops::Range<usize>),
     #[error("Function redefined: {0}")]
-    Redefined(Spanned<EcoString>),
+    Redefined(TokenSpanned<EcoString>),
     #[error("Static function declaration follows non-static : {0}")]
-    StaticFunAfterNonStatic(Spanned<EcoString>),
+    StaticFunAfterNonStatic(TokenSpanned<EcoString>),
     #[error("Bad Initializer")]
-    BadInitializer(Spanned<EcoString>),
+    BadInitializer(TokenSpanned<EcoString>),
     #[error("Incompatible linkage: {0}")]
-    IncompatibleLinkage(Spanned<EcoString>),
+    IncompatibleLinkage(TokenSpanned<EcoString>),
     #[error("Function declaration in block scope has a body")]
-    BlockScopeFunWithBody(Spanned<EcoString>),
+    BlockScopeFunWithBody(TokenSpanned<EcoString>),
     #[error("For loop init must not has storage class")]
-    BadForInit(Spanned<EcoString>),
+    BadForInit(TokenSpanned<EcoString>),
 }
 
-impl HasSpan for Error {
-    fn span(&self) -> std::ops::Range<usize> {
+impl HasTokenSpan for Error {
+    fn token_span(&self) -> std::ops::Range<usize> {
         match self {
             Error::IncompatibleTypes(span) => span.clone(),
             Error::Redefined(ident) => ident.span.clone(),
@@ -348,11 +345,11 @@ fn convert_by_assignment(exp: &mut ast::Expression, ty: &ast::VarType) -> Result
     }
 
     if ety == &ast::VarType::Void {
-        return Err(Error::IncompatibleTypes(exp.span()));
+        return Err(Error::IncompatibleTypes(exp.token_span()));
     }
 
     if ety.is_struct() || ty.is_struct() {
-        return Err(Error::IncompatibleTypes(exp.span()));
+        return Err(Error::IncompatibleTypes(exp.token_span()));
     }
 
     if !ety.is_pointer() && !ty.is_pointer() {
@@ -377,7 +374,7 @@ fn convert_by_assignment(exp: &mut ast::Expression, ty: &ast::VarType) -> Result
         return Ok(());
     }
 
-    Err(Error::IncompatibleTypes(exp.span()))
+    Err(Error::IncompatibleTypes(exp.token_span()))
 }
 
 impl TypeChecker {
@@ -425,7 +422,7 @@ impl TypeChecker {
             }
             Initializer::SingleInit(exp) => {
                 if let ast::VarType::Array { .. } = target {
-                    return Err(Error::IncompatibleTypes(exp.span()));
+                    return Err(Error::IncompatibleTypes(exp.token_span()));
                 }
 
                 Ok(vec![self.static_init(target, exp)?])
@@ -485,18 +482,18 @@ impl TypeChecker {
         exp: &Expression,
     ) -> Result<StaticInit, Error> {
         match exp {
-            ast::Expression::Constant(Spanned { data, .. }) => data
+            ast::Expression::Constant(TokenSpanned { data, .. }) => data
                 .get_static_init(target)
-                .ok_or_else(|| Error::IncompatibleTypes(exp.span())),
+                .ok_or_else(|| Error::IncompatibleTypes(exp.token_span())),
 
-            ast::Expression::String(Spanned { data, .. }, _) => match target {
+            ast::Expression::String(TokenSpanned { data, .. }, _) => match target {
                 ast::VarType::Array { element, size } => {
                     if !element.is_character() {
-                        return Err(Error::IncompatibleTypes(exp.span()));
+                        return Err(Error::IncompatibleTypes(exp.token_span()));
                     }
 
                     if data.len() > *size {
-                        return Err(Error::IncompatibleTypes(exp.span()));
+                        return Err(Error::IncompatibleTypes(exp.token_span()));
                     }
 
                     Ok(StaticInit::String {
@@ -523,12 +520,12 @@ impl TypeChecker {
 
                         Ok(StaticInit::Pointer(s))
                     } else {
-                        Err(Error::IncompatibleTypes(exp.span()))
+                        Err(Error::IncompatibleTypes(exp.token_span()))
                     }
                 }
-                _ => Err(Error::IncompatibleTypes(exp.span())),
+                _ => Err(Error::IncompatibleTypes(exp.token_span())),
             },
-            _ => Err(Error::IncompatibleTypes(exp.span())),
+            _ => Err(Error::IncompatibleTypes(exp.token_span())),
         }
     }
 
@@ -771,7 +768,7 @@ impl TypeChecker {
         target: &ast::VarType,
         init: &mut ast::Initializer,
     ) -> Result<(), Error> {
-        let span = init.may_span();
+        let span = init.may_token_span();
         match (target, init) {
             (ast::VarType::Array { element, size }, ast::Initializer::CompoundInit(list)) => {
                 if list.len() > *size {
@@ -804,7 +801,7 @@ impl TypeChecker {
             }
             (_, ast::Initializer::SingleInit(e)) => {
                 if target.is_array() {
-                    return Err(Error::IncompatibleTypes(e.span()));
+                    return Err(Error::IncompatibleTypes(e.token_span()));
                 }
                 self.check_expression_and_convert(e)?;
                 convert_by_assignment(e, target)?;
@@ -858,7 +855,7 @@ impl TypeChecker {
                 match op.data {
                     ast::UnaryOp::Not => {
                         if !self.check_expression_and_convert(exp)?.is_scalar() {
-                            return Err(Error::IncompatibleTypes(exp.span()));
+                            return Err(Error::IncompatibleTypes(exp.token_span()));
                         }
                         *ty = ast::BaseType::Int.into();
                     }
@@ -866,7 +863,7 @@ impl TypeChecker {
                         *ty = self.check_expression(exp)?;
                         if *ty == ast::BaseType::Double.into() || ty.is_pointer() || ty.is_struct()
                         {
-                            return Err(Error::IncompatibleTypes(exp.span()));
+                            return Err(Error::IncompatibleTypes(exp.token_span()));
                         }
                         if ty.is_character() {
                             *ty = ast::BaseType::Int.into();
@@ -876,7 +873,7 @@ impl TypeChecker {
                     ast::UnaryOp::Negate => {
                         *ty = self.check_expression(exp)?;
                         if ty.is_pointer() || !ty.is_scalar() {
-                            return Err(Error::IncompatibleTypes(exp.span()));
+                            return Err(Error::IncompatibleTypes(exp.token_span()));
                         }
                         if ty.is_character() {
                             *ty = ast::BaseType::Int.into();
@@ -893,7 +890,7 @@ impl TypeChecker {
                 match op {
                     ast::BinaryOp::And | ast::BinaryOp::Or => {
                         if !tyl.is_scalar() || !tyr.is_scalar() {
-                            return Err(Error::IncompatibleTypes(exp.span()));
+                            return Err(Error::IncompatibleTypes(exp.token_span()));
                         }
                         *ty = ast::BaseType::Int.into();
                     }
@@ -902,14 +899,14 @@ impl TypeChecker {
                             if let Some(cty) = common_pointer_type(lhs, rhs) {
                                 cty.clone()
                             } else {
-                                return Err(Error::IncompatibleTypes(exp.span()));
+                                return Err(Error::IncompatibleTypes(exp.token_span()));
                             }
                         } else if let (ast::VarType::Base(tyl), ast::VarType::Base(tyr)) =
                             (tyl, tyr)
                         {
                             common_base_type(tyl, tyr).into()
                         } else {
-                            return Err(Error::IncompatibleTypes(exp.span()));
+                            return Err(Error::IncompatibleTypes(exp.token_span()));
                         };
 
                         convert_to(lhs, &cty);
@@ -930,7 +927,7 @@ impl TypeChecker {
                             convert_to(lhs, &VarType::Base(ast::BaseType::Long));
                             *ty = tyr.clone();
                         } else {
-                            return Err(Error::IncompatibleTypes(exp.span()));
+                            return Err(Error::IncompatibleTypes(exp.token_span()));
                         }
                     }
                     ast::BinaryOp::Subtract => {
@@ -948,7 +945,7 @@ impl TypeChecker {
                         {
                             *ty = ast::BaseType::Long.into();
                         } else {
-                            return Err(Error::IncompatibleTypes(exp.span()));
+                            return Err(Error::IncompatibleTypes(exp.token_span()));
                         }
                     }
                     _ => match op {
@@ -959,32 +956,32 @@ impl TypeChecker {
                                 convert_to(rhs, &cty);
                                 *ty = cty;
                             } else {
-                                return Err(Error::IncompatibleTypes(exp.span()));
+                                return Err(Error::IncompatibleTypes(exp.token_span()));
                             }
                         }
                         ast::BinaryOp::Remainder => {
                             if let (ast::VarType::Base(tyl), ast::VarType::Base(tyr)) = (tyl, tyr) {
                                 let cty = common_base_type(tyl, tyr);
                                 if cty == ast::BaseType::Double {
-                                    return Err(Error::IncompatibleTypes(exp.span()));
+                                    return Err(Error::IncompatibleTypes(exp.token_span()));
                                 }
                                 let cty = cty.into();
                                 convert_to(lhs, &cty);
                                 convert_to(rhs, &cty);
                                 *ty = cty;
                             } else {
-                                return Err(Error::IncompatibleTypes(exp.span()));
+                                return Err(Error::IncompatibleTypes(exp.token_span()));
                             }
                         }
                         _ => {
                             if (tyl != tyr) && (tyl.is_pointer() || tyr.is_pointer()) {
-                                return Err(Error::IncompatibleTypes(exp.span()));
+                                return Err(Error::IncompatibleTypes(exp.token_span()));
                             }
 
                             if !self.sym_table.is_complete(&tyl)
                                 || !self.sym_table.is_complete(&tyr)
                             {
-                                return Err(Error::IncompatibleTypes(exp.span()));
+                                return Err(Error::IncompatibleTypes(exp.token_span()));
                             }
 
                             if let (ast::VarType::Base(tyl), ast::VarType::Base(tyr)) = (tyl, tyr) {
@@ -1003,7 +1000,7 @@ impl TypeChecker {
             crate::ast::Expression::Assignment { lhs, rhs } => {
                 let tyl = self.check_expression_and_convert(lhs)?;
                 if !lhs.is_lvalue() {
-                    return Err(Error::IncompatibleTypes(lhs.span()));
+                    return Err(Error::IncompatibleTypes(lhs.token_span()));
                 }
                 self.check_expression_and_convert(rhs)?;
                 convert_by_assignment(rhs, &tyl)?;
@@ -1016,7 +1013,7 @@ impl TypeChecker {
             } => {
                 let cond_ty = self.check_expression_and_convert(condition)?;
                 if !cond_ty.is_scalar() {
-                    return Err(Error::IncompatibleTypes(condition.span()));
+                    return Err(Error::IncompatibleTypes(condition.token_span()));
                 }
                 let tyl = self.check_expression_and_convert(then_branch)?;
                 let tyr = self.check_expression_and_convert(else_branch)?;
@@ -1027,18 +1024,18 @@ impl TypeChecker {
                     if let Some(cty) = common_pointer_type(then_branch, else_branch) {
                         cty.clone()
                     } else {
-                        return Err(Error::IncompatibleTypes(exp.span()));
+                        return Err(Error::IncompatibleTypes(exp.token_span()));
                     }
                 } else if tyl.is_struct() || tyr.is_struct() {
                     if tyl == tyr {
                         tyl.clone()
                     } else {
-                        return Err(Error::IncompatibleTypes(exp.span()));
+                        return Err(Error::IncompatibleTypes(exp.token_span()));
                     }
                 } else if tyl == ast::VarType::Void && tyr == ast::VarType::Void {
                     ast::VarType::Void
                 } else {
-                    return Err(Error::IncompatibleTypes(exp.span()));
+                    return Err(Error::IncompatibleTypes(exp.token_span()));
                 };
 
                 convert_to(then_branch, &cty);
@@ -1095,19 +1092,19 @@ impl TypeChecker {
             },
             crate::ast::Expression::Cast { target, exp } => {
                 self.validate_var_type(target, false)
-                    .map_err(|_| Error::IncompatibleTypes(exp.span()))?;
+                    .map_err(|_| Error::IncompatibleTypes(exp.token_span()))?;
                 let ty = self.check_expression_and_convert(exp)?;
 
                 if (target.is_pointer() && ty == ast::BaseType::Double.into())
                     || (ty.is_pointer() && target == &VarType::Base(ast::BaseType::Double))
                 {
-                    return Err(Error::IncompatibleTypes(exp.span()));
+                    return Err(Error::IncompatibleTypes(exp.token_span()));
                 }
 
                 if target == &VarType::Void {
                     Ok(target.clone())
                 } else if !target.is_scalar() || !ty.is_scalar() {
-                    Err(Error::IncompatibleTypes(exp.span()))
+                    Err(Error::IncompatibleTypes(exp.token_span()))
                 } else {
                     Ok(target.clone())
                 }
@@ -1116,19 +1113,19 @@ impl TypeChecker {
                 let ty = self.check_expression_and_convert(exp)?;
                 if let ast::VarType::Pointer(ty) = ty {
                     match ty.as_ref() {
-                        ast::Ty::Fun(_) => Err(Error::IncompatibleTypes(exp.span())),
+                        ast::Ty::Fun(_) => Err(Error::IncompatibleTypes(exp.token_span())),
                         ast::Ty::Var(ast::VarType::Void) => {
-                            Err(Error::IncompatibleTypes(exp.span()))
+                            Err(Error::IncompatibleTypes(exp.token_span()))
                         }
                         ast::Ty::Var(ty) => Ok(ty.clone()),
                     }
                 } else {
-                    Err(Error::IncompatibleTypes(exp.span()))
+                    Err(Error::IncompatibleTypes(exp.token_span()))
                 }
             }
             ast::Expression::AddrOf { exp, ty } => {
                 if !exp.is_lvalue() {
-                    return Err(Error::IncompatibleTypes(exp.span()));
+                    return Err(Error::IncompatibleTypes(exp.token_span()));
                 }
 
                 let exp_ty = self.check_expression(exp)?;
@@ -1145,11 +1142,11 @@ impl TypeChecker {
                         ast::VarType::Pointer(ty) => {
                             if let ast::Ty::Var(ty) = ty.as_ref() {
                                 if !self.sym_table.is_complete(ty) {
-                                    return Err(Error::IncompatibleTypes(exp.span()));
+                                    return Err(Error::IncompatibleTypes(exp.token_span()));
                                 }
                                 ty.clone()
                             } else {
-                                return Err(Error::IncompatibleTypes(exp.span()));
+                                return Err(Error::IncompatibleTypes(exp.token_span()));
                             }
                         }
                         _ => unreachable!(),
@@ -1160,17 +1157,17 @@ impl TypeChecker {
                         ast::VarType::Pointer(ty) => {
                             if let ast::Ty::Var(ty) = ty.as_ref() {
                                 if !self.sym_table.is_complete(ty) {
-                                    return Err(Error::IncompatibleTypes(exp.span()));
+                                    return Err(Error::IncompatibleTypes(exp.token_span()));
                                 }
                                 ty.clone()
                             } else {
-                                return Err(Error::IncompatibleTypes(exp.span()));
+                                return Err(Error::IncompatibleTypes(exp.token_span()));
                             }
                         }
                         _ => unreachable!(),
                     };
                 } else {
-                    return Err(Error::IncompatibleTypes(exp.span()));
+                    return Err(Error::IncompatibleTypes(exp.token_span()));
                 }
 
                 Ok(ty.clone())
@@ -1179,13 +1176,13 @@ impl TypeChecker {
             ast::Expression::Sizeof(exp) => {
                 let ty = self.check_expression(exp)?;
                 if !self.sym_table.is_complete(&ty) {
-                    return Err(Error::IncompatibleTypes(exp.span()));
+                    return Err(Error::IncompatibleTypes(exp.token_span()));
                 }
 
                 if let ast::VarType::Pointer(ty) = ty {
                     if let ast::Ty::Fun(_) = ty.as_ref() {
                         // I think this is legal but throw an error to pass tests
-                        return Err(Error::IncompatibleTypes(exp.span()));
+                        return Err(Error::IncompatibleTypes(exp.token_span()));
                     }
                 }
 
@@ -1193,16 +1190,16 @@ impl TypeChecker {
             }
             ast::Expression::SizeofType(ty) => {
                 if !self.sym_table.is_complete(&ty.data) {
-                    return Err(Error::IncompatibleTypes(exp.span()));
+                    return Err(Error::IncompatibleTypes(exp.token_span()));
                 }
                 if let ast::VarType::Pointer(ty) = &ty.data {
                     if let ast::Ty::Fun(_) = ty.as_ref() {
                         // I think this is legal but throw an error to pass tests
-                        return Err(Error::IncompatibleTypes(exp.span()));
+                        return Err(Error::IncompatibleTypes(exp.token_span()));
                     }
                 }
                 self.validate_var_type(&ty.data, false)
-                    .map_err(|_| Error::IncompatibleTypes(exp.span()))?;
+                    .map_err(|_| Error::IncompatibleTypes(exp.token_span()))?;
                 Ok(ast::BaseType::Ulong.into())
             }
             ast::Expression::Dot {
@@ -1217,10 +1214,10 @@ impl TypeChecker {
                         *ty = member.ty.clone();
                         Ok(ty.clone())
                     } else {
-                        Err(Error::IncompatibleTypes(exp.span()))
+                        Err(Error::IncompatibleTypes(exp.token_span()))
                     }
                 } else {
-                    Err(Error::IncompatibleTypes(exp.span()))
+                    Err(Error::IncompatibleTypes(exp.token_span()))
                 }
             }
             ast::Expression::Arrow {
@@ -1232,17 +1229,17 @@ impl TypeChecker {
                     let s = if let Ty::Var(VarType::Struct(s)) = box_ty.as_ref() {
                         s
                     } else {
-                        return Err(Error::IncompatibleTypes(exp.span()));
+                        return Err(Error::IncompatibleTypes(exp.token_span()));
                     };
                     let StructDef { members, .. } = self.sym_table.struct_def(s);
                     if let Some(member) = members.iter().find(|name| name.name == member.data) {
                         *ty = member.ty.clone();
                         Ok(ty.clone())
                     } else {
-                        Err(Error::IncompatibleTypes(exp.span()))
+                        Err(Error::IncompatibleTypes(exp.token_span()))
                     }
                 } else {
-                    Err(Error::IncompatibleTypes(exp.span()))
+                    Err(Error::IncompatibleTypes(exp.token_span()))
                 }
             }
         }
@@ -1265,7 +1262,7 @@ impl TypeChecker {
                 if self.sym_table.is_complete(&VarType::Struct(s.clone())) {
                     Ok(VarType::Struct(s))
                 } else {
-                    Err(Error::IncompatibleTypes(exp.span()))
+                    Err(Error::IncompatibleTypes(exp.token_span()))
                 }
             }
             t => Ok(t),
@@ -1279,7 +1276,7 @@ impl TypeChecker {
     ) -> Result<(), Error> {
         match stmt {
             crate::ast::Statement::Return(exp) => match (ret_type, exp) {
-                (ast::VarType::Void, Some(exp)) => Err(Error::IncompatibleTypes(exp.span())),
+                (ast::VarType::Void, Some(exp)) => Err(Error::IncompatibleTypes(exp.token_span())),
                 (ast::VarType::Void, None) => Ok(()),
                 (ret_type, Some(exp)) => {
                     self.check_expression_and_convert(exp)?;
@@ -1301,7 +1298,7 @@ impl TypeChecker {
                 let cond_ty = self.check_expression_and_convert(condition)?;
 
                 if !cond_ty.is_scalar() {
-                    return Err(Error::IncompatibleTypes(condition.span()));
+                    return Err(Error::IncompatibleTypes(condition.token_span()));
                 }
 
                 self.check_statement(then_branch, ret_type)?;
@@ -1323,7 +1320,7 @@ impl TypeChecker {
             } => {
                 let cond_ty = self.check_expression_and_convert(condition)?;
                 if !cond_ty.is_scalar() {
-                    return Err(Error::IncompatibleTypes(condition.span()));
+                    return Err(Error::IncompatibleTypes(condition.token_span()));
                 }
                 self.check_statement(body, ret_type)?;
                 Ok(())
@@ -1336,7 +1333,7 @@ impl TypeChecker {
                 self.check_statement(body, ret_type)?;
                 let cond_ty = self.check_expression_and_convert(condition)?;
                 if !cond_ty.is_scalar() {
-                    return Err(Error::IncompatibleTypes(condition.span()));
+                    return Err(Error::IncompatibleTypes(condition.token_span()));
                 }
                 Ok(())
             }
@@ -1363,7 +1360,7 @@ impl TypeChecker {
                 if let Some(condition) = condition {
                     let cond_ty = self.check_expression_and_convert(condition)?;
                     if !cond_ty.is_scalar() {
-                        return Err(Error::IncompatibleTypes(condition.span()));
+                        return Err(Error::IncompatibleTypes(condition.token_span()));
                     }
                 }
                 if let Some(step) = step {

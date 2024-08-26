@@ -1,4 +1,4 @@
-use crate::{ast, span::HasSpan};
+use crate::{ast, lexer::HasTokenSpan};
 use ecow::EcoString;
 
 #[derive(Debug, Default)]
@@ -14,8 +14,8 @@ pub enum Error {
     ContinueNotInLoop(std::ops::Range<usize>),
 }
 
-impl HasSpan for Error {
-    fn span(&self) -> std::ops::Range<usize> {
+impl HasTokenSpan for Error {
+    fn token_span(&self) -> std::ops::Range<usize> {
         match self {
             Error::BreakNotInLoop(span) => span.clone(),
             Error::ContinueNotInLoop(span) => span.clone(),

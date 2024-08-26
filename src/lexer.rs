@@ -1,9 +1,85 @@
-use std::sync::LazyLock;
+use std::{
+    fmt::Display,
+    ops::Range,
+    sync::{Arc, LazyLock},
+};
 
 use ecow::EcoString;
 use regex::bytes::Regex;
 
-use crate::span::{MayHasSpan, Spanned};
+use crate::span::{self, MayHasSpan, Spanned};
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TokenSpanned<T> {
+    pub data: T,
+    pub span: Range<usize>,
+}
+
+impl<T> TokenSpanned<T> {
+    pub fn new_null(data: T) -> Self {
+        Self { data, span: 0..0 }
+    }
+
+    pub fn map<U>(self, f: impl FnOnce(T) -> U) -> TokenSpanned<U> {
+        TokenSpanned {
+            data: f(self.data),
+            span: self.span,
+        }
+    }
+}
+
+impl<T: Display> Display for TokenSpanned<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", self.data)
+    }
+}
+
+pub struct TokenSpannedError<'a, E> {
+    pub error: E,
+    pub src: Arc<Vec<u8>>,
+    pub tokens: &'a [span::Spanned<Token>],
+}
+
+impl<'a, E: Display + MayHasTokenSpan> std::fmt::Debug for TokenSpannedError<'a, E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        if let Some(span) = self.error.may_token_span() {
+            let span = self.tokens[span.start].span.start..self.tokens[span.end - 1].span.end;
+            writeln!(f)?;
+            write!(
+                f,
+                "{}",
+                span::SpannedError::new(
+                    span::Spanned {
+                        data: &self.error,
+                        span,
+                    },
+                    self.src.clone()
+                )
+            )?
+        } else {
+            todo!()
+        }
+
+        Ok(())
+    }
+}
+
+pub trait HasTokenSpan {
+    fn token_span(&self) -> Range<usize>;
+}
+
+pub trait MayHasTokenSpan {
+    fn may_token_span(&self) -> Option<Range<usize>>;
+}
+
+impl<T> MayHasTokenSpan for T
+where
+    T: HasTokenSpan,
+{
+    fn may_token_span(&self) -> Option<Range<usize>> {
+        Some(self.token_span())
+    }
+}
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Constant {

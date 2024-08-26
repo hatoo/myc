@@ -11,7 +11,7 @@ use clap::Parser;
 use myc::{
     ast::parse,
     codegen::CodeGen,
-    lexer::lexer,
+    lexer::{lexer, TokenSpannedError},
     semantics::{LoopLabel, TypeChecker, VarResolver},
     span::SpannedError,
 };
@@ -79,9 +79,7 @@ fn main() {
         return;
     }
 
-    let mut program = parse(&tokens)
-        .map_err(|err| SpannedError::new(err, src.clone()))
-        .unwrap();
+    let mut program = parse(&tokens).unwrap();
 
     if opts.parse {
         dbg!(program);
@@ -90,18 +88,30 @@ fn main() {
 
     VarResolver::default()
         .resolve_program(&mut program)
-        .map_err(|err| SpannedError::new(err, src.clone()))
+        .map_err(|e| TokenSpannedError {
+            error: e,
+            src: src.clone(),
+            tokens: &tokens,
+        })
         .unwrap();
 
     LoopLabel::default()
         .label_program(&mut program)
-        .map_err(|err| SpannedError::new(err, src.clone()))
+        .map_err(|e| TokenSpannedError {
+            error: e,
+            src: src.clone(),
+            tokens: &tokens,
+        })
         .unwrap();
 
     let mut type_checker = TypeChecker::default();
     type_checker
         .check_program(&mut program)
-        .map_err(|err| SpannedError::new(err, src.clone()))
+        .map_err(|e| TokenSpannedError {
+            error: e,
+            src: src.clone(),
+            tokens: &tokens,
+        })
         .unwrap();
 
     if opts.validate {
