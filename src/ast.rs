@@ -1608,7 +1608,7 @@ impl<'a> Parser<'a> {
                         let mut s = value.clone();
                         self.advance();
                         // adjacent string literals must be concatenated
-                        while let Some(Spanned {
+                        while let Some(TokenSpanned {
                             data: Token::Constant(Constant::String(s2)),
                             span,
                         }) = self.peek()
@@ -1621,7 +1621,7 @@ impl<'a> Parser<'a> {
                         let len = s.len();
 
                         Ok(Expression::String(
-                            Spanned {
+                            TokenSpanned {
                                 data: s,
                                 span: start..end,
                             },
@@ -1644,7 +1644,7 @@ impl<'a> Parser<'a> {
 
                     self.advance();
 
-                    if let Some(Spanned {
+                    if let Some(TokenSpanned {
                         data: Token::OpenParen,
                         ..
                     }) = self.peek()
@@ -1662,13 +1662,13 @@ impl<'a> Parser<'a> {
                         }
 
                         Ok(Expression::FunctionCall {
-                            name: Spanned { data: ident, span },
+                            name: TokenSpanned { data: ident, span },
                             args,
                             ty: VarType::Void,
                         })
                     } else {
                         Ok(Expression::Var(
-                            Spanned {
+                            TokenSpanned {
                                 data: ident,
                                 span: span.clone(),
                             },
@@ -1676,7 +1676,7 @@ impl<'a> Parser<'a> {
                         ))
                     }
                 }
-                _ => Err(Error::MalformedExpression(token.clone())),
+                _ => Err(Error::MalformedExpression(token.map(Clone::clone))),
             }
         } else {
             Err(Error::UnexpectedEof)
@@ -1718,7 +1718,7 @@ impl<'a> Parser<'a> {
 
     fn parse_postfix_op(&mut self) -> Result<PostfixOp, ()> {
         match self.peek() {
-            Some(Spanned {
+            Some(TokenSpanned {
                 data: Token::OpenSquareBracket,
                 ..
             }) => {
@@ -1727,14 +1727,14 @@ impl<'a> Parser<'a> {
                 self.expect(Token::CloseSquareBracket)?;
                 Ok(PostfixOp::Subscript(exp))
             }
-            Some(Spanned {
+            Some(TokenSpanned {
                 data: Token::Dot, ..
             }) => {
                 self.advance();
                 let ident = self.expect_ident()?;
                 Ok(PostfixOp::Dot(ident))
             }
-            Some(Spanned {
+            Some(TokenSpanned {
                 data: Token::Arrow, ..
             }) => {
                 self.advance();
@@ -1762,8 +1762,8 @@ impl<'a> Parser<'a> {
     fn parse_unary_exp(&mut self) -> Result<Expression, Error> {
         if let Some(token) = self.peek() {
             match &token.data {
-                _ if UnaryOp::try_from(&token.data).is_ok() => {
-                    let op = UnaryOp::try_from(&token.data).unwrap();
+                _ if UnaryOp::try_from(token.data).is_ok() => {
+                    let op = UnaryOp::try_from(token.data).unwrap();
                     let op = token.clone().map(|_| op);
                     self.advance();
                     let exp = self.parse_cast_exp()?;
@@ -1796,7 +1796,7 @@ impl<'a> Parser<'a> {
                         let start = self.expect(Token::OpenParen)?.span.start;
                         let ty = self.parse_type_name()?;
                         let end = self.expect(Token::CloseParen)?.span.end;
-                        Ok(Expression::SizeofType(Spanned {
+                        Ok(Expression::SizeofType(TokenSpanned {
                             data: ty,
                             span: start..end,
                         }))
@@ -1809,20 +1809,21 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_abstract_declarator(&mut self) -> Result<Spanned<Declarator>, Error> {
-        if let Ok(Spanned { span: aspan, .. }) = self.expect(Token::Asterisk) {
+    fn parse_abstract_declarator(&mut self) -> Result<TokenSpanned<Declarator>, Error> {
+        if let Ok(TokenSpanned { span: aspan, .. }) = self.expect(Token::Asterisk) {
             let aspan = aspan.clone();
-            if let Ok(Spanned { data, span }) = self.atomic(|s| s.parse_abstract_declarator()) {
-                Ok(Spanned {
-                    data: Declarator::Pointer(Spanned {
+            if let Ok(TokenSpanned { data, span }) = self.atomic(|s| s.parse_abstract_declarator())
+            {
+                Ok(TokenSpanned {
+                    data: Declarator::Pointer(TokenSpanned {
                         data: Box::new(data),
                         span: span.clone(),
                     }),
                     span: aspan.start..span.end,
                 })
             } else {
-                Ok(Spanned {
-                    data: Declarator::Pointer(Spanned {
+                Ok(TokenSpanned {
+                    data: Declarator::Pointer(TokenSpanned {
                         data: Box::new(Declarator::Ident("".into())),
                         span: aspan.clone(),
                     }),
@@ -1834,7 +1835,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_direct_abstract_declarator(&mut self) -> Result<Spanned<Declarator>, Error> {
+    fn parse_direct_abstract_declarator(&mut self) -> Result<TokenSpanned<Declarator>, Error> {
         let r = self.atomic(|s| {
             s.expect(Token::OpenParen)?;
             let mut decl = s.parse_abstract_declarator()?;
@@ -1842,7 +1843,7 @@ impl<'a> Parser<'a> {
             let sizes = s.many0(|s| s.parse_square_constant());
 
             for s in sizes {
-                decl = Spanned {
+                decl = TokenSpanned {
                     data: Declarator::Array {
                         decl: decl.map(Box::new),
                         size: s.data,
@@ -1857,12 +1858,12 @@ impl<'a> Parser<'a> {
             Ok(r)
         } else {
             let sizes = self.many1(|s| s.parse_square_constant())?;
-            let mut decl = Spanned {
+            let mut decl = TokenSpanned {
                 data: Declarator::Ident("".into()),
                 span: 0..0,
             };
             for s in sizes {
-                decl = Spanned {
+                decl = TokenSpanned {
                     data: Declarator::Array {
                         decl: decl.map(Box::new),
                         size: s.data,
@@ -1917,8 +1918,8 @@ impl<'a> Parser<'a> {
             let op = match token.data {
                 Token::Equal => Op::Assign,
                 Token::Question => Op::Condition,
-                _ if BinaryOp::try_from(&token.data).is_ok() => {
-                    Op::Binary(BinaryOp::try_from(&token.data).unwrap())
+                _ if BinaryOp::try_from(token.data).is_ok() => {
+                    Op::Binary(BinaryOp::try_from(token.data).unwrap())
                 }
                 _ => break,
             };
@@ -1998,6 +1999,6 @@ impl<'a> Parser<'a> {
 
 enum PostfixOp {
     Subscript(Expression),
-    Dot(Spanned<EcoString>),
-    Arrow(Spanned<EcoString>),
+    Dot(TokenSpanned<EcoString>),
+    Arrow(TokenSpanned<EcoString>),
 }
