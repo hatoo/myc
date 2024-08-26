@@ -1,9 +1,13 @@
-use std::{fmt::Display, ops::Range, sync::LazyLock};
+use std::{
+    fmt::Display,
+    ops::Range,
+    sync::{Arc, LazyLock},
+};
 
 use ecow::EcoString;
 use regex::bytes::Regex;
 
-use crate::span::{MayHasSpan, Spanned};
+use crate::span::{self, MayHasSpan, Spanned};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TokenSpanned<T> {
@@ -27,6 +31,36 @@ impl<T> TokenSpanned<T> {
 impl<T: Display> Display for TokenSpanned<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{}", self.data)
+    }
+}
+
+pub struct TokenSpannedError<'a, E> {
+    pub error: E,
+    pub src: Arc<Vec<u8>>,
+    pub tokens: &'a [span::Spanned<Token>],
+}
+
+impl<'a, E: Display + MayHasTokenSpan> std::fmt::Debug for TokenSpannedError<'a, E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        if let Some(span) = self.error.may_token_span() {
+            let span = self.tokens[span.start].span.start..self.tokens[span.end - 1].span.end;
+            writeln!(f)?;
+            write!(
+                f,
+                "{}",
+                span::SpannedError::new(
+                    span::Spanned {
+                        data: &self.error,
+                        span,
+                    },
+                    self.src.clone()
+                )
+            )?
+        } else {
+            todo!()
+        }
+
+        Ok(())
     }
 }
 

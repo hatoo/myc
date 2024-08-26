@@ -14,6 +14,12 @@ pub struct Spanned<T> {
     pub span: Span,
 }
 
+impl<T> HasSpan for Spanned<T> {
+    fn span(&self) -> Range<usize> {
+        self.span.clone()
+    }
+}
+
 impl<T> Display for Spanned<T>
 where
     T: Display,
