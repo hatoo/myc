@@ -903,23 +903,6 @@ impl<'a> CodeGen<'a> {
                     body.push(Instruction::Label(label.clone()));
                 }
                 tacky::Instruction::FunCall { callee, args, dst } => {
-                    /*
-                    let (callee, _ty) = match &self.symbol_table[name] {
-                        semantics::type_check::Attr::Fun { ty, .. } => {
-                            (Operand::Plt(name.clone()), ty)
-                        }
-                        semantics::type_check::Attr::Local(ast::VarType::Pointer(ty))
-                        | semantics::type_check::Attr::Static {
-                            ty: ast::VarType::Pointer(ty),
-                            ..
-                        } => match ty.as_ref() {
-                            ast::Ty::Fun(ty) => (Operand::Pseudo(Pseudo::var(name.clone())), ty),
-                            _ => unreachable!(),
-                        },
-                        _ => unreachable!(),
-                    };
-                    */
-
                     let (int_dests, double_dests, return_in_memory) = if let Some(retval) = dst {
                         self.classify_return_value(retval)
                     } else {
@@ -1002,7 +985,13 @@ impl<'a> CodeGen<'a> {
                         }
                     }
 
-                    body.push(Instruction::Call(callee.into()));
+                    body.push(Instruction::Call(
+                        if let Attr::Fun { .. } = self.symbol_table[callee.var()] {
+                            Operand::Plt(callee.var().clone())
+                        } else {
+                            callee.into()
+                        },
+                    ));
 
                     let bytes_to_remove = 8 * stack_len + stack_padding;
 

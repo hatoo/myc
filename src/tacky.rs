@@ -723,7 +723,16 @@ impl<'a> InstructionGenerator<'a> {
                 } else {
                     Some(self.make_tmp_local(ty.clone()))
                 };
-                let callee = self.add_expression_and_convert(callee);
+
+                let callee = if let ast::Expression::Var(name, _) = callee.as_ref() {
+                    if let Attr::Fun { .. } = self.symbol_table[&name.data] {
+                        Val::Var(name.data.clone())
+                    } else {
+                        self.add_expression_and_convert(callee)
+                    }
+                } else {
+                    self.add_expression_and_convert(callee)
+                };
 
                 self.make_tmp_local(ty.clone());
                 let args = args
