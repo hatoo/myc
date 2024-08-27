@@ -1721,7 +1721,9 @@ fn pseudo_to_stack(
                     semantics::type_check::Attr::Constant { .. } => {
                         *operand = Operand::Data(name.clone(), *offset as _)
                     }
-                    semantics::type_check::Attr::Fun { .. } => todo!(),
+                    semantics::type_check::Attr::Fun { .. } => {
+                        *operand = Operand::Plt(name.clone());
+                    }
                     semantics::type_check::Attr::Struct(StructDef {
                         alignment, size, ..
                     }) => match known_vars.entry(name.clone()) {
