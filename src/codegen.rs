@@ -833,7 +833,7 @@ impl<'a> CodeGen<'a> {
                     }
                     Val::Var(src_name) => {
                         let size = self.symbol_table.size(&src.ty(self.symbol_table));
-                        let Val::Var(dst) = dst else { unreachable!() };
+                        let dst = dst.var();
                         for (asm, offset) in divide_into_assembly_sizes(size) {
                             body.push(Instruction::Mov {
                                 ty: asm,

@@ -164,6 +164,13 @@ pub enum Val {
 }
 
 impl Val {
+    pub fn var(&self) -> &EcoString {
+        match self {
+            Val::Constant(_) => panic!("Expected variable, found constant"),
+            Val::Var(var) => var,
+        }
+    }
+
     pub fn ty(&self, symbol_table: &SymbolTable) -> ast::VarType {
         match self {
             Val::Constant(c) => match c {
