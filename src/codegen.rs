@@ -38,10 +38,7 @@ impl AssemblyType {
             AssemblyType::QuadWord => "q",
             AssemblyType::Double => "sd",
             AssemblyType::ByteArray { .. } => {
-                panic!(
-                    "Custom backtrace: {}",
-                    std::backtrace::Backtrace::force_capture()
-                );
+                panic!("This variant must not be appeared in assembly emit stage");
             }
         }
     }
@@ -197,7 +194,10 @@ impl Operand {
                 offset: *off + offset as usize,
             }),
             Operand::Memory(base, off) => Operand::Memory(*base, *off + offset),
-            _ => unreachable!(),
+            _ => panic!(
+                "You can't offset this operand {:?}. This is your responsibility.",
+                self
+            ),
         }
     }
 }
