@@ -767,38 +767,36 @@ fn solve_type_specifier(ty: &[TokenSpanned<TypeSpecifier>]) -> Result<VarType, E
     }
 
     let base_ty = match (char, int, long) {
-        (true, _, _) => BaseType::Char,
-        (_, _, true) => BaseType::Long,
-        _ => BaseType::Int,
-    };
-
-    Ok(match base_ty {
-        BaseType::Char => {
-            if unsigned {
-                BaseType::UChar
-            } else if signed {
+        (true, _, _) => {
+            if signed {
                 BaseType::SChar
+            } else if unsigned {
+                BaseType::UChar
             } else {
                 BaseType::Char
             }
         }
-        BaseType::Long => {
-            if unsigned {
+        (_, _, true) => {
+            if signed {
+                BaseType::Long
+            } else if unsigned {
                 BaseType::Ulong
             } else {
                 BaseType::Long
             }
         }
-        BaseType::Int => {
-            if unsigned {
+        _ => {
+            if signed {
+                BaseType::Int
+            } else if unsigned {
                 BaseType::Uint
             } else {
                 BaseType::Int
             }
         }
-        _ => unreachable!(),
-    }
-    .into())
+    };
+
+    Ok(base_ty.into())
 }
 
 #[derive(Debug)]
