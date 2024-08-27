@@ -342,7 +342,7 @@ impl<'a> CodeGen<'a> {
 
     fn asm_type(&self, ty: &VarType) -> AssemblyType {
         match ty {
-            VarType::Void => unreachable!(),
+            VarType::Void => panic!("Void type must be eliminated in type checking stage"),
             VarType::Base(base) => match base {
                 BaseType::Char | BaseType::SChar | BaseType::UChar => AssemblyType::Byte,
                 BaseType::Int | BaseType::Uint => AssemblyType::LongWord,
