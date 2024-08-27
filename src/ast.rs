@@ -279,7 +279,7 @@ pub enum Expression {
         else_branch: Box<Expression>,
     },
     FunctionCall {
-        name: TokenSpanned<EcoString>,
+        callee: Box<Expression>,
         args: Vec<Expression>,
         ty: VarType,
     },
@@ -392,7 +392,7 @@ impl HasTokenSpan for Expression {
                 else_branch,
                 ..
             } => condition.token_span().start..else_branch.token_span().end,
-            Self::FunctionCall { name, .. } => name.span.clone(),
+            Self::FunctionCall { callee, .. } => callee.token_span().clone(),
             Self::Cast { exp, .. } => exp.token_span(),
             Self::Dereference(exp) => exp.token_span(),
             Self::AddrOf { exp, .. } => exp.token_span(),
@@ -1645,7 +1645,10 @@ impl<'a> Parser<'a> {
                     }
 
                     Ok(Expression::FunctionCall {
-                        name: TokenSpanned { data: ident, span },
+                        callee: Box::new(Expression::Var(
+                            TokenSpanned { data: ident, span },
+                            VarType::Void,
+                        )),
                         args,
                         ty: VarType::Void,
                     })
@@ -1690,6 +1693,13 @@ impl<'a> Parser<'a> {
                         ty: VarType::Void,
                     }
                 }
+                PostfixOp::Call(args) => {
+                    exp = Expression::FunctionCall {
+                        callee: Box::new(exp),
+                        args,
+                        ty: VarType::Void,
+                    };
+                }
             }
         }
 
@@ -1697,30 +1707,38 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_postfix_op(&mut self) -> Result<PostfixOp, ()> {
-        match self.peek()? {
-            TokenSpanned {
-                data: Token::OpenSquareBracket,
-                ..
-            } => {
+        match &self.peek()?.data {
+            Token::OpenSquareBracket => {
                 self.advance();
                 let exp = self.parse_expression(0)?;
                 self.expect(Token::CloseSquareBracket)?;
                 Ok(PostfixOp::Subscript(exp))
             }
-            TokenSpanned {
-                data: Token::Dot, ..
-            } => {
+            Token::Dot => {
                 self.advance();
                 let ident = self.expect_ident()?;
                 Ok(PostfixOp::Dot(ident))
             }
-            TokenSpanned {
-                data: Token::Arrow, ..
-            } => {
+            Token::Arrow => {
                 self.advance();
                 let ident = self.expect_ident()?;
                 Ok(PostfixOp::Arrow(ident))
             }
+            Token::OpenParen => {
+                self.advance();
+                let mut args = Vec::new();
+                if self.expect(Token::CloseParen).is_err() {
+                    loop {
+                        args.push(self.parse_expression(0)?);
+                        if self.expect(Token::Comma).is_err() {
+                            break;
+                        }
+                    }
+                    self.expect(Token::CloseParen)?;
+                }
+                Ok(PostfixOp::Call(args))
+            }
+
             _ => Err(()),
         }
     }
@@ -1978,4 +1996,5 @@ enum PostfixOp {
     Subscript(Expression),
     Dot(TokenSpanned<EcoString>),
     Arrow(TokenSpanned<EcoString>),
+    Call(Vec<Expression>),
 }

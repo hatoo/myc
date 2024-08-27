@@ -113,7 +113,7 @@ pub enum Instruction {
     },
     Label(EcoString),
     FunCall {
-        name: EcoString,
+        callee: Val,
         args: Vec<Val>,
         dst: Option<Val>,
     },
@@ -717,19 +717,21 @@ impl<'a> InstructionGenerator<'a> {
                 self.instructions.push(Instruction::Label(end_label));
                 ExpResult::PlainOperand(dst)
             }
-            ast::Expression::FunctionCall { name, args, ty } => {
+            ast::Expression::FunctionCall { callee, args, ty } => {
                 let dst = if ty == &ast::VarType::Void {
                     None
                 } else {
                     Some(self.make_tmp_local(ty.clone()))
                 };
+                let callee = self.add_expression_and_convert(callee);
+
                 self.make_tmp_local(ty.clone());
                 let args = args
                     .iter()
                     .map(|arg| self.add_expression_and_convert(arg))
                     .collect::<Vec<_>>();
                 self.instructions.push(Instruction::FunCall {
-                    name: name.data.clone(),
+                    callee,
                     args,
                     dst: dst.clone(),
                 });

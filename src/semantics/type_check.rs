@@ -1044,52 +1044,83 @@ impl TypeChecker {
                 Ok(cty)
             }
             crate::ast::Expression::FunctionCall {
-                name,
+                callee,
                 args,
                 ty: fty,
-            } => match self.sym_table.get(&name.data) {
-                Some(Attr::Fun { ty, .. }) => {
-                    if ty.params.len() != args.len() {
-                        return Err(Error::IncompatibleTypes(name.span.clone()));
-                    }
-                    let ret = ty.ret.clone();
+            } => {
+                let ty = self.check_expression_and_convert(callee)?;
 
-                    for (arg, ty) in args.iter_mut().zip(ty.params.clone().into_iter()) {
-                        self.check_expression_and_convert(arg)?;
-                        convert_by_assignment(arg, &ty)?;
-                    }
-                    *fty = ret.clone();
+                match ty {
+                    ast::VarType::Pointer(pty) => {
+                        if let ast::Ty::Fun(ty) = pty.as_ref() {
+                            if ty.params.len() != args.len() {
+                                return Err(Error::IncompatibleTypes(callee.token_span()));
+                            }
+                            let ret = ty.ret.clone();
 
-                    if ret != ast::VarType::Void && !self.sym_table.is_complete(&ret) {
-                        return Err(Error::IncompatibleTypes(name.span.clone()));
+                            for (arg, ty) in args.iter_mut().zip(ty.params.clone().into_iter()) {
+                                self.check_expression_and_convert(arg)?;
+                                convert_by_assignment(arg, &ty)?;
+                            }
+                            *fty = ret.clone();
+
+                            if ret != ast::VarType::Void && !self.sym_table.is_complete(&ret) {
+                                return Err(Error::IncompatibleTypes(callee.token_span()));
+                            }
+                            Ok(ret.clone())
+                        } else {
+                            Err(Error::IncompatibleTypes(callee.token_span()))
+                        }
                     }
-                    Ok(ret.clone())
+                    _ => Err(Error::IncompatibleTypes(callee.token_span())),
                 }
-                Some(
-                    Attr::Local(ast::VarType::Pointer(pty))
-                    | Attr::Static {
-                        ty: ast::VarType::Pointer(pty),
-                        ..
-                    },
-                ) => {
-                    if let ast::Ty::Fun(ty) = pty.as_ref() {
+                /*
+                match self.sym_table.get(&name.data) {
+                    Some(Attr::Fun { ty, .. }) => {
                         if ty.params.len() != args.len() {
                             return Err(Error::IncompatibleTypes(name.span.clone()));
                         }
                         let ret = ty.ret.clone();
 
                         for (arg, ty) in args.iter_mut().zip(ty.params.clone().into_iter()) {
-                            self.check_expression(arg)?;
+                            self.check_expression_and_convert(arg)?;
                             convert_by_assignment(arg, &ty)?;
                         }
                         *fty = ret.clone();
+
+                        if ret != ast::VarType::Void && !self.sym_table.is_complete(&ret) {
+                            return Err(Error::IncompatibleTypes(name.span.clone()));
+                        }
                         Ok(ret.clone())
-                    } else {
-                        Err(Error::IncompatibleTypes(name.span.clone()))
                     }
+                    Some(
+                        Attr::Local(ast::VarType::Pointer(pty))
+                        | Attr::Static {
+                            ty: ast::VarType::Pointer(pty),
+                            ..
+                        },
+                    ) => {
+                        if let ast::Ty::Fun(ty) = pty.as_ref() {
+                            if ty.params.len() != args.len() {
+                                return Err(Error::IncompatibleTypes(name.span.clone()));
+                            }
+                            let ret = ty.ret.clone();
+
+                            for (arg, ty) in args.iter_mut().zip(ty.params.clone().into_iter()) {
+                                self.check_expression(arg)?;
+                                convert_by_assignment(arg, &ty)?;
+                            }
+                            *fty = ret.clone();
+                            Ok(ret.clone())
+                        } else {
+                            Err(Error::IncompatibleTypes(name.span.clone()))
+                        }
+                    }
+                    _ => Err(Error::IncompatibleTypes(name.span.clone())),
                 }
-                _ => Err(Error::IncompatibleTypes(name.span.clone())),
-            },
+                */
+            }
+
             crate::ast::Expression::Cast { target, exp } => {
                 self.validate_var_type(target, false)
                     .map_err(|_| Error::IncompatibleTypes(exp.token_span()))?;

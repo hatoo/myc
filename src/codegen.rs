@@ -11,7 +11,7 @@ use crate::{
     math::round_up,
     semantics::{
         self,
-        type_check::{self, StructDef, SymbolTable},
+        type_check::{self, Attr, StructDef, SymbolTable},
     },
     tacky::{self, Val},
 };
@@ -171,6 +171,7 @@ pub enum Operand {
     Memory(Register, i32),
     Data(EcoString, i32),
     Plt(EcoString),
+    GotPcrel(EcoString),
     Indexed {
         base: Register,
         index: Register,
@@ -901,7 +902,8 @@ impl<'a> CodeGen<'a> {
                 tacky::Instruction::Label(label) => {
                     body.push(Instruction::Label(label.clone()));
                 }
-                tacky::Instruction::FunCall { name, args, dst } => {
+                tacky::Instruction::FunCall { callee, args, dst } => {
+                    /*
                     let (callee, _ty) = match &self.symbol_table[name] {
                         semantics::type_check::Attr::Fun { ty, .. } => {
                             (Operand::Plt(name.clone()), ty)
@@ -916,6 +918,7 @@ impl<'a> CodeGen<'a> {
                         },
                         _ => unreachable!(),
                     };
+                    */
 
                     let (int_dests, double_dests, return_in_memory) = if let Some(retval) = dst {
                         self.classify_return_value(retval)
@@ -999,7 +1002,7 @@ impl<'a> CodeGen<'a> {
                         }
                     }
 
-                    body.push(Instruction::Call(callee));
+                    body.push(Instruction::Call(callee.into()));
 
                     let bytes_to_remove = 8 * stack_len + stack_padding;
 
@@ -1319,14 +1322,22 @@ impl<'a> CodeGen<'a> {
                     }
                 }
                 tacky::Instruction::GetAddress { src, dst } => {
-                    let Val::Var(var) = src else { unreachable!() };
-                    body.push(Instruction::Lea {
-                        src: Operand::Pseudo(Pseudo::Mem {
-                            name: var.clone(),
-                            offset: 0,
-                        }),
-                        dst: dst.into(),
-                    });
+                    let var = src.var();
+                    if let Attr::Fun { .. } = self.symbol_table[var] {
+                        body.push(Instruction::Mov {
+                            ty: AssemblyType::QuadWord,
+                            src: Operand::GotPcrel(var.clone()),
+                            dst: dst.into(),
+                        });
+                    } else {
+                        body.push(Instruction::Lea {
+                            src: Operand::Pseudo(Pseudo::Mem {
+                                name: var.clone(),
+                                offset: 0,
+                            }),
+                            dst: dst.into(),
+                        });
+                    }
                 }
                 tacky::Instruction::CopyToOffset { src, dst, offset } => match src {
                     Val::Constant(_) => {
@@ -1721,8 +1732,12 @@ fn pseudo_to_stack(
                     semantics::type_check::Attr::Constant { .. } => {
                         *operand = Operand::Data(name.clone(), *offset as _)
                     }
-                    semantics::type_check::Attr::Fun { .. } => {
-                        *operand = Operand::Plt(name.clone());
+                    semantics::type_check::Attr::Fun { defined, .. } => {
+                        if *defined {
+                            *operand = Operand::Data(name.clone(), 0);
+                        } else {
+                            *operand = Operand::Plt(name.clone());
+                        }
                     }
                     semantics::type_check::Attr::Struct(StructDef {
                         alignment, size, ..
@@ -1814,7 +1829,7 @@ fn avoid_mov_mem_mem(insts: Vec<Instruction>) -> Vec<Instruction> {
         match inst {
             Instruction::Mov {
                 ty,
-                src: src @ (Operand::Memory(..) | Operand::Data(..)),
+                src: src @ (Operand::Memory(..) | Operand::Data(..) | Operand::GotPcrel(..)),
                 dst: dst @ (Operand::Memory(..) | Operand::Data(..)),
             } => {
                 let tmp_reg = Operand::Reg(if ty == AssemblyType::Double {
@@ -2282,6 +2297,7 @@ impl<'a> Display for SizedOperand<'a> {
             }
             Operand::Memory(reg, offset) => write!(f, "{}({})", offset, RegisterSize::Qword(reg))?,
             Operand::Plt(name) => write!(f, "{}@PLT", name)?,
+            Operand::GotPcrel(name) => write!(f, "{}@GOTPCREL(%rip)", name)?,
             Operand::Indexed { base, index, scale } => write!(
                 f,
                 "({},{},{})",

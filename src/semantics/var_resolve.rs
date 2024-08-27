@@ -358,16 +358,12 @@ impl VarResolver {
                 self.resolve_expression(else_branch)?;
                 Ok(())
             }
-            ast::Expression::FunctionCall { name, args, .. } => {
-                if let Some(var_info) = self.lookup_var(&name.data) {
-                    name.data = var_info.new_name.clone();
-                    for arg in args {
-                        self.resolve_expression(arg)?;
-                    }
-                    Ok(())
-                } else {
-                    Err(Error::UndeclaredFunction(exp.clone()))
+            ast::Expression::FunctionCall { callee, args, .. } => {
+                self.resolve_expression(callee)?;
+                for arg in args {
+                    self.resolve_expression(arg)?;
                 }
+                Ok(())
             }
             ast::Expression::Cast { target, exp } => {
                 self.resolve_var_type(target, exp.token_span())?;
