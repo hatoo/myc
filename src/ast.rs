@@ -167,61 +167,41 @@ pub enum Const {
     Double(f64),
 }
 
-impl Const {
-    pub fn get_int(&self) -> i32 {
-        match self {
-            Self::Char(i) => *i as i32,
-            Self::UChar(i) => *i as i32,
-            Self::Int(i) => *i,
-            Self::Uint(i) => *i as i32,
-            Self::Long(i) => *i as i32,
-            Self::Ulong(i) => *i as i32,
-            Self::Double(i) => *i as i32,
+macro_rules! as_inner {
+    ($c:expr, $t:ty) => {
+        match $c {
+            Self::Char(i) => *i as $t,
+            Self::UChar(i) => *i as $t,
+            Self::Int(i) => *i as $t,
+            Self::Uint(i) => *i as $t,
+            Self::Long(i) => *i as $t,
+            Self::Ulong(i) => *i as $t,
+            Self::Double(i) => *i as $t,
         }
+    };
+}
+
+impl Const {
+    pub fn get_char(&self) -> i8 {
+        as_inner!(self, i8)
+    }
+    pub fn get_uchar(&self) -> u8 {
+        as_inner!(self, u8)
+    }
+    pub fn get_int(&self) -> i32 {
+        as_inner!(self, i32)
     }
     pub fn get_uint(&self) -> u32 {
-        match self {
-            Self::Char(i) => *i as u32,
-            Self::UChar(i) => *i as u32,
-            Self::Int(i) => *i as u32,
-            Self::Uint(i) => *i,
-            Self::Long(i) => *i as u32,
-            Self::Ulong(i) => *i as u32,
-            Self::Double(i) => *i as u32,
-        }
+        as_inner!(self, u32)
     }
     pub fn get_long(&self) -> i64 {
-        match self {
-            Self::Char(i) => *i as i64,
-            Self::UChar(i) => *i as i64,
-            Self::Int(i) => *i as i64,
-            Self::Uint(i) => *i as i64,
-            Self::Long(i) => *i,
-            Self::Ulong(i) => *i as i64,
-            Self::Double(i) => *i as i64,
-        }
+        as_inner!(self, i64)
     }
     pub fn get_ulong(&self) -> u64 {
-        match self {
-            Self::Char(i) => *i as u64,
-            Self::UChar(i) => *i as u64,
-            Self::Int(i) => *i as u64,
-            Self::Uint(i) => *i as u64,
-            Self::Long(i) => *i as u64,
-            Self::Ulong(i) => *i,
-            Self::Double(i) => *i as u64,
-        }
+        as_inner!(self, u64)
     }
     pub fn get_double(&self) -> f64 {
-        match self {
-            Self::Char(i) => *i as f64,
-            Self::UChar(i) => *i as f64,
-            Self::Int(i) => *i as f64,
-            Self::Uint(i) => *i as f64,
-            Self::Long(i) => *i as f64,
-            Self::Ulong(i) => *i as f64,
-            Self::Double(i) => *i,
-        }
+        as_inner!(self, f64)
     }
 
     pub fn get_static_init(&self, ty: &VarType) -> Option<StaticInit> {

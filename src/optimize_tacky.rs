@@ -2,6 +2,7 @@ use std::ops::{Add, Div, Mul, Rem, Sub};
 
 use crate::{
     ast::Const,
+    semantics::type_check::SymbolTable,
     tacky::{BinaryOp, Instruction, Program, TopLevelItem, UnaryOp, Val},
 };
 
@@ -125,7 +126,7 @@ macro_rules! fold_binary_cmp {
     };
 }
 
-pub fn constant_folding(program: &mut [Instruction]) {
+pub fn constant_folding(program: &mut [Instruction], symbol_table: &SymbolTable) {
     for inst in program {
         fold_binary!(inst; BinaryOp::Add => add, BinaryOp::Subtract => sub, BinaryOp::Multiply => mul, BinaryOp::Divide => div, BinaryOp::Remainder => rem);
         fold_binary_cmp!(inst; BinaryOp::Equal => eq, BinaryOp::NotEqual => ne, BinaryOp::LessThan => lt, BinaryOp::LessOrEqual => le, BinaryOp::GreaterThan => gt, BinaryOp::GreaterOrEqual => ge);
@@ -169,15 +170,40 @@ pub fn constant_folding(program: &mut [Instruction]) {
                 dst: dst.clone(),
             };
         }
+
+        if let Instruction::DoubleToInt {
+            src: Val::Constant(c),
+            dst,
+        } = inst
+        {
+            let src = if let crate::ast::VarType::Base(base) = dst.ty(symbol_table) {
+                match base {
+                    crate::ast::BaseType::Char => Const::Char(c.get_char()),
+                    crate::ast::BaseType::SChar => Const::Char(c.get_char()),
+                    crate::ast::BaseType::UChar => Const::UChar(c.get_uchar()),
+                    crate::ast::BaseType::Int => Const::Int(c.get_int()),
+                    crate::ast::BaseType::Long => Const::Long(c.get_long()),
+                    crate::ast::BaseType::Uint => Const::Uint(c.get_uint()),
+                    crate::ast::BaseType::Ulong => Const::Ulong(c.get_ulong()),
+                    crate::ast::BaseType::Double => Const::Double(c.get_double()),
+                }
+            } else {
+                panic!()
+            };
+            *inst = Instruction::Copy {
+                src: Val::Constant(src),
+                dst: dst.clone(),
+            };
+        }
     }
 }
 
-pub fn optimize(program: &mut Program) {
+pub fn optimize(program: &mut Program, symbol_table: &SymbolTable) {
     for top in &mut program.top_levels {
         if let TopLevelItem::Function(f) = top {
             loop {
                 let snapshot = f.body.clone();
-                constant_folding(&mut f.body);
+                constant_folding(&mut f.body, symbol_table);
                 if snapshot == f.body {
                     break;
                 }
