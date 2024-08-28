@@ -123,7 +123,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut tacky = myc::tacky::gen_program(&program, &mut type_checker.sym_table);
 
     if opts.fold_constants {
-        myc::optimize_tacky::optimize(&mut tacky);
+        myc::optimize_tacky::optimize(&mut tacky, &type_checker.sym_table);
     }
 
     if opts.tacky {

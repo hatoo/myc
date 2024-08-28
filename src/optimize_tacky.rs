@@ -174,6 +174,10 @@ pub fn constant_folding(program: &mut [Instruction], symbol_table: &SymbolTable)
         if let Instruction::DoubleToInt {
             src: Val::Constant(c),
             dst,
+        }
+        | Instruction::DoubleToUint {
+            src: Val::Constant(c),
+            dst,
         } = inst
         {
             let src = if let crate::ast::VarType::Base(base) = dst.ty(symbol_table) {
@@ -192,6 +196,22 @@ pub fn constant_folding(program: &mut [Instruction], symbol_table: &SymbolTable)
             };
             *inst = Instruction::Copy {
                 src: Val::Constant(src),
+                dst: dst.clone(),
+            };
+        }
+
+        if let Instruction::IntToDouble {
+            src: Val::Constant(c),
+            dst,
+        }
+        | Instruction::UintToDouble {
+            src: Val::Constant(c),
+            dst,
+        } = inst
+        {
+            let src = Val::Constant(Const::Double(c.get_double()));
+            *inst = Instruction::Copy {
+                src,
                 dst: dst.clone(),
             };
         }
