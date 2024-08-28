@@ -2,7 +2,7 @@ use std::ops::{Add, Div, Mul, Rem, Sub};
 
 use crate::{
     ast::Const,
-    tacky::{BinaryOp, Instruction, Program, TopLevelItem, Val},
+    tacky::{BinaryOp, Instruction, Program, TopLevelItem, UnaryOp, Val},
 };
 
 macro_rules! fold_binary {
@@ -30,6 +30,12 @@ macro_rules! fold_binary {
                     (Const::Int(lhs), Const::Int(rhs)) => {
                         *$arg = Instruction::Copy {
                             src: Val::Constant(Const::Int((*lhs).$f(*rhs))),
+                            dst: dst.clone(),
+                        };
+                    }
+                    (Const::Uint(lhs), Const::Uint(rhs)) => {
+                        *$arg = Instruction::Copy {
+                            src: Val::Constant(Const::Uint((*lhs).$f(*rhs))),
                             dst: dst.clone(),
                         };
                     }
@@ -87,6 +93,12 @@ macro_rules! fold_binary_cmp {
                             dst: dst.clone(),
                         };
                     }
+                    (Const::Uint(lhs), Const::Uint(rhs)) => {
+                        *$arg = Instruction::Copy {
+                            src: Val::Constant(Const::Int((*lhs).$f(rhs) as i32)),
+                            dst: dst.clone(),
+                        };
+                    }
                     (Const::Long(lhs), Const::Long(rhs)) => {
                         *$arg = Instruction::Copy {
                              src: Val::Constant(Const::Int((*lhs).$f(rhs) as i32)),
@@ -117,6 +129,46 @@ pub fn constant_folding(program: &mut [Instruction]) {
     for inst in program {
         fold_binary!(inst; BinaryOp::Add => add, BinaryOp::Subtract => sub, BinaryOp::Multiply => mul, BinaryOp::Divide => div, BinaryOp::Remainder => rem);
         fold_binary_cmp!(inst; BinaryOp::Equal => eq, BinaryOp::NotEqual => ne, BinaryOp::LessThan => lt, BinaryOp::LessOrEqual => le, BinaryOp::GreaterThan => gt, BinaryOp::GreaterOrEqual => ge);
+
+        if let Instruction::Unary {
+            op,
+            src: Val::Constant(c),
+            dst,
+        } = inst
+        {
+            let val = match op {
+                UnaryOp::Negate => match c {
+                    Const::Char(c) => Const::Char(!*c),
+                    Const::UChar(c) => Const::UChar(!*c),
+                    Const::Int(c) => Const::Int(!*c),
+                    Const::Uint(c) => Const::Uint(!*c),
+                    Const::Long(c) => Const::Long(!*c),
+                    Const::Ulong(c) => Const::Ulong(!*c),
+                    _ => panic!(),
+                },
+                UnaryOp::Complement => match c {
+                    Const::Char(c) => Const::Char(!*c),
+                    Const::UChar(c) => Const::UChar(!*c),
+                    Const::Int(c) => Const::Int(!*c),
+                    Const::Uint(c) => Const::Uint(!*c),
+                    Const::Long(c) => Const::Long(!*c),
+                    Const::Ulong(c) => Const::Ulong(!*c),
+                    _ => panic!(),
+                },
+                UnaryOp::Not => {
+                    if let Const::Int(i) = c {
+                        Const::Int(if i == &0 { 1 } else { 0 })
+                    } else {
+                        panic!()
+                    }
+                }
+            };
+
+            *inst = Instruction::Copy {
+                src: Val::Constant(val),
+                dst: dst.clone(),
+            };
+        }
     }
 }
 
