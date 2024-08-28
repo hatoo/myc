@@ -46,6 +46,7 @@ pub struct StaticConstant {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Instruction {
+    Nop,
     SignExtend {
         src: Val,
         dst: Val,

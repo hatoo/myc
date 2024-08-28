@@ -126,8 +126,8 @@ macro_rules! fold_binary_cmp {
     };
 }
 
-pub fn constant_folding(program: &mut [Instruction], symbol_table: &SymbolTable) {
-    for inst in program {
+pub fn constant_folding(program: &mut Vec<Instruction>, symbol_table: &SymbolTable) {
+    for inst in program.iter_mut() {
         fold_binary!(inst; BinaryOp::Add => add, BinaryOp::Subtract => sub, BinaryOp::Multiply => mul, BinaryOp::Divide => div, BinaryOp::Remainder => rem);
         fold_binary_cmp!(inst; BinaryOp::Equal => eq, BinaryOp::NotEqual => ne, BinaryOp::LessThan => lt, BinaryOp::LessOrEqual => le, BinaryOp::GreaterThan => gt, BinaryOp::GreaterOrEqual => ge);
 
@@ -178,6 +178,18 @@ pub fn constant_folding(program: &mut [Instruction], symbol_table: &SymbolTable)
         | Instruction::DoubleToUint {
             src: Val::Constant(c),
             dst,
+        }
+        | Instruction::SignExtend {
+            src: Val::Constant(c),
+            dst,
+        }
+        | Instruction::ZeroExtend {
+            src: Val::Constant(c),
+            dst,
+        }
+        | Instruction::Truncate {
+            src: Val::Constant(c),
+            dst,
         } = inst
         {
             let src = if let crate::ast::VarType::Base(base) = dst.ty(symbol_table) {
@@ -215,7 +227,33 @@ pub fn constant_folding(program: &mut [Instruction], symbol_table: &SymbolTable)
                 dst: dst.clone(),
             };
         }
+
+        if let Instruction::JumpIfNotZero {
+            src: Val::Constant(Const::Int(i)),
+            dst,
+        } = inst
+        {
+            if *i != 0 {
+                *inst = Instruction::Jump(dst.clone());
+            } else {
+                *inst = Instruction::Nop;
+            }
+        }
+
+        if let Instruction::JumpIfZero {
+            src: Val::Constant(Const::Int(i)),
+            dst,
+        } = inst
+        {
+            if *i == 0 {
+                *inst = Instruction::Jump(dst.clone());
+            } else {
+                *inst = Instruction::Nop;
+            }
+        }
     }
+
+    program.retain(|inst| !matches!(inst, Instruction::Nop));
 }
 
 pub fn optimize(program: &mut Program, symbol_table: &SymbolTable) {

@@ -536,6 +536,7 @@ impl<'a> CodeGen<'a> {
 
         for inst in &function.body {
             match inst {
+                tacky::Instruction::Nop => {}
                 tacky::Instruction::Return(val) => {
                     if let Some(val) = val {
                         let (int_retvals, double_retvals, return_in_memory) =
