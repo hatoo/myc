@@ -35,6 +35,8 @@ struct Opts {
     compile: bool,
     #[clap(short)]
     l: Vec<String>,
+    #[clap(long)]
+    fold_constants: bool,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -118,7 +120,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    let tacky = myc::tacky::gen_program(&program, &mut type_checker.sym_table);
+    let mut tacky = myc::tacky::gen_program(&program, &mut type_checker.sym_table);
+
+    if opts.fold_constants {
+        myc::optimize_tacky::optimize(&mut tacky);
+    }
 
     if opts.tacky {
         for item in tacky.top_levels {

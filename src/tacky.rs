@@ -44,7 +44,7 @@ pub struct StaticConstant {
     pub init: semantics::type_check::StaticInit,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Instruction {
     SignExtend {
         src: Val,
@@ -135,14 +135,14 @@ pub enum Instruction {
     },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UnaryOp {
     Negate,
     Complement,
     Not,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BinaryOp {
     Add,
     Subtract,
