@@ -37,6 +37,8 @@ struct Opts {
     l: Vec<String>,
     #[clap(long)]
     fold_constants: bool,
+    #[clap(short = 's')]
+    s: bool,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -171,9 +173,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    File::create(opts.input.with_extension("s"))
-        .unwrap()
-        .write_all(code.to_string().as_bytes())?;
+    if opts.s {
+        File::create(opts.input.with_extension("s"))?.write_all(code.to_string().as_bytes())?;
+        return Ok(());
+    }
+
+    File::create(opts.input.with_extension("s"))?.write_all(code.to_string().as_bytes())?;
 
     if opts.compile {
         let mut command = process::Command::new("gcc");

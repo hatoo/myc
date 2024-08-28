@@ -139,12 +139,9 @@ pub fn constant_folding(program: &mut Vec<Instruction>, symbol_table: &SymbolTab
         {
             let val = match op {
                 UnaryOp::Negate => match c {
-                    Const::Char(c) => Const::Char(!*c),
-                    Const::UChar(c) => Const::UChar(!*c),
-                    Const::Int(c) => Const::Int(!*c),
-                    Const::Uint(c) => Const::Uint(!*c),
-                    Const::Long(c) => Const::Long(!*c),
-                    Const::Ulong(c) => Const::Ulong(!*c),
+                    Const::Char(c) => Const::Char(-*c),
+                    Const::Int(c) => Const::Int(-*c),
+                    Const::Long(c) => Const::Long(-*c),
                     _ => panic!(),
                 },
                 UnaryOp::Complement => match c {
