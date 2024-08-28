@@ -204,6 +204,18 @@ impl Const {
         as_inner!(self, f64)
     }
 
+    pub fn is_zero(&self) -> bool {
+        match self {
+            Self::Char(i) => *i == 0,
+            Self::UChar(i) => *i == 0,
+            Self::Int(i) => *i == 0,
+            Self::Uint(i) => *i == 0,
+            Self::Long(i) => *i == 0,
+            Self::Ulong(i) => *i == 0,
+            Self::Double(i) => *i == 0.0,
+        }
+    }
+
     pub fn get_static_init(&self, ty: &VarType) -> Option<StaticInit> {
         match ty {
             VarType::Void => None,

@@ -1,13 +1,13 @@
 use std::ops::{Add, Div, Mul, Rem, Sub};
 
 use crate::{
-    ast::Const,
+    ast::{Const, VarType},
     semantics::type_check::SymbolTable,
     tacky::{BinaryOp, Instruction, Program, TopLevelItem, UnaryOp, Val},
 };
 
 macro_rules! fold_binary {
-    ($arg:expr; $($op:pat => $f:ident),*) => {
+    ($arg:expr; $($op:pat => ($f:ident, $fd:ident)),*) => {
         match $arg {
             $(
                 Instruction::Binary {
@@ -54,7 +54,7 @@ macro_rules! fold_binary {
                     }
                     (Const::Double(lhs), Const::Double(rhs)) => {
                         *$arg = Instruction::Copy {
-                            src: Val::Constant(Const::Double((*lhs).$f(*rhs))),
+                            src: Val::Constant(Const::Double((*lhs).$fd(*rhs))),
                             dst: dst.clone(),
                         };
                     }
@@ -128,7 +128,21 @@ macro_rules! fold_binary_cmp {
 
 pub fn constant_folding(program: &mut Vec<Instruction>, symbol_table: &SymbolTable) {
     for inst in program.iter_mut() {
-        fold_binary!(inst; BinaryOp::Add => add, BinaryOp::Subtract => sub, BinaryOp::Multiply => mul, BinaryOp::Divide => div, BinaryOp::Remainder => rem);
+        if let Instruction::Binary {
+            op: BinaryOp::Divide | BinaryOp::Remainder,
+            lhs: _,
+            rhs: Val::Constant(c),
+            dst: _,
+        } = inst
+        {
+            if matches!(
+                c,
+                Const::Int(0) | Const::Uint(0) | Const::Long(0) | Const::Ulong(0)
+            ) {
+                continue;
+            }
+        }
+        fold_binary!(inst; BinaryOp::Add => (wrapping_add, add), BinaryOp::Subtract => (wrapping_sub, sub), BinaryOp::Multiply => (wrapping_mul, mul), BinaryOp::Divide => (div, div), BinaryOp::Remainder => (rem, rem));
         fold_binary_cmp!(inst; BinaryOp::Equal => eq, BinaryOp::NotEqual => ne, BinaryOp::LessThan => lt, BinaryOp::LessOrEqual => le, BinaryOp::GreaterThan => gt, BinaryOp::GreaterOrEqual => ge);
 
         if let Instruction::Unary {
@@ -140,9 +154,12 @@ pub fn constant_folding(program: &mut Vec<Instruction>, symbol_table: &SymbolTab
             let val = match op {
                 UnaryOp::Negate => match c {
                     Const::Char(c) => Const::Char(-*c),
+                    Const::UChar(c) => Const::UChar(!*c + 1),
                     Const::Int(c) => Const::Int(-*c),
+                    Const::Uint(c) => Const::Uint(!*c + 1),
                     Const::Long(c) => Const::Long(-*c),
-                    _ => panic!(),
+                    Const::Ulong(c) => Const::Ulong(!*c + 1),
+                    Const::Double(c) => Const::Double(-*c),
                 },
                 UnaryOp::Complement => match c {
                     Const::Char(c) => Const::Char(!*c),
@@ -153,13 +170,7 @@ pub fn constant_folding(program: &mut Vec<Instruction>, symbol_table: &SymbolTab
                     Const::Ulong(c) => Const::Ulong(!*c),
                     _ => panic!(),
                 },
-                UnaryOp::Not => {
-                    if let Const::Int(i) = c {
-                        Const::Int(if i == &0 { 1 } else { 0 })
-                    } else {
-                        panic!()
-                    }
-                }
+                UnaryOp::Not => Const::Int(if c.get_ulong() == 0 { 1 } else { 0 }),
             };
 
             *inst = Instruction::Copy {
@@ -189,8 +200,8 @@ pub fn constant_folding(program: &mut Vec<Instruction>, symbol_table: &SymbolTab
             dst,
         } = inst
         {
-            let src = if let crate::ast::VarType::Base(base) = dst.ty(symbol_table) {
-                match base {
+            let src = match dst.ty(symbol_table) {
+                VarType::Base(base) => match base {
                     crate::ast::BaseType::Char => Const::Char(c.get_char()),
                     crate::ast::BaseType::SChar => Const::Char(c.get_char()),
                     crate::ast::BaseType::UChar => Const::UChar(c.get_uchar()),
@@ -199,9 +210,9 @@ pub fn constant_folding(program: &mut Vec<Instruction>, symbol_table: &SymbolTab
                     crate::ast::BaseType::Uint => Const::Uint(c.get_uint()),
                     crate::ast::BaseType::Ulong => Const::Ulong(c.get_ulong()),
                     crate::ast::BaseType::Double => Const::Double(c.get_double()),
-                }
-            } else {
-                panic!()
+                },
+                VarType::Pointer(_) => Const::Ulong(c.get_ulong()),
+                _ => panic!(),
             };
             *inst = Instruction::Copy {
                 src: Val::Constant(src),
@@ -226,23 +237,23 @@ pub fn constant_folding(program: &mut Vec<Instruction>, symbol_table: &SymbolTab
         }
 
         if let Instruction::JumpIfNotZero {
-            src: Val::Constant(Const::Int(i)),
+            src: Val::Constant(c),
             dst,
         } = inst
         {
-            if *i != 0 {
-                *inst = Instruction::Jump(dst.clone());
-            } else {
+            if c.is_zero() {
                 *inst = Instruction::Nop;
+            } else {
+                *inst = Instruction::Jump(dst.clone());
             }
         }
 
         if let Instruction::JumpIfZero {
-            src: Val::Constant(Const::Int(i)),
+            src: Val::Constant(c),
             dst,
         } = inst
         {
-            if *i == 0 {
+            if c.is_zero() {
                 *inst = Instruction::Jump(dst.clone());
             } else {
                 *inst = Instruction::Nop;
