@@ -59,9 +59,64 @@ macro_rules! fold_binary {
     };
 }
 
+macro_rules! fold_binary_cmp {
+    ($arg:expr; $($op:pat => $f:ident),*) => {
+        match $arg {
+            $(
+                Instruction::Binary {
+                    op: $op,
+                    lhs: Val::Constant(lhs),
+                    rhs: Val::Constant(rhs),
+                    dst,
+                } => match (lhs, rhs) {
+                    (Const::Char(lhs), Const::Char(rhs)) => {
+                        *$arg = Instruction::Copy {
+                            src: Val::Constant(Const::Int((*lhs).$f(rhs) as i32)),
+                            dst: dst.clone(),
+                        };
+                    }
+                    (Const::UChar(lhs), Const::UChar(rhs)) => {
+                        *$arg = Instruction::Copy {
+                            src: Val::Constant(Const::Int((*lhs).$f(rhs) as i32)),
+                            dst: dst.clone(),
+                        };
+                    }
+                    (Const::Int(lhs), Const::Int(rhs)) => {
+                        *$arg = Instruction::Copy {
+                            src: Val::Constant(Const::Int((*lhs).$f(rhs) as i32)),
+                            dst: dst.clone(),
+                        };
+                    }
+                    (Const::Long(lhs), Const::Long(rhs)) => {
+                        *$arg = Instruction::Copy {
+                             src: Val::Constant(Const::Int((*lhs).$f(rhs) as i32)),
+                            dst: dst.clone(),
+                        };
+                    }
+                    (Const::Ulong(lhs), Const::Ulong(rhs)) => {
+                        *$arg = Instruction::Copy {
+                            src: Val::Constant(Const::Int((*lhs).$f(rhs) as i32)),
+                            dst: dst.clone(),
+                        };
+                    }
+                    (Const::Double(lhs), Const::Double(rhs)) => {
+                        *$arg = Instruction::Copy {
+                            src: Val::Constant(Const::Int((*lhs).$f(rhs) as i32)),
+                            dst: dst.clone(),
+                        };
+                    }
+                    _ => {}
+                },
+            )*
+            _ => {}
+        }
+    };
+}
+
 pub fn constant_folding(program: &mut [Instruction]) {
     for inst in program {
         fold_binary!(inst; BinaryOp::Add => add, BinaryOp::Subtract => sub, BinaryOp::Multiply => mul, BinaryOp::Divide => div, BinaryOp::Remainder => rem);
+        fold_binary_cmp!(inst; BinaryOp::Equal => eq, BinaryOp::NotEqual => ne, BinaryOp::LessThan => lt, BinaryOp::LessOrEqual => le, BinaryOp::GreaterThan => gt, BinaryOp::GreaterOrEqual => ge);
     }
 }
 
