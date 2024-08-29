@@ -308,18 +308,7 @@ enum NodeId {
     Block(usize),
 }
 
-impl NodeId {
-    fn next(self) -> NodeId {
-        match self {
-            NodeId::Entry => NodeId::Block(0),
-            NodeId::Block(n) => NodeId::Block(n + 1),
-            NodeId::Exit => panic!(),
-        }
-    }
-}
-
 struct Node {
-    id: usize,
     instructions: Vec<Instruction>,
     predecessors: HashSet<NodeId>,
     successors: HashSet<NodeId>,
@@ -421,7 +410,7 @@ impl Graph {
             .windows(2)
             .map(|w| w[1])
             .collect::<Vec<_>>();
-        for (next, (i, node)) in next_ids.into_iter().zip(self.nodes.iter_mut()) {
+        for (next, node) in next_ids.into_iter().zip(self.nodes.values_mut()) {
             if let Some(
                 Instruction::Jump(_)
                 | Instruction::JumpIfZero { .. }
@@ -576,7 +565,6 @@ impl Graph {
             basic_blocks.insert(
                 id,
                 Node {
-                    id,
                     instructions: block,
                     predecessors: Default::default(),
                     successors: Default::default(),
