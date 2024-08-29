@@ -503,7 +503,7 @@ impl Graph {
 
     fn add_all_edges(&mut self) {
         for (id, node) in &self.nodes {
-            if let Some(Instruction::Label(label)) = node.instructions.get(0) {
+            if let Some(Instruction::Label(label)) = node.instructions.first() {
                 self.label_map.insert(label.clone(), NodeId::Block(*id));
             }
         }
