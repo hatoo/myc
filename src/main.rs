@@ -37,6 +37,8 @@ struct Opts {
     l: Vec<String>,
     #[clap(long)]
     fold_constants: bool,
+    #[clap(long)]
+    eliminate_unreachable_code: bool,
     #[clap(short = 's')]
     s: bool,
 }
@@ -124,8 +126,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut tacky = myc::tacky::gen_program(&program, &mut type_checker.sym_table);
 
-    if opts.fold_constants {
-        myc::optimize_tacky::optimize(&mut tacky, &type_checker.sym_table);
+    if opts.fold_constants || opts.eliminate_unreachable_code {
+        let mut optimizes = Vec::new();
+        if opts.fold_constants {
+            optimizes.push(myc::optimize_tacky::OptimizeOption::ConstantFolding);
+        }
+        if opts.eliminate_unreachable_code {
+            optimizes.push(myc::optimize_tacky::OptimizeOption::DeadCodeElimination);
+        }
+        myc::optimize_tacky::optimize(&mut tacky, &type_checker.sym_table, &optimizes);
     }
 
     if opts.tacky {

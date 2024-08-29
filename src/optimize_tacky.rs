@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{btree_map::OccupiedEntry, BTreeMap, HashMap, HashSet},
     ops::{Add, Div, Mul, Rem, Sub},
 };
 
@@ -269,12 +269,30 @@ pub fn constant_folding(program: &mut Vec<Instruction>, symbol_table: &SymbolTab
     program.retain(|inst| !matches!(inst, Instruction::Nop));
 }
 
-pub fn optimize(program: &mut Program, symbol_table: &SymbolTable) {
+pub enum OptimizeOption {
+    ConstantFolding,
+    DeadCodeElimination,
+}
+
+pub fn optimize(program: &mut Program, symbol_table: &SymbolTable, options: &[OptimizeOption]) {
     for top in &mut program.top_levels {
         if let TopLevelItem::Function(f) = top {
             loop {
                 let snapshot = f.body.clone();
-                constant_folding(&mut f.body, symbol_table);
+
+                for opt in options {
+                    match opt {
+                        OptimizeOption::ConstantFolding => {
+                            constant_folding(&mut f.body, symbol_table);
+                        }
+                        OptimizeOption::DeadCodeElimination => {
+                            let mut graph = Graph::new(&f.body);
+                            graph.eliminate_unreachable_code();
+                            f.body = graph.program();
+                        }
+                    }
+                }
+
                 if snapshot == f.body {
                     break;
                 }
@@ -330,6 +348,22 @@ impl Graph {
         graph
     }
 
+    fn program(&self) -> Vec<Instruction> {
+        let mut program = Vec::new();
+        for node in self.nodes.values() {
+            program.extend(node.instructions.iter().cloned());
+        }
+
+        program
+    }
+
+    fn eliminate_unreachable_code(&mut self) {
+        self.remove_unreachable_nodes();
+        self.remove_redundant_jumps();
+        self.remove_useless_label();
+        self.remove_empty_nodes();
+    }
+
     fn add_edge(&mut self, from: NodeId, to: NodeId) {
         match from {
             NodeId::Entry => {
@@ -371,6 +405,11 @@ impl Graph {
 
         self.nodes
             .retain(|k, _| reachable.contains(&NodeId::Block(*k)));
+
+        for node in self.nodes.values_mut() {
+            node.predecessors.retain(|p| reachable.contains(p));
+        }
+        self.exit.predecessors.retain(|p| reachable.contains(p));
     }
 
     fn remove_redundant_jumps(&mut self) {
@@ -413,6 +452,50 @@ impl Graph {
                     .all(|p| *p == NodeId::Block(prev))
                 {
                     self.nodes.get_mut(&next).unwrap().instructions.remove(0);
+                }
+            }
+        }
+
+        if let Some(mut node) = self.nodes.first_entry() {
+            if let Some(Instruction::Label(_)) = node.get().instructions.first() {
+                if node.get().predecessors.is_empty() {
+                    node.get_mut().instructions.remove(0);
+                }
+            }
+        }
+    }
+
+    fn remove_empty_nodes(&mut self) {
+        for k in self.nodes.keys().copied().collect::<Vec<_>>() {
+            let node = self.nodes.get(&k).unwrap();
+            if self.nodes[&k].instructions.is_empty() {
+                let preds = node.predecessors.clone();
+                let succs = node.successors.clone();
+
+                for &pred in &preds {
+                    for &succ in &succs {
+                        self.add_edge(pred, succ);
+                    }
+                }
+
+                for pred in &preds {
+                    if let NodeId::Block(pred) = pred {
+                        self.nodes
+                            .get_mut(pred)
+                            .unwrap()
+                            .successors
+                            .remove(&NodeId::Block(k));
+                    }
+                }
+
+                for succ in &succs {
+                    if let NodeId::Block(succ) = succ {
+                        self.nodes
+                            .get_mut(succ)
+                            .unwrap()
+                            .predecessors
+                            .remove(&NodeId::Block(k));
+                    }
                 }
             }
         }
