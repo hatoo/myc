@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap, HashSet},
     ops::{Add, Div, Mul, Rem, Sub},
 };
 
@@ -303,32 +303,40 @@ impl NodeId {
 struct Node {
     id: usize,
     instructions: Vec<Instruction>,
-    predecessors: Vec<NodeId>,
-    successors: Vec<NodeId>,
+    predecessors: HashSet<NodeId>,
+    successors: HashSet<NodeId>,
 }
 
 struct Entry {
-    successors: Vec<NodeId>,
+    successors: HashSet<NodeId>,
 }
 
 struct Exit {
-    predecessors: Vec<NodeId>,
+    predecessors: HashSet<NodeId>,
 }
 
 struct Graph {
     entry: Entry,
     exit: Exit,
-    nodes: HashMap<usize, Node>,
+    nodes: BTreeMap<usize, Node>,
+    label_map: HashMap<EcoString, NodeId>,
 }
 
 impl Graph {
+    fn new(program: &[Instruction]) -> Self {
+        let blocks = Self::partition_into_basic_blocks(program);
+        let mut graph = Self::put_node_id(blocks);
+        graph.add_all_edges();
+        graph
+    }
+
     fn add_edge(&mut self, from: NodeId, to: NodeId) {
         match from {
             NodeId::Entry => {
-                self.entry.successors.push(to);
+                self.entry.successors.insert(to);
             }
             NodeId::Block(id) => {
-                self.nodes.get_mut(&id).unwrap().successors.push(to);
+                self.nodes.get_mut(&id).unwrap().successors.insert(to);
             }
             NodeId::Exit => {
                 panic!()
@@ -340,19 +348,80 @@ impl Graph {
                 panic!()
             }
             NodeId::Block(id) => {
-                self.nodes.get_mut(&id).unwrap().predecessors.push(from);
+                self.nodes.get_mut(&id).unwrap().predecessors.insert(from);
             }
             NodeId::Exit => {
-                self.exit.predecessors.push(from);
+                self.exit.predecessors.insert(from);
+            }
+        }
+    }
+
+    fn remove_unreachable_nodes(&mut self) {
+        let mut reachable = HashSet::new();
+
+        let mut stack = self.entry.successors.iter().cloned().collect::<Vec<_>>();
+
+        while let Some(node) = stack.pop() {
+            if let NodeId::Block(id) = node {
+                if reachable.insert(node) {
+                    stack.extend(self.nodes[&id].successors.iter().cloned());
+                }
+            }
+        }
+
+        self.nodes
+            .retain(|k, _| reachable.contains(&NodeId::Block(*k)));
+    }
+
+    fn remove_redundant_jumps(&mut self) {
+        let next_ids = self
+            .nodes
+            .keys()
+            .copied()
+            .collect::<Vec<usize>>()
+            .windows(2)
+            .map(|w| w[1])
+            .collect::<Vec<_>>();
+        for (next, (i, node)) in next_ids.into_iter().zip(self.nodes.iter_mut()) {
+            if let Some(
+                Instruction::Jump(_)
+                | Instruction::JumpIfZero { .. }
+                | Instruction::JumpIfNotZero { .. },
+            ) = node.instructions.last()
+            {
+                let default_succ = NodeId::Block(next);
+                if node.successors.iter().all(|s| s == &default_succ) {
+                    node.instructions.pop();
+                }
+            }
+        }
+    }
+
+    fn remove_useless_label(&mut self) {
+        for (prev, next) in self
+            .nodes
+            .keys()
+            .copied()
+            .zip(self.nodes.keys().copied().skip(1))
+            .collect::<Vec<_>>()
+            .into_iter()
+        {
+            if let Some(Instruction::Label(_)) = self.nodes[&next].instructions.first() {
+                if self.nodes[&next]
+                    .predecessors
+                    .iter()
+                    .all(|p| *p == NodeId::Block(prev))
+                {
+                    self.nodes.get_mut(&next).unwrap().instructions.remove(0);
+                }
             }
         }
     }
 
     fn add_all_edges(&mut self) {
-        let mut label_map = HashMap::new();
         for (id, node) in &self.nodes {
             if let Some(Instruction::Label(label)) = node.instructions.get(0) {
-                label_map.insert(label.clone(), NodeId::Block(*id));
+                self.label_map.insert(label.clone(), NodeId::Block(*id));
             }
         }
 
@@ -373,10 +442,10 @@ impl Graph {
                     self.add_edge(NodeId::Block(id), NodeId::Exit);
                 }
                 Instruction::Jump(label) => {
-                    self.add_edge(NodeId::Block(id), label_map[&label]);
+                    self.add_edge(NodeId::Block(id), self.label_map[&label]);
                 }
                 Instruction::JumpIfZero { dst, .. } | Instruction::JumpIfNotZero { dst, .. } => {
-                    self.add_edge(NodeId::Block(id), label_map[&dst]);
+                    self.add_edge(NodeId::Block(id), self.label_map[&dst]);
                     self.add_edge(NodeId::Block(id), next_id);
                 }
                 _ => {
@@ -418,7 +487,7 @@ impl Graph {
     }
 
     fn put_node_id(blocks: Vec<Vec<Instruction>>) -> Graph {
-        let mut basic_blocks = HashMap::new();
+        let mut basic_blocks = BTreeMap::new();
 
         for (id, block) in blocks.into_iter().enumerate() {
             basic_blocks.insert(
@@ -426,20 +495,21 @@ impl Graph {
                 Node {
                     id,
                     instructions: block,
-                    predecessors: Vec::new(),
-                    successors: Vec::new(),
+                    predecessors: Default::default(),
+                    successors: Default::default(),
                 },
             );
         }
 
         Graph {
             entry: Entry {
-                successors: Vec::new(),
+                successors: Default::default(),
             },
             exit: Exit {
-                predecessors: Vec::new(),
+                predecessors: Default::default(),
             },
             nodes: basic_blocks,
+            label_map: HashMap::new(),
         }
     }
 }
