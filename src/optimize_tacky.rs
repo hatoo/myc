@@ -1,4 +1,9 @@
-use std::ops::{Add, Div, Mul, Rem, Sub};
+use std::{
+    collections::HashMap,
+    ops::{Add, Div, Mul, Rem, Sub},
+};
+
+use ecow::EcoString;
 
 use crate::{
     ast::{Const, VarType},
@@ -274,6 +279,167 @@ pub fn optimize(program: &mut Program, symbol_table: &SymbolTable) {
                     break;
                 }
             }
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+enum NodeId {
+    Entry,
+    Exit,
+    Block(usize),
+}
+
+impl NodeId {
+    fn next(self) -> NodeId {
+        match self {
+            NodeId::Entry => NodeId::Block(0),
+            NodeId::Block(n) => NodeId::Block(n + 1),
+            NodeId::Exit => panic!(),
+        }
+    }
+}
+
+struct Node {
+    id: usize,
+    instructions: Vec<Instruction>,
+    predecessors: Vec<NodeId>,
+    successors: Vec<NodeId>,
+}
+
+struct Entry {
+    successors: Vec<NodeId>,
+}
+
+struct Exit {
+    predecessors: Vec<NodeId>,
+}
+
+struct Graph {
+    entry: Entry,
+    exit: Exit,
+    nodes: HashMap<usize, Node>,
+}
+
+impl Graph {
+    fn add_edge(&mut self, from: NodeId, to: NodeId) {
+        match from {
+            NodeId::Entry => {
+                self.entry.successors.push(to);
+            }
+            NodeId::Block(id) => {
+                self.nodes.get_mut(&id).unwrap().successors.push(to);
+            }
+            NodeId::Exit => {
+                panic!()
+            }
+        }
+
+        match to {
+            NodeId::Entry => {
+                panic!()
+            }
+            NodeId::Block(id) => {
+                self.nodes.get_mut(&id).unwrap().predecessors.push(from);
+            }
+            NodeId::Exit => {
+                self.exit.predecessors.push(from);
+            }
+        }
+    }
+
+    fn add_all_edges(&mut self) {
+        let mut label_map = HashMap::new();
+        for (id, node) in &self.nodes {
+            if let Some(Instruction::Label(label)) = node.instructions.get(0) {
+                label_map.insert(label.clone(), NodeId::Block(*id));
+            }
+        }
+
+        self.add_edge(NodeId::Entry, NodeId::Block(0));
+
+        let max_id = *self.nodes.keys().max().unwrap();
+
+        for id in 0..=max_id {
+            let next_id = if id == max_id {
+                NodeId::Exit
+            } else {
+                NodeId::Block(id + 1)
+            };
+
+            let last_inst = self.nodes[&id].instructions.last().cloned().unwrap();
+            match last_inst {
+                Instruction::Return(_) => {
+                    self.add_edge(NodeId::Block(id), NodeId::Exit);
+                }
+                Instruction::Jump(label) => {
+                    self.add_edge(NodeId::Block(id), label_map[&label]);
+                }
+                Instruction::JumpIfZero { dst, .. } | Instruction::JumpIfNotZero { dst, .. } => {
+                    self.add_edge(NodeId::Block(id), label_map[&dst]);
+                    self.add_edge(NodeId::Block(id), next_id);
+                }
+                _ => {
+                    self.add_edge(NodeId::Block(id), next_id);
+                }
+            }
+        }
+    }
+
+    fn partition_into_basic_blocks(program: &[Instruction]) -> Vec<Vec<Instruction>> {
+        let mut blocks = Vec::new();
+        let mut current_block = Vec::new();
+        for inst in program {
+            match inst {
+                Instruction::Label(_) => {
+                    if !current_block.is_empty() {
+                        blocks.push(std::mem::take(&mut current_block));
+                    }
+                    current_block.push(inst.clone());
+                }
+                Instruction::Jump(..)
+                | Instruction::JumpIfNotZero { .. }
+                | Instruction::JumpIfZero { .. }
+                | Instruction::Return { .. } => {
+                    current_block.push(inst.clone());
+                    blocks.push(std::mem::take(&mut current_block));
+                }
+                _ => {
+                    current_block.push(inst.clone());
+                }
+            }
+        }
+
+        if !current_block.is_empty() {
+            blocks.push(current_block);
+        }
+
+        blocks
+    }
+
+    fn put_node_id(blocks: Vec<Vec<Instruction>>) -> Graph {
+        let mut basic_blocks = HashMap::new();
+
+        for (id, block) in blocks.into_iter().enumerate() {
+            basic_blocks.insert(
+                id,
+                Node {
+                    id,
+                    instructions: block,
+                    predecessors: Vec::new(),
+                    successors: Vec::new(),
+                },
+            );
+        }
+
+        Graph {
+            entry: Entry {
+                successors: Vec::new(),
+            },
+            exit: Exit {
+                predecessors: Vec::new(),
+            },
+            nodes: basic_blocks,
         }
     }
 }
