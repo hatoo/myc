@@ -49,16 +49,8 @@ impl Annotation {
         block: &Node,
         symbol_table: &SymbolTable,
         initial_reaching_copies: &HashSet<Copy>,
+        aliased_vals: &HashSet<Val>,
     ) {
-        let aliased_vals = block
-            .instructions
-            .iter()
-            .filter_map(|inst| match inst {
-                Instruction::GetAddress { src, .. } => Some(src),
-                _ => None,
-            })
-            .collect::<HashSet<_>>();
-
         let mut current_reaching_copies = initial_reaching_copies.clone();
         for (i, inst) in block.instructions.iter().enumerate() {
             self.annotate_instruction(block.id, i, current_reaching_copies.clone());
@@ -118,6 +110,7 @@ impl Annotation {
 
     fn find_reaching_copies(&mut self, graph: &Graph, symbol_table: &SymbolTable) {
         let all_copies = graph.all_copy_instructions();
+        let aliased_vals = graph.aliased_vals();
 
         let mut worklist = Vec::new();
         for node in graph.nodes.values() {
@@ -129,7 +122,7 @@ impl Annotation {
         while let Some(block) = worklist.pop() {
             let old_annotations = self.incoming_copies[&block.id].clone();
             let incoming_copies = self.meet(block, &all_copies);
-            self.transfer(block, symbol_table, &incoming_copies);
+            self.transfer(block, symbol_table, &incoming_copies, &aliased_vals);
 
             if old_annotations != self.incoming_copies[&block.id] {
                 for succ in &block.successors {

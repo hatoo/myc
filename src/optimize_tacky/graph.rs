@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use ecow::EcoString;
 
-use crate::tacky::Instruction;
+use crate::tacky::{Instruction, Val};
 
 use super::copy_analysis;
 
@@ -306,5 +306,18 @@ impl Graph {
         }
 
         copies
+    }
+
+    pub fn aliased_vals(&self) -> HashSet<Val> {
+        let mut aliased_vals = HashSet::new();
+        for node in self.nodes.values() {
+            for inst in &node.instructions {
+                if let Instruction::GetAddress { src, .. } = inst {
+                    aliased_vals.insert(src.clone());
+                }
+            }
+        }
+
+        aliased_vals
     }
 }
