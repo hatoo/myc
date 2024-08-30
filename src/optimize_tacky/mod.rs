@@ -232,6 +232,28 @@ pub fn constant_folding(program: &mut [Instruction], symbol_table: &SymbolTable)
                 *inst = Instruction::Nop;
             }
         }
+
+        if let Instruction::AddPtr {
+            ptr,
+            index: Val::Constant(c),
+            scale,
+            dst,
+        } = inst
+        {
+            if c.is_zero() {
+                *inst = Instruction::Copy {
+                    src: ptr.clone(),
+                    dst: dst.clone(),
+                };
+            } else {
+                *inst = Instruction::AddPtr {
+                    ptr: ptr.clone(),
+                    index: Val::Constant(Const::Ulong(c.get_ulong() * (*scale as u64))),
+                    scale: 1,
+                    dst: dst.clone(),
+                };
+            }
+        }
     }
 }
 

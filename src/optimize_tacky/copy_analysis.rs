@@ -50,6 +50,15 @@ impl Annotation {
         symbol_table: &SymbolTable,
         initial_reaching_copies: &HashSet<Copy>,
     ) {
+        let aliased_vals = block
+            .instructions
+            .iter()
+            .filter_map(|inst| match inst {
+                Instruction::GetAddress { src, .. } => Some(src),
+                _ => None,
+            })
+            .collect::<HashSet<_>>();
+
         let mut current_reaching_copies = initial_reaching_copies.clone();
         for (i, inst) in block.instructions.iter().enumerate() {
             self.annotate_instruction(block.id, i, current_reaching_copies.clone());
@@ -69,11 +78,20 @@ impl Annotation {
                         !(c.src.is_static(symbol_table)
                             || c.dst.is_static(symbol_table)
                             || Some(&c.src) == dst.as_ref()
-                            || Some(&c.dst) == dst.as_ref())
+                            || Some(&c.dst) == dst.as_ref()
+                            || aliased_vals.contains(&c.src)
+                            || aliased_vals.contains(&c.dst))
                     });
                 }
-                Instruction::Unary { dst, .. } | Instruction::Binary { dst, .. } => {
+                Instruction::Unary { dst, .. }
+                | Instruction::Binary { dst, .. }
+                | Instruction::Cast { dst, .. } => {
                     current_reaching_copies.retain(|c| !(&c.src == dst || &c.dst == dst));
+                }
+                Instruction::Store { .. } => {
+                    current_reaching_copies.retain(|c| {
+                        !aliased_vals.contains(&c.src) && !aliased_vals.contains(&c.dst)
+                    });
                 }
                 _ => {}
             }
@@ -144,18 +162,26 @@ impl Annotation {
                         }
                     }
                     Instruction::Unary { src, .. }
-                    | Instruction::AddPtr { ptr: src, .. }
                     | Instruction::Cast { src, .. }
+                    | Instruction::Load { src, .. }
                     | Instruction::CopyToOffset { src, .. }
-                    | Instruction::GetAddress { src, .. }
                     | Instruction::JumpIfNotZero { src, .. }
                     | Instruction::JumpIfZero { src, .. }
                     | Instruction::Return(Some(src)) => {
                         *src = replace_operand(src.clone(), anno);
                     }
-                    Instruction::Binary { lhs, rhs, .. } => {
-                        *lhs = replace_operand(lhs.clone(), anno);
-                        *rhs = replace_operand(rhs.clone(), anno);
+                    Instruction::Binary {
+                        lhs: src1,
+                        rhs: src2,
+                        ..
+                    }
+                    | Instruction::AddPtr {
+                        ptr: src1,
+                        index: src2,
+                        ..
+                    } => {
+                        *src1 = replace_operand(src1.clone(), anno);
+                        *src2 = replace_operand(src2.clone(), anno);
                     }
                     Instruction::FunCall { callee, args, .. } => {
                         *callee = replace_operand(callee.clone(), anno);
