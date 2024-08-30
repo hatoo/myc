@@ -13,6 +13,7 @@ pub struct Copy {
     pub dst: Val,
 }
 
+#[derive(Debug)]
 struct Annotation {
     incoming_copies: HashMap<usize, HashSet<Copy>>,
     annotated_instructions: HashMap<usize, Vec<HashSet<Copy>>>,
@@ -79,7 +80,7 @@ impl Annotation {
         }
 
         self.incoming_copies
-            .insert(block.id, initial_reaching_copies.clone());
+            .insert(block.id, current_reaching_copies.clone());
     }
 
     fn meet(&mut self, block: &Node, all_copies: &HashSet<Copy>) -> HashSet<Copy> {
