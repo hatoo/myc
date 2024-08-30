@@ -158,7 +158,7 @@ pub enum Statement {
     Null,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy)]
 pub enum Const {
     Char(i8),
     UChar(u8),
@@ -169,6 +169,20 @@ pub enum Const {
     Double(f64),
 }
 
+impl PartialEq for Const {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Char(a), Self::Char(b)) => a == b,
+            (Self::UChar(a), Self::UChar(b)) => a == b,
+            (Self::Int(a), Self::Int(b)) => a == b,
+            (Self::Uint(a), Self::Uint(b)) => a == b,
+            (Self::Long(a), Self::Long(b)) => a == b,
+            (Self::Ulong(a), Self::Ulong(b)) => a == b,
+            (Self::Double(a), Self::Double(b)) => a.to_bits() == b.to_bits(),
+            _ => false,
+        }
+    }
+}
 impl Eq for Const {}
 impl Hash for Const {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
