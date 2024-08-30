@@ -176,7 +176,7 @@ fn replace_operand(val: Val, reaching_copies: &HashSet<Copy>) -> Val {
         Val::Constant(_) => val,
         Val::Var(_) => {
             for c in reaching_copies {
-                if &c.dst == &val {
+                if c.dst == val {
                     return c.src.clone();
                 }
             }

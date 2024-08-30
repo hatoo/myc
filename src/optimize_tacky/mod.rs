@@ -131,7 +131,7 @@ macro_rules! fold_binary_cmp {
     };
 }
 
-pub fn constant_folding(program: &mut Vec<Instruction>, symbol_table: &SymbolTable) {
+pub fn constant_folding(program: &mut [Instruction], symbol_table: &SymbolTable) {
     for inst in program.iter_mut() {
         if let Instruction::Binary {
             op: BinaryOp::Divide | BinaryOp::Remainder,
