@@ -2286,7 +2286,7 @@ impl<'a> Display for SizedOperand<'a> {
                 }
             }
             Operand::Memory(reg, offset) => write!(f, "{}({})", offset, RegisterSize::Qword(reg))?,
-            Operand::Plt(name) => write!(f, "{}@PLT", name)?,
+            Operand::Plt(name) => write!(f, "{}", name)?, // write!(f, "{}@PLT", name)?,
             Operand::GotPcrel(name) => write!(f, "{}@GOTPCREL(%rip)", name)?,
             Operand::Indexed { base, index, scale } => write!(
                 f,
