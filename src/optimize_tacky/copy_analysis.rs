@@ -143,7 +143,6 @@ impl Annotation {
                         }
                     }
                     Instruction::Unary { src, .. }
-                    | Instruction::Return(Some(src))
                     | Instruction::AddPtr { ptr: src, .. }
                     | Instruction::DoubleToInt { src, .. }
                     | Instruction::DoubleToUint { src, .. }
@@ -155,7 +154,8 @@ impl Annotation {
                     | Instruction::JumpIfZero { src, .. }
                     | Instruction::SignExtend { src, .. }
                     | Instruction::Truncate { src, .. }
-                    | Instruction::ZeroExtend { src, .. } => {
+                    | Instruction::ZeroExtend { src, .. }
+                    | Instruction::Return(Some(src)) => {
                         *src = replace_operand(src.clone(), anno);
                     }
                     Instruction::Binary { lhs, rhs, .. } => {

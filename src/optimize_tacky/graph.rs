@@ -13,6 +13,7 @@ pub enum NodeId {
     Block(usize),
 }
 
+#[derive(Debug)]
 pub struct Node {
     pub id: usize,
     pub instructions: Vec<Instruction>,
