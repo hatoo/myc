@@ -1,5 +1,7 @@
 use std::ops::{Add, Div, Mul, Rem, Sub};
 
+use copy_analysis::copy_propagation;
+
 use crate::{
     ast::{Const, VarType},
     semantics::type_check::SymbolTable,
@@ -270,6 +272,7 @@ pub fn constant_folding(program: &mut Vec<Instruction>, symbol_table: &SymbolTab
 pub enum OptimizeOption {
     ConstantFolding,
     DeadCodeElimination,
+    CopyPropagation,
 }
 
 pub fn optimize(program: &mut Program, symbol_table: &SymbolTable, options: &[OptimizeOption]) {
@@ -286,6 +289,11 @@ pub fn optimize(program: &mut Program, symbol_table: &SymbolTable, options: &[Op
                         OptimizeOption::DeadCodeElimination => {
                             let mut graph = graph::Graph::new(&f.body);
                             graph.eliminate_unreachable_code();
+                            f.body = graph.program();
+                        }
+                        OptimizeOption::CopyPropagation => {
+                            let mut graph = graph::Graph::new(&f.body);
+                            copy_propagation(&mut graph, symbol_table);
                             f.body = graph.program();
                         }
                     }

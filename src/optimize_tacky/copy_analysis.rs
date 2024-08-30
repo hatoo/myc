@@ -18,6 +18,16 @@ struct Annotation {
     annotated_instructions: HashMap<usize, Vec<HashSet<Copy>>>,
 }
 
+pub fn copy_propagation(graph: &mut Graph, symbol_table: &SymbolTable) {
+    let mut annotation = Annotation {
+        incoming_copies: HashMap::new(),
+        annotated_instructions: HashMap::new(),
+    };
+
+    annotation.find_reaching_copies(graph, symbol_table);
+    annotation.rewrite_instructions(graph);
+}
+
 impl Annotation {
     fn init_block(&mut self, block: &Node) {
         self.annotated_instructions
