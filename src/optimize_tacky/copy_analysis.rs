@@ -89,6 +89,8 @@ impl Annotation {
             if let NodeId::Block(id) = pred {
                 let pred_copies = self.incoming_copies.get(id).unwrap();
                 incoming_copies = incoming_copies.intersection(pred_copies).cloned().collect();
+            } else {
+                return HashSet::new();
             }
         }
 
