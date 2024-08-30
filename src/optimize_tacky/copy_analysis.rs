@@ -142,13 +142,33 @@ impl Annotation {
                             *src = replace_operand(src.clone(), anno);
                         }
                     }
-                    Instruction::Unary { src, .. } => {
+                    Instruction::Unary { src, .. }
+                    | Instruction::Return(Some(src))
+                    | Instruction::AddPtr { ptr: src, .. }
+                    | Instruction::DoubleToInt { src, .. }
+                    | Instruction::DoubleToUint { src, .. }
+                    | Instruction::IntToDouble { src, .. }
+                    | Instruction::UintToDouble { src, .. }
+                    | Instruction::CopyToOffset { src, .. }
+                    | Instruction::GetAddress { src, .. }
+                    | Instruction::JumpIfNotZero { src, .. }
+                    | Instruction::JumpIfZero { src, .. }
+                    | Instruction::SignExtend { src, .. }
+                    | Instruction::Truncate { src, .. }
+                    | Instruction::ZeroExtend { src, .. } => {
                         *src = replace_operand(src.clone(), anno);
                     }
                     Instruction::Binary { lhs, rhs, .. } => {
                         *lhs = replace_operand(lhs.clone(), anno);
                         *rhs = replace_operand(rhs.clone(), anno);
                     }
+                    Instruction::FunCall { callee, args, .. } => {
+                        *callee = replace_operand(callee.clone(), anno);
+                        for arg in args {
+                            *arg = replace_operand(arg.clone(), anno);
+                        }
+                    }
+
                     _ => {}
                 }
             }

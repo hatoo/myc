@@ -257,6 +257,7 @@ impl<'a> InstructionGenerator<'a> {
         name: EcoString,
         target: &VarType,
         offset: &mut usize,
+        depth: usize,
     ) {
         match init {
             Initializer::SingleInit(Expression::String(data, ty @ VarType::Array { .. })) => {
@@ -295,17 +296,24 @@ impl<'a> InstructionGenerator<'a> {
             Initializer::SingleInit(exp) => {
                 let val = self.add_expression_and_convert(exp);
                 let size = self.symbol_table.size(&val.ty(self.symbol_table));
-                self.instructions.push(Instruction::CopyToOffset {
-                    src: val,
-                    dst: name.clone(),
-                    offset: *offset,
-                });
+                if depth == 0 {
+                    self.instructions.push(Instruction::Copy {
+                        src: val.clone(),
+                        dst: Val::Var(name.clone()),
+                    });
+                } else {
+                    self.instructions.push(Instruction::CopyToOffset {
+                        src: val,
+                        dst: name.clone(),
+                        offset: *offset,
+                    });
+                }
                 *offset += size;
             }
             Initializer::CompoundInit(inits) => match target {
                 VarType::Array { element, .. } => {
                     for init in inits {
-                        self.copy_initializers(init, name.clone(), element, offset);
+                        self.copy_initializers(init, name.clone(), element, offset, depth + 1);
                     }
                 }
                 VarType::Struct(struct_name) => {
@@ -317,6 +325,7 @@ impl<'a> InstructionGenerator<'a> {
                             name.clone(),
                             &member.ty,
                             &mut (offset_start + member.offset),
+                            depth + 1,
                         );
                     }
                     *offset = offset_start + struct_def.size;
@@ -332,7 +341,7 @@ impl<'a> InstructionGenerator<'a> {
         }
 
         if let Some(init) = decl.init.as_ref() {
-            self.copy_initializers(init, decl.ident.data.clone(), &decl.ty, &mut 0);
+            self.copy_initializers(init, decl.ident.data.clone(), &decl.ty, &mut 0, 0);
         }
     }
 

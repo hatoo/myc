@@ -265,8 +265,6 @@ pub fn constant_folding(program: &mut Vec<Instruction>, symbol_table: &SymbolTab
             }
         }
     }
-
-    program.retain(|inst| !matches!(inst, Instruction::Nop));
 }
 
 pub enum OptimizeOption {
@@ -298,6 +296,7 @@ pub fn optimize(program: &mut Program, symbol_table: &SymbolTable, options: &[Op
                         }
                     }
                 }
+                f.body.retain(|inst| !matches!(inst, Instruction::Nop));
 
                 if snapshot == f.body {
                     break;
