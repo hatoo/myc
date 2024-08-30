@@ -1280,7 +1280,7 @@ impl<'a> CodeGen<'a> {
                                 dst: dst.into(),
                             });
                         }
-                        (from, to) if from.is_signed() => {
+                        (from, _to) if from.is_signed() => {
                             body.push(Instruction::Movsx {
                                 src_type: self.val_asm_type(src),
                                 dst_type: self.val_asm_type(dst),
@@ -1288,7 +1288,7 @@ impl<'a> CodeGen<'a> {
                                 dst: dst.into(),
                             });
                         }
-                        (_, to) => {
+                        (_from, _to) => {
                             body.push(Instruction::MovZeroExtend {
                                 src_type: self.val_asm_type(src),
                                 dst_type: self.val_asm_type(dst),
