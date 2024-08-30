@@ -5,7 +5,7 @@ use crate::{
     tacky::{Instruction, Val},
 };
 
-use super::graph::{Node, NodeId};
+use super::graph::{Graph, Node, NodeId};
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub struct Copy {
@@ -37,7 +37,7 @@ impl Annotation {
         &mut self,
         block: &Node,
         symbol_table: &SymbolTable,
-        initial_reaching_copies: HashSet<Copy>,
+        initial_reaching_copies: &HashSet<Copy>,
     ) {
         let mut current_reaching_copies = initial_reaching_copies.clone();
         for (i, inst) in block.instructions.iter().enumerate() {
@@ -69,10 +69,10 @@ impl Annotation {
         }
 
         self.incoming_copies
-            .insert(block.id, initial_reaching_copies);
+            .insert(block.id, initial_reaching_copies.clone());
     }
 
-    fn meet(&mut self, block: &Node, all_copies: HashSet<Copy>) -> HashSet<Copy> {
+    fn meet(&mut self, block: &Node, all_copies: &HashSet<Copy>) -> HashSet<Copy> {
         let mut incoming_copies = all_copies.clone();
 
         for pred in &block.predecessors {
@@ -83,5 +83,77 @@ impl Annotation {
         }
 
         incoming_copies
+    }
+
+    fn find_reaching_copies(&mut self, graph: &Graph, symbol_table: &SymbolTable) {
+        let all_copies = graph.all_copy_instructions();
+
+        let mut worklist = Vec::new();
+        for node in graph.nodes.values() {
+            self.init_block(node);
+            self.incoming_copies.insert(node.id, all_copies.clone());
+            worklist.push(node);
+        }
+
+        while let Some(block) = worklist.pop() {
+            let old_annotations = self.incoming_copies[&block.id].clone();
+            let incoming_copies = self.meet(block, &all_copies);
+            self.transfer(block, symbol_table, &incoming_copies);
+
+            if old_annotations != self.incoming_copies[&block.id] {
+                for succ in &block.successors {
+                    if let NodeId::Block(id) = succ {
+                        let succ_node = &graph.nodes[id];
+                        if worklist.iter().all(|n| n.id != succ_node.id) {
+                            worklist.push(succ_node);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn rewrite_instructions(&self, graph: &mut Graph) {
+        for node in graph.nodes.values_mut() {
+            for (inst, anno) in node
+                .instructions
+                .iter_mut()
+                .zip(self.annotated_instructions[&node.id].iter())
+            {
+                match inst {
+                    Instruction::Copy { src, dst } => {
+                        if anno.iter().any(|c| {
+                            (&c.src == src && &c.dst == dst) || (&c.src == dst && &c.dst == src)
+                        }) {
+                            *inst = Instruction::Nop;
+                        } else {
+                            *src = replace_operand(src.clone(), anno);
+                        }
+                    }
+                    Instruction::Unary { src, .. } => {
+                        *src = replace_operand(src.clone(), anno);
+                    }
+                    Instruction::Binary { lhs, rhs, .. } => {
+                        *lhs = replace_operand(lhs.clone(), anno);
+                        *rhs = replace_operand(rhs.clone(), anno);
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+}
+
+fn replace_operand(val: Val, reaching_copies: &HashSet<Copy>) -> Val {
+    match val {
+        Val::Constant(_) => val,
+        Val::Var(_) => {
+            for c in reaching_copies {
+                if &c.dst == &val {
+                    return c.src.clone();
+                }
+            }
+            val
+        }
     }
 }

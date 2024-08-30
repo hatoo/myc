@@ -4,6 +4,8 @@ use ecow::EcoString;
 
 use crate::tacky::Instruction;
 
+use super::copy_analysis;
+
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 pub enum NodeId {
     Entry,
@@ -29,7 +31,7 @@ struct Exit {
 pub struct Graph {
     entry: Entry,
     exit: Exit,
-    nodes: BTreeMap<usize, Node>,
+    pub nodes: BTreeMap<usize, Node>,
     label_map: HashMap<EcoString, NodeId>,
 }
 
@@ -287,5 +289,21 @@ impl Graph {
             nodes: basic_blocks,
             label_map: HashMap::new(),
         }
+    }
+
+    pub fn all_copy_instructions(&self) -> HashSet<copy_analysis::Copy> {
+        let mut copies = HashSet::new();
+        for node in self.nodes.values() {
+            for inst in &node.instructions {
+                if let Instruction::Copy { src, dst } = inst {
+                    copies.insert(copy_analysis::Copy {
+                        src: src.clone(),
+                        dst: dst.clone(),
+                    });
+                }
+            }
+        }
+
+        copies
     }
 }
