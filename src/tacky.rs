@@ -158,7 +158,7 @@ pub enum BinaryOp {
     GreaterOrEqual,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Val {
     Constant(ast::Const),
     Var(EcoString),
@@ -190,6 +190,13 @@ impl Val {
                 Attr::Constant { ty, .. } => ty.clone(),
                 Attr::Struct(_) => ast::VarType::Struct(var.clone()),
             },
+        }
+    }
+
+    pub fn is_static(&self, symbol_table: &SymbolTable) -> bool {
+        match self {
+            Val::Constant(_) => false,
+            Val::Var(var) => matches!(symbol_table[var], Attr::Static { .. }),
         }
     }
 }

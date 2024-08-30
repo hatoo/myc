@@ -1,3 +1,5 @@
+use std::hash::Hash;
+
 use ecow::EcoString;
 
 use crate::{
@@ -165,6 +167,45 @@ pub enum Const {
     Uint(u32),
     Ulong(u64),
     Double(f64),
+}
+
+impl Eq for Const {}
+impl Hash for Const {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        let discriminant = core::mem::discriminant(self);
+
+        match self {
+            Self::Char(i) => {
+                discriminant.hash(state);
+                i.hash(state);
+            }
+            Self::UChar(i) => {
+                discriminant.hash(state);
+                i.hash(state);
+            }
+            Self::Int(i) => {
+                discriminant.hash(state);
+                i.hash(state);
+            }
+            Self::Uint(i) => {
+                discriminant.hash(state);
+                i.hash(state);
+            }
+            Self::Long(i) => {
+                discriminant.hash(state);
+                i.hash(state);
+            }
+            Self::Ulong(i) => {
+                discriminant.hash(state);
+                i.hash(state);
+            }
+            Self::Double(i) => {
+                discriminant.hash(state);
+                // totally fine in this purpose
+                i.to_bits().hash(state);
+            }
+        }
+    }
 }
 
 macro_rules! as_inner {

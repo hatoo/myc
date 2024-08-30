@@ -1,9 +1,4 @@
-use std::{
-    collections::{BTreeMap, HashMap, HashSet},
-    ops::{Add, Div, Mul, Rem, Sub},
-};
-
-use ecow::EcoString;
+use std::ops::{Add, Div, Mul, Rem, Sub};
 
 use crate::{
     ast::{Const, VarType},
@@ -11,6 +6,7 @@ use crate::{
     tacky::{BinaryOp, Instruction, Program, TopLevelItem, UnaryOp, Val},
 };
 
+mod copy_analysis;
 mod graph;
 
 macro_rules! fold_binary {

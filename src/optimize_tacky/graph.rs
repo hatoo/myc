@@ -5,16 +5,17 @@ use ecow::EcoString;
 use crate::tacky::Instruction;
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
-enum NodeId {
+pub enum NodeId {
     Entry,
     Exit,
     Block(usize),
 }
 
-struct Node {
-    instructions: Vec<Instruction>,
-    predecessors: HashSet<NodeId>,
-    successors: HashSet<NodeId>,
+pub struct Node {
+    pub id: usize,
+    pub instructions: Vec<Instruction>,
+    pub predecessors: HashSet<NodeId>,
+    pub successors: HashSet<NodeId>,
 }
 
 struct Entry {
@@ -268,6 +269,7 @@ impl Graph {
             basic_blocks.insert(
                 id,
                 Node {
+                    id,
                     instructions: block,
                     predecessors: Default::default(),
                     successors: Default::default(),
