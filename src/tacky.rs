@@ -47,35 +47,11 @@ pub struct StaticConstant {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Instruction {
     Nop,
-    SignExtend {
-        src: Val,
-        dst: Val,
-    },
-    ZeroExtend {
-        src: Val,
-        dst: Val,
-    },
-    DoubleToInt {
-        src: Val,
-        dst: Val,
-    },
-    DoubleToUint {
-        src: Val,
-        dst: Val,
-    },
-    IntToDouble {
-        src: Val,
-        dst: Val,
-    },
-    UintToDouble {
-        src: Val,
-        dst: Val,
-    },
-    Truncate {
-        src: Val,
-        dst: Val,
-    },
     Return(Option<Val>),
+    Cast {
+        src: Val,
+        dst: Val,
+    },
     Unary {
         op: UnaryOp,
         src: Val,
@@ -765,6 +741,20 @@ impl<'a> InstructionGenerator<'a> {
             }
             ast::Expression::Cast { target, exp } => {
                 let val = self.add_expression_and_convert(exp);
+                if target == &ast::VarType::Void {
+                    return ExpResult::PlainOperand(Val::Var("DUMMY_VAR".into()));
+                }
+                if exp.ty() == target {
+                    ExpResult::PlainOperand(val)
+                } else {
+                    let dst = self.make_tmp_local(target.clone());
+                    self.instructions.push(Instruction::Cast {
+                        src: val,
+                        dst: dst.clone(),
+                    });
+                    ExpResult::PlainOperand(dst)
+                }
+                /*
                 match (exp.ty(), target) {
                     (_, ast::VarType::Void) => {
                         ExpResult::PlainOperand(Val::Var("DUMMY_VAR".into()))
@@ -855,6 +845,7 @@ impl<'a> InstructionGenerator<'a> {
                         ExpResult::PlainOperand(dst)
                     }
                 }
+                */
             }
             ast::Expression::Constant(c) => ExpResult::PlainOperand(Val::Constant(c.data)),
             ast::Expression::Dereference(exp) => {

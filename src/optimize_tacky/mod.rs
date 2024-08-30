@@ -184,23 +184,7 @@ pub fn constant_folding(program: &mut Vec<Instruction>, symbol_table: &SymbolTab
             };
         }
 
-        if let Instruction::DoubleToInt {
-            src: Val::Constant(c),
-            dst,
-        }
-        | Instruction::DoubleToUint {
-            src: Val::Constant(c),
-            dst,
-        }
-        | Instruction::SignExtend {
-            src: Val::Constant(c),
-            dst,
-        }
-        | Instruction::ZeroExtend {
-            src: Val::Constant(c),
-            dst,
-        }
-        | Instruction::Truncate {
+        if let Instruction::Cast {
             src: Val::Constant(c),
             dst,
         } = inst
@@ -221,22 +205,6 @@ pub fn constant_folding(program: &mut Vec<Instruction>, symbol_table: &SymbolTab
             };
             *inst = Instruction::Copy {
                 src: Val::Constant(src),
-                dst: dst.clone(),
-            };
-        }
-
-        if let Instruction::IntToDouble {
-            src: Val::Constant(c),
-            dst,
-        }
-        | Instruction::UintToDouble {
-            src: Val::Constant(c),
-            dst,
-        } = inst
-        {
-            let src = Val::Constant(Const::Double(c.get_double()));
-            *inst = Instruction::Copy {
-                src,
                 dst: dst.clone(),
             };
         }

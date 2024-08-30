@@ -145,17 +145,11 @@ impl Annotation {
                     }
                     Instruction::Unary { src, .. }
                     | Instruction::AddPtr { ptr: src, .. }
-                    | Instruction::DoubleToInt { src, .. }
-                    | Instruction::DoubleToUint { src, .. }
-                    | Instruction::IntToDouble { src, .. }
-                    | Instruction::UintToDouble { src, .. }
+                    | Instruction::Cast { src, .. }
                     | Instruction::CopyToOffset { src, .. }
                     | Instruction::GetAddress { src, .. }
                     | Instruction::JumpIfNotZero { src, .. }
                     | Instruction::JumpIfZero { src, .. }
-                    | Instruction::SignExtend { src, .. }
-                    | Instruction::Truncate { src, .. }
-                    | Instruction::ZeroExtend { src, .. }
                     | Instruction::Return(Some(src)) => {
                         *src = replace_operand(src.clone(), anno);
                     }

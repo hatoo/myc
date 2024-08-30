@@ -1037,6 +1037,268 @@ impl<'a> CodeGen<'a> {
                         }
                     }
                 }
+                tacky::Instruction::Cast { src, dst } => {
+                    let src_ty = src.ty(self.symbol_table);
+                    let dst_ty = dst.ty(self.symbol_table);
+
+                    match (src_ty, dst_ty) {
+                        (
+                            VarType::Base(BaseType::Double),
+                            VarType::Base(
+                                BaseType::Char | BaseType::SChar | BaseType::Int | BaseType::Long,
+                            ),
+                        ) => {
+                            // Double to signed
+                            if self.symbol_table.size(&dst.ty(self.symbol_table)) == 1 {
+                                body.push(Instruction::Cvttsd2si {
+                                    ty: AssemblyType::LongWord,
+                                    src: src.into(),
+                                    dst: Operand::Reg(Register::R10),
+                                });
+                                body.push(Instruction::Mov {
+                                    ty: AssemblyType::Byte,
+                                    src: Operand::Reg(Register::R10),
+                                    dst: dst.into(),
+                                });
+                            } else {
+                                body.push(Instruction::Cvttsd2si {
+                                    ty: self.val_asm_type(dst),
+                                    src: src.into(),
+                                    dst: dst.into(),
+                                });
+                            }
+                        }
+                        (
+                            VarType::Base(BaseType::Double),
+                            VarType::Base(BaseType::UChar | BaseType::Uint | BaseType::Ulong),
+                        ) => {
+                            if dst.ty(self.symbol_table) == ast::VarType::Base(BaseType::UChar) {
+                                body.push(Instruction::Cvttsd2si {
+                                    ty: AssemblyType::LongWord,
+                                    src: src.into(),
+                                    dst: Operand::Reg(Register::R10),
+                                });
+                                body.push(Instruction::Mov {
+                                    ty: AssemblyType::Byte,
+                                    src: Operand::Reg(Register::R10),
+                                    dst: dst.into(),
+                                });
+                            } else if dst.ty(self.symbol_table)
+                                == ast::VarType::Base(BaseType::Uint)
+                            {
+                                body.push(Instruction::Cvttsd2si {
+                                    ty: AssemblyType::QuadWord,
+                                    src: src.into(),
+                                    dst: Operand::Reg(Register::R10),
+                                });
+                                body.push(Instruction::Mov {
+                                    ty: AssemblyType::LongWord,
+                                    src: Operand::Reg(Register::R10),
+                                    dst: dst.into(),
+                                });
+                            } else {
+                                let upper_bound = Operand::Pseudo(Pseudo::Double {
+                                    value: 9223372036854775808.0,
+                                    alignment: 8,
+                                });
+
+                                let ae_upper = self.gen_label("ae_upper");
+                                let end = self.gen_label("end");
+
+                                body.push(Instruction::Cmp(
+                                    AssemblyType::Double,
+                                    upper_bound.clone(),
+                                    src.into(),
+                                ));
+                                body.push(Instruction::JmpCc(CondCode::Ae, ae_upper.clone()));
+                                body.push(Instruction::Cvttsd2si {
+                                    ty: AssemblyType::QuadWord,
+                                    src: src.into(),
+                                    dst: dst.into(),
+                                });
+                                body.push(Instruction::Jmp(end.clone()));
+                                body.push(Instruction::Label(ae_upper));
+                                body.push(Instruction::Mov {
+                                    ty: AssemblyType::Double,
+                                    src: src.into(),
+                                    dst: Operand::Reg(Register::Xmm(0)),
+                                });
+                                body.push(Instruction::Binary {
+                                    op: BinaryOp::Sub,
+                                    ty: AssemblyType::Double,
+                                    lhs: upper_bound.clone(),
+                                    rhs: Operand::Reg(Register::Xmm(0)),
+                                });
+                                body.push(Instruction::Cvttsd2si {
+                                    ty: AssemblyType::QuadWord,
+                                    src: Operand::Reg(Register::Xmm(0)),
+                                    dst: dst.into(),
+                                });
+                                body.push(Instruction::Mov {
+                                    ty: AssemblyType::QuadWord,
+                                    src: Operand::Imm(9223372036854775808),
+                                    dst: Operand::Reg(Register::R10),
+                                });
+                                body.push(Instruction::Binary {
+                                    op: BinaryOp::Add,
+                                    ty: AssemblyType::QuadWord,
+                                    lhs: Operand::Reg(Register::R10),
+                                    rhs: dst.into(),
+                                });
+                                body.push(Instruction::Label(end));
+                            }
+                        }
+                        (
+                            VarType::Base(
+                                BaseType::Char | BaseType::SChar | BaseType::Int | BaseType::Long,
+                            ),
+                            VarType::Base(BaseType::Double),
+                        ) => {
+                            if self.symbol_table.size(&src.ty(self.symbol_table)) == 1 {
+                                body.push(Instruction::Movsx {
+                                    src_type: AssemblyType::Byte,
+                                    dst_type: AssemblyType::LongWord,
+                                    src: src.into(),
+                                    dst: Operand::Reg(Register::R10),
+                                });
+                                body.push(Instruction::Cvtsi2sd {
+                                    ty: AssemblyType::LongWord,
+                                    src: Operand::Reg(Register::R10),
+                                    dst: dst.into(),
+                                });
+                            } else {
+                                body.push(Instruction::Cvtsi2sd {
+                                    ty: self.val_asm_type(src),
+                                    src: src.into(),
+                                    dst: dst.into(),
+                                });
+                            }
+                        }
+                        (
+                            VarType::Base(BaseType::Uint | BaseType::Ulong | BaseType::UChar),
+                            VarType::Base(BaseType::Double),
+                        ) => match src.ty(self.symbol_table) {
+                            ast::VarType::Base(BaseType::UChar) => {
+                                body.push(Instruction::MovZeroExtend {
+                                    src_type: AssemblyType::Byte,
+                                    dst_type: AssemblyType::LongWord,
+                                    src: src.into(),
+                                    dst: Operand::Reg(Register::R10),
+                                });
+                                body.push(Instruction::Cvtsi2sd {
+                                    ty: AssemblyType::LongWord,
+                                    src: Operand::Reg(Register::R10),
+                                    dst: dst.into(),
+                                });
+                            }
+                            ast::VarType::Base(BaseType::Uint) => {
+                                body.push(Instruction::MovZeroExtend {
+                                    src_type: AssemblyType::LongWord,
+                                    dst_type: AssemblyType::QuadWord,
+                                    src: src.into(),
+                                    dst: Operand::Reg(Register::R10),
+                                });
+                                body.push(Instruction::Cvtsi2sd {
+                                    ty: AssemblyType::QuadWord,
+                                    src: Operand::Reg(Register::R10),
+                                    dst: dst.into(),
+                                });
+                            }
+                            ast::VarType::Base(BaseType::Ulong) => {
+                                let l1 = self.gen_label("l1");
+                                let end = self.gen_label("end");
+                                body.push(Instruction::Cmp(
+                                    AssemblyType::QuadWord,
+                                    Operand::Imm(0),
+                                    src.into(),
+                                ));
+                                body.push(Instruction::JmpCc(CondCode::L, l1.clone()));
+                                body.push(Instruction::Cvtsi2sd {
+                                    ty: AssemblyType::QuadWord,
+                                    src: src.into(),
+                                    dst: dst.into(),
+                                });
+                                body.push(Instruction::Jmp(end.clone()));
+                                body.push(Instruction::Label(l1));
+                                body.push(Instruction::Mov {
+                                    ty: AssemblyType::QuadWord,
+                                    src: src.into(),
+                                    dst: Operand::Reg(Register::R10),
+                                });
+                                body.push(Instruction::Mov {
+                                    ty: AssemblyType::QuadWord,
+                                    src: Operand::Reg(Register::R10),
+                                    dst: Operand::Reg(Register::R11),
+                                });
+                                body.push(Instruction::Unary {
+                                    op: UnaryOp::Shr,
+                                    ty: AssemblyType::QuadWord,
+                                    src: Operand::Reg(Register::R11),
+                                });
+                                body.push(Instruction::Binary {
+                                    op: BinaryOp::And,
+                                    ty: AssemblyType::QuadWord,
+                                    lhs: Operand::Imm(1),
+                                    rhs: Operand::Reg(Register::R10),
+                                });
+                                body.push(Instruction::Binary {
+                                    op: BinaryOp::Or,
+                                    ty: AssemblyType::QuadWord,
+                                    lhs: Operand::Reg(Register::R10),
+                                    rhs: Operand::Reg(Register::R11),
+                                });
+                                body.push(Instruction::Cvtsi2sd {
+                                    ty: AssemblyType::QuadWord,
+                                    src: Operand::Reg(Register::R11),
+                                    dst: dst.into(),
+                                });
+                                body.push(Instruction::Binary {
+                                    op: BinaryOp::Add,
+                                    ty: AssemblyType::Double,
+                                    lhs: dst.into(),
+                                    rhs: dst.into(),
+                                });
+                                body.push(Instruction::Label(end));
+                            }
+                            _ => unreachable!(),
+                        },
+                        (from, to)
+                            if self.symbol_table.size(&from) == self.symbol_table.size(&to) =>
+                        {
+                            body.push(Instruction::Mov {
+                                ty: self.val_asm_type(src),
+                                src: src.into(),
+                                dst: dst.into(),
+                            });
+                        }
+                        (from, to)
+                            if self.symbol_table.size(&from) > self.symbol_table.size(&to) =>
+                        {
+                            body.push(Instruction::Mov {
+                                ty: self.val_asm_type(dst),
+                                src: src.into(),
+                                dst: dst.into(),
+                            });
+                        }
+                        (from, to) if from.is_signed() => {
+                            body.push(Instruction::Movsx {
+                                src_type: self.val_asm_type(src),
+                                dst_type: self.val_asm_type(dst),
+                                src: src.into(),
+                                dst: dst.into(),
+                            });
+                        }
+                        (_, to) => {
+                            body.push(Instruction::MovZeroExtend {
+                                src_type: self.val_asm_type(src),
+                                dst_type: self.val_asm_type(dst),
+                                src: src.into(),
+                                dst: dst.into(),
+                            });
+                        }
+                    }
+                }
+                /*
                 tacky::Instruction::SignExtend { src, dst } => {
                     body.push(Instruction::Movsx {
                         src_type: self.val_asm_type(src),
@@ -1261,6 +1523,7 @@ impl<'a> CodeGen<'a> {
                     }
                     _ => unreachable!(),
                 },
+                */
                 tacky::Instruction::Load { src, dst } => {
                     let size = self.symbol_table.size(&dst.ty(self.symbol_table));
                     let Val::Var(dst) = dst else { unreachable!() };
