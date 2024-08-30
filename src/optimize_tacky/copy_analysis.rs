@@ -82,7 +82,10 @@ impl Annotation {
                 }
                 Instruction::Store { .. } => {
                     current_reaching_copies.retain(|c| {
-                        !aliased_vals.contains(&c.src) && !aliased_vals.contains(&c.dst)
+                        !(aliased_vals.contains(&c.src)
+                            || aliased_vals.contains(&c.dst)
+                            || c.src.is_static(symbol_table)
+                            || c.dst.is_static(symbol_table))
                     });
                 }
                 _ => {}

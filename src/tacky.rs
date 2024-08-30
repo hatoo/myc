@@ -744,7 +744,15 @@ impl<'a> InstructionGenerator<'a> {
                 if target == &ast::VarType::Void {
                     return ExpResult::PlainOperand(Val::Var("DUMMY_VAR".into()));
                 }
-                if exp.ty() == target {
+                if exp.ty() == target
+                    || matches!(
+                        (exp.ty(), target),
+                        (
+                            VarType::Base(BaseType::Char | BaseType::SChar),
+                            VarType::Base(BaseType::Char | BaseType::SChar)
+                        )
+                    )
+                {
                     ExpResult::PlainOperand(val)
                 } else {
                     let dst = self.make_tmp_local(target.clone());

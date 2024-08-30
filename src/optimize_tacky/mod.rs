@@ -248,7 +248,7 @@ pub fn constant_folding(program: &mut [Instruction], symbol_table: &SymbolTable)
             } else {
                 *inst = Instruction::AddPtr {
                     ptr: ptr.clone(),
-                    index: Val::Constant(Const::Ulong(c.get_ulong() * (*scale as u64))),
+                    index: Val::Constant(Const::Ulong(c.get_ulong().wrapping_mul(*scale as u64))),
                     scale: 1,
                     dst: dst.clone(),
                 };
