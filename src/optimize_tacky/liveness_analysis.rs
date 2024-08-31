@@ -15,7 +15,9 @@ pub fn eliminate_dead_stores(graph: &mut Graph, symbol_table: &SymbolTable) {
         instruction_annotation: HashMap::new(),
     };
 
-    annotation.iterate(graph, symbol_table);
+    let all_aliased_vars = graph.aliased_vals();
+
+    annotation.iterate(graph, symbol_table, &all_aliased_vars);
     annotation.rewrite_instructions(graph);
 }
 
@@ -50,8 +52,14 @@ impl Annotation {
         block: &Node,
         end_live_variables: &HashSet<EcoString>,
         all_static_vars: &HashSet<EcoString>,
+        all_aliased_vars: &HashSet<Val>,
     ) {
         let mut current_live_variables = end_live_variables.clone();
+        let all_aliased_vars = all_aliased_vars
+            .iter()
+            .map(|v| v.var())
+            .cloned()
+            .collect::<HashSet<_>>();
 
         for (i, inst) in block.instructions.iter().enumerate().rev() {
             self.annotate_instruction(block.id, i, current_live_variables.clone());
@@ -79,9 +87,17 @@ impl Annotation {
                     remove(&mut current_live_variables, dst);
                     insert(&mut current_live_variables, src);
                 }
-                Instruction::Load { src, dst } | Instruction::Store { src, dst } => {
+                Instruction::Load { src, dst } => {
                     insert(&mut current_live_variables, src);
                     insert(&mut current_live_variables, dst);
+                    current_live_variables.extend(all_static_vars.iter().cloned());
+                    current_live_variables.extend(all_aliased_vars.iter().cloned());
+                }
+                Instruction::Store { src, dst } => {
+                    insert(&mut current_live_variables, src);
+                    insert(&mut current_live_variables, dst);
+                    current_live_variables.extend(all_static_vars.iter().cloned());
+                    current_live_variables.extend(all_aliased_vars.iter().cloned());
                 }
                 Instruction::JumpIfNotZero { src, .. } | Instruction::JumpIfZero { src, .. } => {
                     insert(&mut current_live_variables, src);
@@ -95,6 +111,7 @@ impl Annotation {
                     }
 
                     current_live_variables.extend(all_static_vars.iter().cloned());
+                    current_live_variables.extend(all_aliased_vars.iter().cloned());
                 }
                 Instruction::Return(Some(dst)) | Instruction::GetAddress { dst, .. } => {
                     insert(&mut current_live_variables, dst);
@@ -140,7 +157,12 @@ impl Annotation {
         live_variables
     }
 
-    fn iterate(&mut self, graph: &Graph, symbol_table: &SymbolTable) {
+    fn iterate(
+        &mut self,
+        graph: &Graph,
+        symbol_table: &SymbolTable,
+        all_aliased_vars: &HashSet<Val>,
+    ) {
         let all_static_vars: HashSet<EcoString> = symbol_table
             .iter()
             .filter_map(|(k, v)| {
@@ -161,7 +183,7 @@ impl Annotation {
         while let Some(block) = worklist.pop() {
             let old_annotations = self.block_annotation[&block.id].clone();
             let incoming = self.meet(block, &all_static_vars);
-            self.transfer(block, &incoming, &all_static_vars);
+            self.transfer(block, &incoming, &all_static_vars, all_aliased_vars);
 
             if old_annotations != self.block_annotation[&block.id] {
                 for pred in &block.predecessors {
