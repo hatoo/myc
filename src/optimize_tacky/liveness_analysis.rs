@@ -110,11 +110,11 @@ impl Annotation {
                 Instruction::Return(Some(dst)) | Instruction::GetAddress { dst, .. } => {
                     insert(&mut current_live_variables, dst);
                 }
-                Instruction::CopyFromOffset { src, dst: _, .. } => {
+                Instruction::CopyFromOffset { src, .. } => {
                     // remove(&mut current_live_variables, dst);
                     insert(&mut current_live_variables, &Val::Var(src.clone()));
                 }
-                Instruction::CopyToOffset { src, dst: _, .. } => {
+                Instruction::CopyToOffset { src, .. } => {
                     // remove(&mut current_live_variables, &Val::Var(dst.clone()));
                     insert(&mut current_live_variables, src);
                 }
@@ -212,7 +212,9 @@ fn dst_field(inst: &Instruction) -> Option<&EcoString> {
         | Instruction::Unary { dst, .. }
         | Instruction::Cast { dst, .. }
         | Instruction::Copy { dst, .. }
-        | Instruction::GetAddress { dst, .. } => Some(dst.var()),
+        | Instruction::GetAddress { dst, .. }
+        | Instruction::CopyFromOffset { dst, .. } => Some(dst.var()),
+        Instruction::CopyToOffset { dst, .. } => Some(dst),
         _ => None,
     }
 }
