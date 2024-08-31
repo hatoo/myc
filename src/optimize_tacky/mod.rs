@@ -10,6 +10,7 @@ use crate::{
 
 mod copy_analysis;
 mod graph;
+mod liveness_analysis;
 
 macro_rules! fold_binary {
     ($arg:expr; $($op:pat => ($f:ident, $fd:ident)),*) => {
