@@ -89,6 +89,9 @@ impl Annotation {
 
                     current_live_variables.extend(all_static_vars.iter().cloned());
                 }
+                Instruction::Return(Some(val)) => {
+                    insert(&mut current_live_variables, val);
+                }
                 _ => {}
             }
         }
