@@ -62,6 +62,12 @@ impl Annotation {
                     rhs: src2,
                     dst,
                     ..
+                }
+                | Instruction::AddPtr {
+                    ptr: src1,
+                    index: src2,
+                    dst,
+                    ..
                 } => {
                     remove(&mut current_live_variables, dst);
                     insert(&mut current_live_variables, src1);
@@ -69,12 +75,14 @@ impl Annotation {
                 }
                 Instruction::Unary { src, dst, .. }
                 | Instruction::Cast { src, dst }
-                | Instruction::Copy { src, dst }
                 | Instruction::GetAddress { src, dst }
-                | Instruction::Load { src, dst }
-                | Instruction::Store { src, dst } => {
+                | Instruction::Copy { src, dst } => {
                     remove(&mut current_live_variables, dst);
                     insert(&mut current_live_variables, src);
+                }
+                Instruction::Load { src, dst } | Instruction::Store { src, dst } => {
+                    insert(&mut current_live_variables, src);
+                    insert(&mut current_live_variables, dst);
                 }
                 Instruction::JumpIfNotZero { src, .. } | Instruction::JumpIfZero { src, .. } => {
                     insert(&mut current_live_variables, src);
@@ -89,10 +97,21 @@ impl Annotation {
 
                     current_live_variables.extend(all_static_vars.iter().cloned());
                 }
-                Instruction::Return(Some(val)) => {
-                    insert(&mut current_live_variables, val);
+                Instruction::Return(Some(dst)) => {
+                    insert(&mut current_live_variables, dst);
                 }
-                _ => {}
+                Instruction::CopyFromOffset { src, dst, .. } => {
+                    remove(&mut current_live_variables, dst);
+                    insert(&mut current_live_variables, &Val::Var(src.clone()));
+                }
+                Instruction::CopyToOffset { src, dst, .. } => {
+                    remove(&mut current_live_variables, &Val::Var(dst.clone()));
+                    insert(&mut current_live_variables, src);
+                }
+                Instruction::Nop
+                | Instruction::Jump(_)
+                | Instruction::Label(_)
+                | Instruction::Return(_) => {}
             }
         }
 
@@ -178,9 +197,7 @@ fn dst_field(inst: &Instruction) -> Option<&EcoString> {
         | Instruction::Unary { dst, .. }
         | Instruction::Cast { dst, .. }
         | Instruction::Copy { dst, .. }
-        | Instruction::GetAddress { dst, .. }
-        | Instruction::Load { dst, .. }
-        | Instruction::Store { dst, .. } => Some(dst.var()),
+        | Instruction::GetAddress { dst, .. } => Some(dst.var()),
         _ => None,
     }
 }
