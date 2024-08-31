@@ -210,6 +210,8 @@ fn dst_field(inst: &Instruction) -> Option<&EcoString> {
     match inst {
         Instruction::Binary { dst, .. }
         | Instruction::Unary { dst, .. }
+        | Instruction::AddPtr { dst, .. }
+        | Instruction::Load { dst, .. }
         | Instruction::Cast { dst, .. }
         | Instruction::Copy { dst, .. }
         | Instruction::GetAddress { dst, .. }
