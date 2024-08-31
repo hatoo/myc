@@ -15,23 +15,23 @@ pub struct Copy {
 
 #[derive(Debug)]
 struct Annotation {
-    incoming_copies: HashMap<usize, HashSet<Copy>>,
-    annotated_instructions: HashMap<usize, Vec<HashSet<Copy>>>,
+    block_annotation: HashMap<usize, HashSet<Copy>>,
+    instruction_annotation: HashMap<usize, Vec<HashSet<Copy>>>,
 }
 
 pub fn copy_propagation(graph: &mut Graph, symbol_table: &SymbolTable) {
     let mut annotation = Annotation {
-        incoming_copies: HashMap::new(),
-        annotated_instructions: HashMap::new(),
+        block_annotation: HashMap::new(),
+        instruction_annotation: HashMap::new(),
     };
 
-    annotation.find_reaching_copies(graph, symbol_table);
+    annotation.iterate(graph, symbol_table);
     annotation.rewrite_instructions(graph);
 }
 
 impl Annotation {
     fn init_block(&mut self, block: &Node) {
-        self.annotated_instructions
+        self.instruction_annotation
             .insert(block.id, vec![HashSet::new(); block.instructions.len()]);
     }
 
@@ -41,7 +41,7 @@ impl Annotation {
         inst_index: usize,
         reaching_copies: HashSet<Copy>,
     ) {
-        self.annotated_instructions.get_mut(&block_id).unwrap()[inst_index] = reaching_copies;
+        self.instruction_annotation.get_mut(&block_id).unwrap()[inst_index] = reaching_copies;
     }
 
     fn transfer(
@@ -110,7 +110,7 @@ impl Annotation {
             }
         }
 
-        self.incoming_copies
+        self.block_annotation
             .insert(block.id, current_reaching_copies.clone());
     }
 
@@ -119,7 +119,7 @@ impl Annotation {
 
         for pred in &block.predecessors {
             if let NodeId::Block(id) = pred {
-                let pred_copies = self.incoming_copies.get(id).unwrap();
+                let pred_copies = self.block_annotation.get(id).unwrap();
                 incoming_copies = incoming_copies.intersection(pred_copies).cloned().collect();
             } else {
                 return HashSet::new();
@@ -129,23 +129,23 @@ impl Annotation {
         incoming_copies
     }
 
-    fn find_reaching_copies(&mut self, graph: &Graph, symbol_table: &SymbolTable) {
+    fn iterate(&mut self, graph: &Graph, symbol_table: &SymbolTable) {
         let all_copies = graph.all_copy_instructions();
         let aliased_vals = graph.aliased_vals();
 
         let mut worklist = Vec::new();
         for node in graph.nodes.values() {
             self.init_block(node);
-            self.incoming_copies.insert(node.id, all_copies.clone());
+            self.block_annotation.insert(node.id, all_copies.clone());
             worklist.push(node);
         }
 
         while let Some(block) = worklist.pop() {
-            let old_annotations = self.incoming_copies[&block.id].clone();
+            let old_annotations = self.block_annotation[&block.id].clone();
             let incoming_copies = self.meet(block, &all_copies);
             self.transfer(block, symbol_table, &incoming_copies, &aliased_vals);
 
-            if old_annotations != self.incoming_copies[&block.id] {
+            if old_annotations != self.block_annotation[&block.id] {
                 for succ in &block.successors {
                     if let NodeId::Block(id) = succ {
                         let succ_node = &graph.nodes[id];
@@ -163,7 +163,7 @@ impl Annotation {
             for (inst, anno) in node
                 .instructions
                 .iter_mut()
-                .zip(self.annotated_instructions[&node.id].iter())
+                .zip(self.instruction_annotation[&node.id].iter())
             {
                 match inst {
                     Instruction::Copy { src, dst } => {

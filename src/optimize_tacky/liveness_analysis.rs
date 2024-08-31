@@ -15,9 +15,9 @@ pub fn eliminate_dead_stores(graph: &mut Graph, symbol_table: &SymbolTable) {
         instruction_annotation: HashMap::new(),
     };
 
-    let all_aliased_vars = graph.aliased_vals();
+    let aliased_vals = graph.aliased_vals();
 
-    annotation.iterate(graph, symbol_table, &all_aliased_vars);
+    annotation.iterate(graph, symbol_table, &aliased_vals);
     annotation.rewrite_instructions(graph);
 }
 
@@ -52,10 +52,10 @@ impl Annotation {
         block: &Node,
         end_live_variables: &HashSet<EcoString>,
         all_static_vars: &HashSet<EcoString>,
-        all_aliased_vars: &HashSet<Val>,
+        aliased_vals: &HashSet<Val>,
     ) {
         let mut current_live_variables = end_live_variables.clone();
-        let all_aliased_vars = all_aliased_vars
+        let all_aliased_vars = aliased_vals
             .iter()
             .map(|v| v.var())
             .cloned()
@@ -151,12 +151,7 @@ impl Annotation {
         live_variables
     }
 
-    fn iterate(
-        &mut self,
-        graph: &Graph,
-        symbol_table: &SymbolTable,
-        all_aliased_vars: &HashSet<Val>,
-    ) {
+    fn iterate(&mut self, graph: &Graph, symbol_table: &SymbolTable, aliased_vals: &HashSet<Val>) {
         let all_static_vars: HashSet<EcoString> = symbol_table
             .iter()
             .filter_map(|(k, v)| {
@@ -177,7 +172,7 @@ impl Annotation {
         while let Some(block) = worklist.pop() {
             let old_annotations = self.block_annotation[&block.id].clone();
             let incoming = self.meet(block, &all_static_vars);
-            self.transfer(block, &incoming, &all_static_vars, all_aliased_vars);
+            self.transfer(block, &incoming, &all_static_vars, aliased_vals);
 
             if old_annotations != self.block_annotation[&block.id] {
                 for pred in &block.predecessors {
