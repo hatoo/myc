@@ -65,6 +65,24 @@ impl Annotation {
                         current_reaching_copies.insert(cpy);
                     }
                 }
+                Instruction::CopyFromOffset { src, dst, .. } => {
+                    let cpy = Copy {
+                        src: Val::Var(src.clone()),
+                        dst: dst.clone(),
+                    };
+                    if !current_reaching_copies.contains(&cpy) {
+                        current_reaching_copies.retain(|c| !(c.src == *dst || c.dst == *dst));
+                    }
+                }
+                Instruction::CopyToOffset { src, dst, .. } => {
+                    let cpy = Copy {
+                        src: src.clone(),
+                        dst: Val::Var(dst.clone()),
+                    };
+                    if !current_reaching_copies.contains(&cpy) {
+                        current_reaching_copies.retain(|c| !(c.src == cpy.dst || c.dst == cpy.dst));
+                    }
+                }
                 Instruction::FunCall { dst, .. } => {
                     current_reaching_copies.retain(|c| {
                         !(c.src.is_static(symbol_table)
@@ -168,7 +186,10 @@ impl Annotation {
                         *src = replace_operand(src.clone(), anno);
                     }
                     Instruction::CopyFromOffset { src, .. } => {
-                        *src = replace_operand(Val::Var(src.clone()), anno).var().clone();
+                        match replace_operand(Val::Var(src.clone()), anno) {
+                            Val::Var(var) => *src = var,
+                            _ => {}
+                        }
                     }
                     Instruction::Binary {
                         lhs: src1,
