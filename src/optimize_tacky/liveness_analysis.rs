@@ -90,7 +90,7 @@ impl Annotation {
                 Instruction::Load { src, dst } | Instruction::Store { src, dst } => {
                     insert(&mut current_live_variables, src);
                     insert(&mut current_live_variables, dst);
-                    current_live_variables.extend(all_static_vars.iter().cloned());
+                    // current_live_variables.extend(all_static_vars.iter().cloned());
                     current_live_variables.extend(all_aliased_vars.iter().cloned());
                 }
                 Instruction::JumpIfNotZero { src, .. } | Instruction::JumpIfZero { src, .. } => {
@@ -121,7 +121,7 @@ impl Annotation {
                 Instruction::Nop
                 | Instruction::Jump(_)
                 | Instruction::Label(_)
-                | Instruction::Return(_) => {}
+                | Instruction::Return(None) => {}
             }
         }
 
