@@ -87,13 +87,7 @@ impl Annotation {
                     remove(&mut current_live_variables, dst);
                     insert(&mut current_live_variables, src);
                 }
-                Instruction::Load { src, dst } => {
-                    insert(&mut current_live_variables, src);
-                    insert(&mut current_live_variables, dst);
-                    current_live_variables.extend(all_static_vars.iter().cloned());
-                    current_live_variables.extend(all_aliased_vars.iter().cloned());
-                }
-                Instruction::Store { src, dst } => {
+                Instruction::Load { src, dst } | Instruction::Store { src, dst } => {
                     insert(&mut current_live_variables, src);
                     insert(&mut current_live_variables, dst);
                     current_live_variables.extend(all_static_vars.iter().cloned());
@@ -116,12 +110,12 @@ impl Annotation {
                 Instruction::Return(Some(dst)) | Instruction::GetAddress { dst, .. } => {
                     insert(&mut current_live_variables, dst);
                 }
-                Instruction::CopyFromOffset { src, dst, .. } => {
-                    remove(&mut current_live_variables, dst);
+                Instruction::CopyFromOffset { src, dst: _, .. } => {
+                    // remove(&mut current_live_variables, dst);
                     insert(&mut current_live_variables, &Val::Var(src.clone()));
                 }
-                Instruction::CopyToOffset { src, dst, .. } => {
-                    remove(&mut current_live_variables, &Val::Var(dst.clone()));
+                Instruction::CopyToOffset { src, dst: _, .. } => {
+                    // remove(&mut current_live_variables, &Val::Var(dst.clone()));
                     insert(&mut current_live_variables, src);
                 }
                 Instruction::Nop
