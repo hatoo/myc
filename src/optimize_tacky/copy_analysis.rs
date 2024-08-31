@@ -160,6 +160,7 @@ impl Annotation {
                     Instruction::Unary { src, .. }
                     | Instruction::Cast { src, .. }
                     | Instruction::Load { src, .. }
+                    | Instruction::Store { src, .. }
                     | Instruction::CopyToOffset { src, .. }
                     | Instruction::JumpIfNotZero { src, .. }
                     | Instruction::JumpIfZero { src, .. }
