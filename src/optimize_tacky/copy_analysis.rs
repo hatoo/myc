@@ -167,6 +167,9 @@ impl Annotation {
                     | Instruction::Return(Some(src)) => {
                         *src = replace_operand(src.clone(), anno);
                     }
+                    Instruction::CopyFromOffset { src, .. } => {
+                        *src = replace_operand(Val::Var(src.clone()), anno).var().clone();
+                    }
                     Instruction::Binary {
                         lhs: src1,
                         rhs: src2,
