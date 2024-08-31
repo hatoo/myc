@@ -1,6 +1,7 @@
 use std::ops::{Add, Div, Mul, Rem, Sub};
 
 use copy_analysis::copy_propagation;
+use liveness_analysis::eliminate_dead_stores;
 
 use crate::{
     ast::{Const, VarType},
@@ -262,6 +263,7 @@ pub enum OptimizeOption {
     ConstantFolding,
     DeadCodeElimination,
     CopyPropagation,
+    EliminateDeadStores,
 }
 
 pub fn optimize(program: &mut Program, symbol_table: &SymbolTable, options: &[OptimizeOption]) {
@@ -283,6 +285,11 @@ pub fn optimize(program: &mut Program, symbol_table: &SymbolTable, options: &[Op
                         OptimizeOption::CopyPropagation => {
                             let mut graph = graph::Graph::new(&f.body);
                             copy_propagation(&mut graph, symbol_table);
+                            f.body = graph.program();
+                        }
+                        OptimizeOption::EliminateDeadStores => {
+                            let mut graph = graph::Graph::new(&f.body);
+                            eliminate_dead_stores(&mut graph, symbol_table);
                             f.body = graph.program();
                         }
                     }

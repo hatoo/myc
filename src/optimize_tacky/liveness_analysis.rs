@@ -9,6 +9,16 @@ use crate::{
 
 use super::graph::{Graph, Node, NodeId};
 
+pub fn eliminate_dead_stores(graph: &mut Graph, symbol_table: &SymbolTable) {
+    let mut annotation = Annotation {
+        block_annotation: HashMap::new(),
+        instruction_annotation: HashMap::new(),
+    };
+
+    annotation.iterate(graph, symbol_table);
+    annotation.rewrite_instructions(graph);
+}
+
 #[derive(Debug)]
 struct Annotation {
     block_annotation: HashMap<usize, HashSet<EcoString>>,
@@ -143,6 +153,32 @@ impl Annotation {
                 }
             }
         }
+    }
+
+    fn rewrite_instructions(&self, graph: &mut Graph) {
+        for node in graph.nodes.values_mut() {
+            for (i, inst) in node.instructions.iter_mut().enumerate() {
+                let live_variables = &self.instruction_annotation[&node.id][i];
+                if let Some(dst) = dst_field(inst) {
+                    if !live_variables.contains(dst) {
+                        *inst = Instruction::Nop;
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn dst_field(inst: &Instruction) -> Option<&EcoString> {
+    match inst {
+        Instruction::Binary { dst, .. }
+        | Instruction::Unary { dst, .. }
+        | Instruction::Cast { dst, .. }
+        | Instruction::Copy { dst, .. }
+        | Instruction::GetAddress { dst, .. }
+        | Instruction::Load { dst, .. }
+        | Instruction::Store { dst, .. } => Some(dst.var()),
+        _ => None,
     }
 }
 

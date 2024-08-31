@@ -41,6 +41,8 @@ struct Opts {
     eliminate_unreachable_code: bool,
     #[clap(long)]
     propagate_copies: bool,
+    #[clap(long)]
+    eliminate_dead_stores: bool,
     #[clap(short = 'O')]
     optimize: bool,
     #[clap(short = 's')]
@@ -134,6 +136,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         || opts.fold_constants
         || opts.eliminate_unreachable_code
         || opts.propagate_copies
+        || opts.eliminate_dead_stores
     {
         let mut optimizes = Vec::new();
         if opts.fold_constants || opts.optimize {
@@ -144,6 +147,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         if opts.propagate_copies || opts.optimize {
             optimizes.push(myc::optimize_tacky::OptimizeOption::CopyPropagation);
+        }
+        if opts.eliminate_dead_stores || opts.optimize {
+            optimizes.push(myc::optimize_tacky::OptimizeOption::EliminateDeadStores);
         }
         myc::optimize_tacky::optimize(&mut tacky, &type_checker.sym_table, &optimizes);
     }
