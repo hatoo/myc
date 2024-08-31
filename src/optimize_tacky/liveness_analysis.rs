@@ -75,7 +75,6 @@ impl Annotation {
                 }
                 Instruction::Unary { src, dst, .. }
                 | Instruction::Cast { src, dst }
-                | Instruction::GetAddress { src, dst }
                 | Instruction::Copy { src, dst } => {
                     remove(&mut current_live_variables, dst);
                     insert(&mut current_live_variables, src);
@@ -97,7 +96,7 @@ impl Annotation {
 
                     current_live_variables.extend(all_static_vars.iter().cloned());
                 }
-                Instruction::Return(Some(dst)) => {
+                Instruction::Return(Some(dst)) | Instruction::GetAddress { dst, .. } => {
                     insert(&mut current_live_variables, dst);
                 }
                 Instruction::CopyFromOffset { src, dst, .. } => {
