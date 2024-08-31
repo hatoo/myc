@@ -186,9 +186,8 @@ impl Annotation {
                         *src = replace_operand(src.clone(), anno);
                     }
                     Instruction::CopyFromOffset { src, .. } => {
-                        match replace_operand(Val::Var(src.clone()), anno) {
-                            Val::Var(var) => *src = var,
-                            _ => {}
+                        if let Val::Var(var) = replace_operand(Val::Var(src.clone()), anno) {
+                            *src = var
                         }
                     }
                     Instruction::Binary {
