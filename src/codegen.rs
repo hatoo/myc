@@ -117,6 +117,7 @@ pub enum Instruction {
     Label(EcoString),
     Ret,
     Push(Operand),
+    Pop(Register),
     Call(Operand),
     Cvttsd2si {
         ty: AssemblyType,
@@ -1848,6 +1849,7 @@ fn pseudo_to_stack(
                 remove_pseudo(src);
                 remove_pseudo(dst);
             }
+            Instruction::Pop(_) => {}
         }
     }
 
@@ -2519,6 +2521,13 @@ impl Display for Instruction {
             }
             Instruction::Push(op) => {
                 writeln!(f, "pushq {}", op.sized(AssemblyType::QuadWord))?;
+            }
+            Instruction::Pop(reg) => {
+                writeln!(
+                    f,
+                    "popq {}",
+                    Operand::Reg(*reg).sized(AssemblyType::QuadWord)
+                )?;
             }
             Instruction::Call(op) => {
                 if let Operand::Plt(_) = op {
