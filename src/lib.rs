@@ -1,5 +1,6 @@
 pub mod ast;
 pub mod codegen;
+pub mod control_flow;
 pub mod lexer;
 pub mod math;
 pub mod optimize_asm;
