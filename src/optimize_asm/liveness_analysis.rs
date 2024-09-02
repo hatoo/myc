@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use ecow::EcoString;
 
 use crate::{
-    codegen::{Instruction, Operand},
+    codegen::{Instruction, Operand, Register},
     control_flow::{self, Cfg},
     semantics::type_check::{Attr, SymbolTable},
 };
@@ -89,6 +89,35 @@ impl Annotation {
                     }
                 }
             }
+        }
+    }
+}
+
+fn find_used_and_updated(inst: &Instruction) -> (Vec<&Operand>, Vec<&Operand>) {
+    match inst {
+        Instruction::Mov { src, dst, .. }
+        | Instruction::MovZeroExtend { src, dst, .. }
+        | Instruction::Movsx { src, dst, .. } => (vec![src], vec![dst]),
+        Instruction::Binary { lhs, rhs, .. } => (vec![lhs, rhs], vec![rhs]),
+        Instruction::Unary { src, .. } => (vec![src], vec![src]),
+        Instruction::Cmp(_, v1, v2) => (vec![v1, v2], vec![]),
+        Instruction::SetCc(_, dst) => (vec![], vec![dst]),
+        Instruction::Push(op) => (vec![op], vec![]),
+        Instruction::Idiv(_, divisor) => (
+            vec![
+                divisor,
+                &Operand::Reg(Register::Ax),
+                &Operand::Reg(Register::Dx),
+            ],
+            vec![&Operand::Reg(Register::Ax), &Operand::Reg(Register::Dx)],
+        ),
+        Instruction::Cdq(_) => (
+            vec![&Operand::Reg(Register::Ax)],
+            vec![&Operand::Reg(Register::Dx)],
+        ),
+        Instruction::Call(op) => todo!(),
+        _ => {
+            todo!()
         }
     }
 }

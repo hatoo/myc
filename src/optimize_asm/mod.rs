@@ -9,6 +9,20 @@ use crate::{
 
 mod liveness_analysis;
 
+const FREE_REGISTERS: [Register; 11] = [
+    Register::Ax,
+    Register::Bx,
+    Register::Cx,
+    Register::Dx,
+    Register::Di,
+    Register::Si,
+    Register::R8,
+    Register::R9,
+    Register::R13,
+    Register::R14,
+    Register::R15,
+];
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 enum NodeId {
     Register(Register),
@@ -41,12 +55,20 @@ impl Node {
 }
 
 pub(crate) fn is_scalar(op: &Operand, symbol_table: &SymbolTable) -> Option<NodeId> {
-    if let Operand::Pseudo(Pseudo::Mem { name, .. }) = op {
-        if let Attr::Local(ty) = &symbol_table[name] {
-            if ty.is_scalar() {
-                return Some(NodeId::Pseudo(name.clone()));
+    match op {
+        Operand::Pseudo(Pseudo::Mem { name, .. }) => {
+            if let Attr::Local(ty) = &symbol_table[name] {
+                if ty.is_scalar() {
+                    return Some(NodeId::Pseudo(name.clone()));
+                }
             }
         }
+        Operand::Reg(reg) => {
+            if FREE_REGISTERS.contains(reg) {
+                return Some(NodeId::Register(*reg));
+            }
+        }
+        _ => {}
     }
 
     None
@@ -58,28 +80,14 @@ impl Graph {
     }
 
     fn base() -> Self {
-        const REGISTERS: [Register; 11] = [
-            Register::Ax,
-            Register::Bx,
-            Register::Cx,
-            Register::Dx,
-            Register::Di,
-            Register::Si,
-            Register::R8,
-            Register::R9,
-            Register::R13,
-            Register::R14,
-            Register::R15,
-        ];
-
         let mut map = HashMap::new();
 
-        for &reg in &REGISTERS {
+        for &reg in &FREE_REGISTERS {
             map.insert(NodeId::Register(reg), Node::new(NodeId::Register(reg)));
         }
 
-        for &reg in &REGISTERS {
-            for &neighbor in &REGISTERS {
+        for &reg in &FREE_REGISTERS {
+            for &neighbor in &FREE_REGISTERS {
                 if reg != neighbor {
                     map.get_mut(&NodeId::Register(reg))
                         .unwrap()
