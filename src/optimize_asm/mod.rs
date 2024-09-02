@@ -7,6 +7,8 @@ use crate::{
     semantics::type_check::{Attr, SymbolTable},
 };
 
+mod liveness_analysis;
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 enum NodeId {
     Register(Register),
@@ -130,8 +132,8 @@ impl Graph {
                 Instruction::Jmp(_) => {}
                 Instruction::JmpCc(..) => {}
                 Instruction::Label(_) => {}
-                Instruction::Lea { src, dst } => {
-                    add_op(src);
+                Instruction::Lea { src: _, dst } => {
+                    // add_op(src);
                     add_op(dst);
                 }
                 Instruction::Mov { src, dst, .. } => {
