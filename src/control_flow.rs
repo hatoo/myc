@@ -12,9 +12,9 @@ pub enum GeneralizedInstruction {
     Others,
 }
 
-impl<'a> Into<GeneralizedInstruction> for &'a tacky::Instruction {
-    fn into(self) -> GeneralizedInstruction {
-        match self {
+impl<'a> From<&'a tacky::Instruction> for GeneralizedInstruction {
+    fn from(val: &'a tacky::Instruction) -> Self {
+        match val {
             tacky::Instruction::Return(..) => GeneralizedInstruction::Return,
             tacky::Instruction::Jump(label) => GeneralizedInstruction::Jump(label.clone()),
             tacky::Instruction::JumpIfNotZero { dst, .. }
@@ -27,9 +27,9 @@ impl<'a> Into<GeneralizedInstruction> for &'a tacky::Instruction {
     }
 }
 
-impl<'a> Into<GeneralizedInstruction> for &'a codegen::Instruction {
-    fn into(self) -> GeneralizedInstruction {
-        match self {
+impl<'a> From<&'a codegen::Instruction> for GeneralizedInstruction {
+    fn from(val: &'a codegen::Instruction) -> Self {
+        match val {
             codegen::Instruction::Ret => GeneralizedInstruction::Return,
             codegen::Instruction::Jmp(label) => GeneralizedInstruction::Jump(label.clone()),
             codegen::Instruction::JmpCc(_, label) => GeneralizedInstruction::MayJump(label.clone()),
