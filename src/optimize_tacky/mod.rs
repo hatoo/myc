@@ -5,6 +5,7 @@ use liveness_analysis::eliminate_dead_stores;
 
 use crate::{
     ast::{Const, VarType},
+    control_flow::Cfg,
     semantics::type_check::SymbolTable,
     tacky::{BinaryOp, Instruction, Program, TopLevelItem, UnaryOp, Val},
 };
@@ -283,7 +284,7 @@ pub fn optimize(program: &mut Program, symbol_table: &SymbolTable, options: &[Op
                             f.body = graph.program();
                         }
                         OptimizeOption::CopyPropagation => {
-                            let mut graph = graph::Graph::new(&f.body);
+                            let mut graph = Cfg::new(&f.body);
                             copy_propagation(&mut graph, symbol_table);
                             f.body = graph.program();
                         }

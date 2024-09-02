@@ -1,11 +1,10 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
+    control_flow::{Cfg, Node, NodeId},
     semantics::type_check::SymbolTable,
     tacky::{Instruction, Val},
 };
-
-use super::graph::{Graph, Node, NodeId};
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub struct Copy {
@@ -19,7 +18,7 @@ struct Annotation {
     instruction_annotation: HashMap<usize, Vec<HashSet<Copy>>>,
 }
 
-pub fn copy_propagation(graph: &mut Graph, symbol_table: &SymbolTable) {
+pub fn copy_propagation(graph: &mut Cfg<Instruction>, symbol_table: &SymbolTable) {
     let mut annotation = Annotation {
         block_annotation: HashMap::new(),
         instruction_annotation: HashMap::new(),
@@ -30,7 +29,7 @@ pub fn copy_propagation(graph: &mut Graph, symbol_table: &SymbolTable) {
 }
 
 impl Annotation {
-    fn init_block(&mut self, block: &Node) {
+    fn init_block(&mut self, block: &Node<Instruction>) {
         self.instruction_annotation
             .insert(block.id, vec![HashSet::new(); block.instructions.len()]);
     }
@@ -46,7 +45,7 @@ impl Annotation {
 
     fn transfer(
         &mut self,
-        block: &Node,
+        block: &Node<Instruction>,
         symbol_table: &SymbolTable,
         initial_reaching_copies: &HashSet<Copy>,
         aliased_vals: &HashSet<Val>,
@@ -114,7 +113,7 @@ impl Annotation {
             .insert(block.id, current_reaching_copies.clone());
     }
 
-    fn meet(&mut self, block: &Node, all_copies: &HashSet<Copy>) -> HashSet<Copy> {
+    fn meet(&mut self, block: &Node<Instruction>, all_copies: &HashSet<Copy>) -> HashSet<Copy> {
         let mut incoming_copies = all_copies.clone();
 
         for pred in &block.predecessors {
@@ -129,9 +128,30 @@ impl Annotation {
         incoming_copies
     }
 
-    fn iterate(&mut self, graph: &Graph, symbol_table: &SymbolTable) {
-        let all_copies = graph.all_copy_instructions();
-        let aliased_vals = graph.aliased_vals();
+    fn iterate(&mut self, graph: &Cfg<Instruction>, symbol_table: &SymbolTable) {
+        let all_copies: HashSet<Copy> = graph
+            .all_instructions()
+            .filter_map(|inst| {
+                if let Instruction::Copy { src, dst } = inst {
+                    Some(Copy {
+                        src: src.clone(),
+                        dst: dst.clone(),
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let aliased_vals = graph
+            .all_instructions()
+            .filter_map(|inst| {
+                if let Instruction::GetAddress { src, .. } = inst {
+                    Some(src.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
 
         let mut worklist = Vec::new();
         for node in graph.nodes.values() {
@@ -158,7 +178,7 @@ impl Annotation {
         }
     }
 
-    fn rewrite_instructions(&self, graph: &mut Graph) {
+    fn rewrite_instructions(&self, graph: &mut Cfg<Instruction>) {
         for node in graph.nodes.values_mut() {
             for (inst, anno) in node
                 .instructions
