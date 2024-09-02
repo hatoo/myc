@@ -230,7 +230,7 @@ impl<'a> From<&'a tacky::Val> for Operand {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Register {
     Ax,
     Bx,
