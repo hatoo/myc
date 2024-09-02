@@ -40,7 +40,7 @@ impl Node {
     }
 }
 
-fn is_scalar(op: &Operand, symbol_table: &SymbolTable) -> Option<NodeId> {
+pub(crate) fn is_scalar(op: &Operand, symbol_table: &SymbolTable) -> Option<NodeId> {
     if let Operand::Pseudo(Pseudo::Mem { name, .. }) = op {
         if let Attr::Local(ty) = &symbol_table[name] {
             if ty.is_scalar() {

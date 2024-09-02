@@ -3,12 +3,12 @@ use std::collections::{HashMap, HashSet};
 use ecow::EcoString;
 
 use crate::{
-    codegen::Instruction,
+    codegen::{Instruction, Operand},
     control_flow::{self, Cfg},
     semantics::type_check::{Attr, SymbolTable},
 };
 
-use super::NodeId;
+use super::{is_scalar, NodeId};
 
 #[derive(Debug)]
 struct Annotation {
@@ -39,6 +39,7 @@ impl Annotation {
     fn transfer(
         &mut self,
         block: &control_flow::Node<Instruction>,
+        symbol_table: &SymbolTable,
         end_live_variables: &HashSet<NodeId>,
     ) {
         let mut current_live_variables = end_live_variables.clone();
@@ -76,7 +77,7 @@ impl Annotation {
         while let Some(block) = worklist.pop() {
             let old_annotations = self.block_annotation[&block.id].clone();
             let incoming = self.meet(block);
-            self.transfer(block, &incoming);
+            self.transfer(block, symbol_table, &incoming);
 
             if old_annotations != self.block_annotation[&block.id] {
                 for pred in &block.predecessors {
