@@ -289,7 +289,7 @@ pub fn optimize(program: &mut Program, symbol_table: &SymbolTable, options: &[Op
                             f.body = graph.program();
                         }
                         OptimizeOption::EliminateDeadStores => {
-                            let mut graph = graph::Graph::new(&f.body);
+                            let mut graph = Cfg::new(&f.body);
                             eliminate_dead_stores(&mut graph, symbol_table);
                             f.body = graph.program();
                         }

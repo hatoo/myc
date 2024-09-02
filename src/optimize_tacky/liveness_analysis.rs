@@ -3,19 +3,27 @@ use std::collections::{HashMap, HashSet};
 use ecow::EcoString;
 
 use crate::{
+    control_flow::{Cfg, Node, NodeId},
     semantics::type_check::{Attr, SymbolTable},
     tacky::{Instruction, Val},
 };
 
-use super::graph::{Graph, Node, NodeId};
-
-pub fn eliminate_dead_stores(graph: &mut Graph, symbol_table: &SymbolTable) {
+pub fn eliminate_dead_stores(graph: &mut Cfg<Instruction>, symbol_table: &SymbolTable) {
     let mut annotation = Annotation {
         block_annotation: HashMap::new(),
         instruction_annotation: HashMap::new(),
     };
 
-    let aliased_vals = graph.aliased_vals();
+    let aliased_vals = graph
+        .all_instructions()
+        .filter_map(|inst| {
+            if let Instruction::GetAddress { src, .. } = inst {
+                Some(src.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
 
     annotation.iterate(graph, symbol_table, &aliased_vals);
     annotation.rewrite_instructions(graph);
@@ -28,7 +36,7 @@ struct Annotation {
 }
 
 impl Annotation {
-    fn init_block(&mut self, block: &Node) {
+    fn init_block(&mut self, block: &Node<Instruction>) {
         self.block_annotation.insert(block.id, HashSet::new());
         self.instruction_annotation
             .insert(block.id, vec![HashSet::new(); block.instructions.len()]);
@@ -49,7 +57,7 @@ impl Annotation {
 
     fn transfer(
         &mut self,
-        block: &Node,
+        block: &Node<Instruction>,
         end_live_variables: &HashSet<EcoString>,
         all_static_vars: &HashSet<EcoString>,
         aliased_vals: &HashSet<Val>,
@@ -130,7 +138,7 @@ impl Annotation {
 
     fn meet(
         &mut self,
-        block: &Node,
+        block: &Node<Instruction>,
         all_static_variables: &HashSet<EcoString>,
     ) -> HashSet<EcoString> {
         let mut live_variables = HashSet::new();
@@ -151,7 +159,12 @@ impl Annotation {
         live_variables
     }
 
-    fn iterate(&mut self, graph: &Graph, symbol_table: &SymbolTable, aliased_vals: &HashSet<Val>) {
+    fn iterate(
+        &mut self,
+        graph: &Cfg<Instruction>,
+        symbol_table: &SymbolTable,
+        aliased_vals: &HashSet<Val>,
+    ) {
         let all_static_vars: HashSet<EcoString> = symbol_table
             .iter()
             .filter_map(|(k, v)| {
@@ -187,7 +200,7 @@ impl Annotation {
         }
     }
 
-    fn rewrite_instructions(&self, graph: &mut Graph) {
+    fn rewrite_instructions(&self, graph: &mut Cfg<Instruction>) {
         for node in graph.nodes.values_mut() {
             for (i, inst) in node.instructions.iter_mut().enumerate() {
                 let live_variables = &self.instruction_annotation[&node.id][i];
