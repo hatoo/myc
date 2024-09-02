@@ -2,12 +2,41 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use ecow::EcoString;
 
+use crate::{codegen, tacky};
+
 pub enum GeneralizedInstruction {
     Return,
     Jump(EcoString),
     MayJump(EcoString),
     Label(EcoString),
     Others,
+}
+
+impl<'a> Into<GeneralizedInstruction> for &'a tacky::Instruction {
+    fn into(self) -> GeneralizedInstruction {
+        match self {
+            tacky::Instruction::Return(..) => GeneralizedInstruction::Return,
+            tacky::Instruction::Jump(label) => GeneralizedInstruction::Jump(label.clone()),
+            tacky::Instruction::JumpIfNotZero { dst, .. }
+            | tacky::Instruction::JumpIfZero { dst, .. } => {
+                GeneralizedInstruction::MayJump(dst.clone())
+            }
+            tacky::Instruction::Label(label) => GeneralizedInstruction::Label(label.clone()),
+            _ => GeneralizedInstruction::Others,
+        }
+    }
+}
+
+impl<'a> Into<GeneralizedInstruction> for &'a codegen::Instruction {
+    fn into(self) -> GeneralizedInstruction {
+        match self {
+            codegen::Instruction::Ret => GeneralizedInstruction::Return,
+            codegen::Instruction::Jmp(label) => GeneralizedInstruction::Jump(label.clone()),
+            codegen::Instruction::JmpCc(_, label) => GeneralizedInstruction::MayJump(label.clone()),
+            codegen::Instruction::Label(label) => GeneralizedInstruction::Label(label.clone()),
+            _ => GeneralizedInstruction::Others,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
@@ -33,14 +62,14 @@ struct Exit {
     predecessors: HashSet<NodeId>,
 }
 
-pub struct Graph<I> {
+pub struct Cfg<I> {
     entry: Entry,
     exit: Exit,
     pub nodes: BTreeMap<usize, Node<I>>,
     label_map: HashMap<EcoString, NodeId>,
 }
 
-impl<I> Graph<I>
+impl<I> Cfg<I>
 where
     I: Clone,
     for<'a> &'a I: Into<GeneralizedInstruction>,
@@ -275,7 +304,7 @@ where
         blocks
     }
 
-    fn put_node_id(blocks: Vec<Vec<I>>) -> Graph<I> {
+    fn put_node_id(blocks: Vec<Vec<I>>) -> Cfg<I> {
         let mut basic_blocks = BTreeMap::new();
 
         for (id, block) in blocks.into_iter().enumerate() {
@@ -290,7 +319,7 @@ where
             );
         }
 
-        Graph {
+        Cfg {
             entry: Entry {
                 successors: Default::default(),
             },
