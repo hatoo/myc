@@ -1,8 +1,11 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use ecow::EcoString;
 
-use crate::codegen::Register;
+use crate::{
+    codegen::{Instruction, Operand, Pseudo, Register},
+    semantics::type_check::{Attr, SymbolTable},
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 enum NodeId {
@@ -35,7 +38,23 @@ impl Node {
     }
 }
 
+fn is_scalar(op: &Operand, symbol_table: &SymbolTable) -> Option<NodeId> {
+    if let Operand::Pseudo(Pseudo::Mem { name, .. }) = op {
+        if let Attr::Local(ty) = &symbol_table[name] {
+            if ty.is_scalar() {
+                return Some(NodeId::Pseudo(name.clone()));
+            }
+        }
+    }
+
+    None
+}
+
 impl Graph {
+    fn new(program: &[Instruction], symbol_table: &SymbolTable) -> Self {
+        todo!()
+    }
+
     fn base() -> Self {
         const REGISTERS: [Register; 11] = [
             Register::Ax,
@@ -69,5 +88,80 @@ impl Graph {
         }
 
         Self { map }
+    }
+
+    fn collect_pseudo_vars(&mut self, insts: &[Instruction], symbol_table: &SymbolTable) {
+        let mut vars = HashSet::new();
+
+        let mut add_op = |op: &Operand| {
+            if let Some(id) = is_scalar(op, &symbol_table) {
+                vars.insert(id);
+            }
+        };
+
+        for inst in insts {
+            match inst {
+                Instruction::Binary { lhs, rhs, .. } => {
+                    add_op(lhs);
+                    add_op(rhs);
+                }
+                Instruction::Call(op) => {
+                    add_op(op);
+                }
+                Instruction::Cdq(_) => {}
+                Instruction::Cmp(_, op1, op2) => {
+                    add_op(op1);
+                    add_op(op2);
+                }
+                Instruction::Cvtsi2sd { src, dst, .. } => {
+                    add_op(src);
+                    add_op(dst);
+                }
+                Instruction::Cvttsd2si { src, dst, .. } => {
+                    add_op(src);
+                    add_op(dst);
+                }
+                Instruction::Div(_, op) => {
+                    add_op(op);
+                }
+                Instruction::Idiv(_, op) => {
+                    add_op(op);
+                }
+                Instruction::Jmp(_) => {}
+                Instruction::JmpCc(..) => {}
+                Instruction::Label(_) => {}
+                Instruction::Lea { src, dst } => {
+                    add_op(src);
+                    add_op(dst);
+                }
+                Instruction::Mov { src, dst, .. } => {
+                    add_op(src);
+                    add_op(dst);
+                }
+                Instruction::MovZeroExtend { src, dst, .. } => {
+                    add_op(src);
+                    add_op(dst);
+                }
+                Instruction::Movsx { src, dst, .. } => {
+                    add_op(src);
+                    add_op(dst);
+                }
+                Instruction::Pop(_) => {}
+                Instruction::Push(op) => {
+                    add_op(op);
+                }
+                Instruction::Ret => {}
+                Instruction::SetCc(_, op) => {
+                    add_op(op);
+                }
+                Instruction::Unary { src, .. } => {
+                    add_op(src);
+                }
+            }
+        }
+
+        for id in vars {
+            self.map.insert(id.clone(), Node::new(id));
+        }
     }
 }
