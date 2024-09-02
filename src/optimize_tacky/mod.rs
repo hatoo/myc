@@ -11,7 +11,6 @@ use crate::{
 };
 
 mod copy_analysis;
-mod graph;
 mod liveness_analysis;
 
 macro_rules! fold_binary {
@@ -279,7 +278,7 @@ pub fn optimize(program: &mut Program, symbol_table: &SymbolTable, options: &[Op
                             constant_folding(&mut f.body, symbol_table);
                         }
                         OptimizeOption::DeadCodeElimination => {
-                            let mut graph = graph::Graph::new(&f.body);
+                            let mut graph = Cfg::new(&f.body);
                             graph.eliminate_unreachable_code();
                             f.body = graph.program();
                         }
