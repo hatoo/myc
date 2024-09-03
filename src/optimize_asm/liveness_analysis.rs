@@ -12,7 +12,7 @@ use crate::{
     semantics::type_check::{Attr, SymbolTable},
 };
 
-use super::{is_scalar, NodeId};
+use super::{is_int_scalar, NodeId};
 
 #[derive(Debug, Default)]
 pub struct Annotation {
@@ -54,13 +54,13 @@ impl Annotation {
             let (used, updated) = find_used_and_updated(inst, symbol_table);
 
             for op in updated {
-                if let Some(node) = is_scalar(op, symbol_table) {
+                if let Some(node) = is_int_scalar(op, symbol_table) {
                     current_live_variables.remove(&node);
                 }
             }
 
             for op in used {
-                if let Some(node) = is_scalar(op, symbol_table) {
+                if let Some(node) = is_int_scalar(op, symbol_table) {
                     current_live_variables.insert(node);
                 }
             }

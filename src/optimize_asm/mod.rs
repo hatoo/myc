@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 use ecow::EcoString;
 
 use crate::{
+    ast::{BaseType, VarType},
     codegen::{Instruction, Operand, Pseudo, Register},
     control_flow::Cfg,
     semantics::type_check::{Attr, SymbolTable},
@@ -10,6 +11,7 @@ use crate::{
 
 mod liveness_analysis;
 
+// R10 and R11 are used as temporary registers in the code generator
 const FREE_REGISTERS: [Register; 11] = [
     Register::Ax,
     Register::Bx,
@@ -55,17 +57,17 @@ impl Node {
     }
 }
 
-fn is_scalar(op: &Operand, symbol_table: &SymbolTable) -> Option<NodeId> {
+fn is_int_scalar(op: &Operand, symbol_table: &SymbolTable) -> Option<NodeId> {
     match op {
         Operand::Pseudo(Pseudo::Mem { name, .. }) => {
             if let Attr::Local(ty) = &symbol_table[name] {
-                if ty.is_scalar() {
+                if ty.is_scalar() && *ty != VarType::Base(BaseType::Double) {
                     return Some(NodeId::Pseudo(name.clone()));
                 }
             }
         }
         Operand::Reg(reg) => {
-            if FREE_REGISTERS.contains(reg) || matches!(reg, Register::Xmm(_)) {
+            if FREE_REGISTERS.contains(reg) {
                 return Some(NodeId::Register(*reg));
             }
         }
@@ -119,13 +121,13 @@ impl Graph {
 
                 for l in live {
                     if let Instruction::Mov { src, .. } = inst {
-                        if is_scalar(src, symbol_table).as_ref() == Some(l) {
+                        if is_int_scalar(src, symbol_table).as_ref() == Some(l) {
                             continue;
                         }
                     }
 
                     for u in &updated {
-                        if let Some(u) = is_scalar(&u, symbol_table) {
+                        if let Some(u) = is_int_scalar(&u, symbol_table) {
                             self.add_edge(l.clone(), u);
                         }
                     }
@@ -138,7 +140,7 @@ impl Graph {
         let mut vars = HashSet::new();
 
         let mut add_op = |op: &Operand| {
-            if let Some(id) = is_scalar(op, &symbol_table) {
+            if let Some(id) = is_int_scalar(op, &symbol_table) {
                 vars.insert(id);
             }
         };
