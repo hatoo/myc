@@ -347,33 +347,8 @@ impl<'a> CodeGen<'a> {
         EcoString::from(label)
     }
 
-    fn asm_type(&self, ty: &VarType) -> AssemblyType {
-        match ty {
-            VarType::Void => panic!("Void type must be eliminated in type checking stage"),
-            VarType::Base(base) => match base {
-                BaseType::Char | BaseType::SChar | BaseType::UChar => AssemblyType::Byte,
-                BaseType::Int | BaseType::Uint => AssemblyType::LongWord,
-                BaseType::Long | BaseType::Ulong => AssemblyType::QuadWord,
-                BaseType::Double => AssemblyType::Double,
-            },
-            VarType::Pointer(_) => AssemblyType::QuadWord,
-            VarType::Array { .. } => AssemblyType::ByteArray {
-                size: self.symbol_table.size(ty),
-                alignment: self.symbol_table.alignment(ty),
-            },
-            VarType::Struct(name) => {
-                let struct_def = self.symbol_table.struct_def(name);
-
-                AssemblyType::ByteArray {
-                    size: struct_def.size,
-                    alignment: struct_def.alignment,
-                }
-            }
-        }
-    }
-
     fn val_asm_type(&self, val: &Val) -> AssemblyType {
-        self.asm_type(&val.ty(self.symbol_table))
+        asm_type(&val.ty(self.symbol_table), &self.symbol_table)
     }
 
     pub fn gen_program(&mut self, program: &tacky::Program) -> Program {
@@ -481,7 +456,7 @@ impl<'a> CodeGen<'a> {
             unreachable!()
         };
 
-        let return_in_memory = self.is_return_in_memory(&ty.ret);
+        let return_in_memory = is_return_in_memory(&ty.ret, &self.symbol_table);
 
         if return_in_memory {
             body.push(Instruction::Mov {
@@ -608,7 +583,7 @@ impl<'a> CodeGen<'a> {
                                 Operand::Reg(Register::Xmm(0)),
                             ));
                             body.push(Instruction::Mov {
-                                ty: self.asm_type(&dst_ty),
+                                ty: asm_type(&dst_ty, &self.symbol_table),
                                 src: Operand::Imm(0),
                                 dst: dst.into(),
                             });
@@ -662,7 +637,7 @@ impl<'a> CodeGen<'a> {
                                         src.into(),
                                     ));
                                     body.push(Instruction::Mov {
-                                        ty: self.asm_type(&dst_ty),
+                                        ty: asm_type(&dst_ty, &self.symbol_table),
                                         src: Operand::Imm(0),
                                         dst: dst.into(),
                                     });
@@ -747,7 +722,7 @@ impl<'a> CodeGen<'a> {
                                     dst: dst.into(),
                                 });
                             } else if ty.is_signed() {
-                                let ty = self.asm_type(&ty);
+                                let ty = asm_type(&ty, &self.symbol_table);
                                 body.push(Instruction::Mov {
                                     ty,
                                     src: lhs.into(),
@@ -761,7 +736,7 @@ impl<'a> CodeGen<'a> {
                                     dst: dst.into(),
                                 });
                             } else {
-                                let ty = self.asm_type(&ty);
+                                let ty = asm_type(&ty, &self.symbol_table);
                                 body.push(Instruction::Mov {
                                     ty,
                                     src: lhs.into(),
@@ -783,7 +758,7 @@ impl<'a> CodeGen<'a> {
                         Binary::Remainder => {
                             let ty = lhs.ty(self.symbol_table);
                             if ty.is_signed() {
-                                let ty = self.asm_type(&ty);
+                                let ty = asm_type(&ty, &self.symbol_table);
                                 body.push(Instruction::Mov {
                                     ty,
                                     src: lhs.into(),
@@ -797,7 +772,7 @@ impl<'a> CodeGen<'a> {
                                     dst: dst.into(),
                                 });
                             } else {
-                                let ty = self.asm_type(&ty);
+                                let ty = asm_type(&ty, &self.symbol_table);
                                 body.push(Instruction::Mov {
                                     ty,
                                     src: lhs.into(),
@@ -1500,47 +1475,8 @@ impl<'a> CodeGen<'a> {
         }
     }
 
-    fn classify_struct(&self, structure: &type_check::StructDef) -> Vec<Class> {
-        if structure.size > 16 {
-            let mut ret = Vec::new();
-            let mut size = structure.size;
-            while size > 0 {
-                if size >= 8 {
-                    size -= 8;
-                } else {
-                    size = 0;
-                }
-                ret.push(Class::Memory);
-            }
-            ret
-        } else {
-            let mut scalar_types = Vec::new();
-            for member in &structure.members {
-                scalar_types.extend(self.symbol_table.flatten(&member.ty));
-            }
-
-            if structure.size > 8 {
-                if scalar_types.first() == Some(&BaseType::Double)
-                    && scalar_types.last() == Some(&BaseType::Double)
-                {
-                    vec![Class::Sse, Class::Sse]
-                } else if scalar_types.first() == Some(&BaseType::Double) {
-                    vec![Class::Sse, Class::Integer]
-                } else if scalar_types.last() == Some(&BaseType::Double) {
-                    vec![Class::Integer, Class::Sse]
-                } else {
-                    vec![Class::Integer, Class::Integer]
-                }
-            } else if scalar_types.first() == Some(&BaseType::Double) {
-                vec![Class::Sse]
-            } else {
-                vec![Class::Integer]
-            }
-        }
-    }
-
     #[allow(clippy::type_complexity)]
-    fn classify_parameters(
+    pub fn classify_parameters(
         &self,
         iter: impl Iterator<Item = Val>,
         return_in_memory: bool,
@@ -1557,7 +1493,7 @@ impl<'a> CodeGen<'a> {
 
         for val in iter {
             let ty = val.ty(self.symbol_table);
-            let asm_ty = self.asm_type(&ty);
+            let asm_ty = asm_type(&ty, &self.symbol_table);
             match &ty {
                 VarType::Base(BaseType::Double) => {
                     if double_reg_args.len() < 8 {
@@ -1568,7 +1504,7 @@ impl<'a> CodeGen<'a> {
                 }
                 VarType::Struct(name) => {
                     let structure = self.symbol_table.struct_def(name);
-                    let classes = self.classify_struct(structure);
+                    let classes = classify_struct(structure, &self.symbol_table);
                     let mut use_stack = true;
                     let struct_size = structure.size;
                     let Val::Var(val_name) = val else {
@@ -1629,22 +1565,12 @@ impl<'a> CodeGen<'a> {
         (int_reg_args, double_reg_args, stack_args)
     }
 
-    fn is_return_in_memory(&self, ty: &VarType) -> bool {
-        if let VarType::Struct(name) = ty {
-            let struct_def = self.symbol_table.struct_def(name);
-            let classes = self.classify_struct(struct_def);
-            classes[0] == Class::Memory
-        } else {
-            false
-        }
-    }
-
     fn classify_return_value(
         &self,
         retval: &Val,
     ) -> (Vec<(AssemblyType, Operand)>, Vec<Operand>, bool) {
         let ty = retval.ty(self.symbol_table);
-        let asm_ty: AssemblyType = self.asm_type(&ty);
+        let asm_ty: AssemblyType = asm_type(&ty, &self.symbol_table);
 
         match asm_ty {
             AssemblyType::Double => (Vec::new(), vec![retval.into()], false),
@@ -1656,7 +1582,7 @@ impl<'a> CodeGen<'a> {
                     unreachable!()
                 };
                 let struct_def = self.symbol_table.struct_def(struct_name);
-                let classes = self.classify_struct(struct_def);
+                let classes = classify_struct(struct_def, &self.symbol_table);
                 let struct_size = struct_def.size;
 
                 if classes[0] == Class::Memory {
@@ -1709,7 +1635,7 @@ fn get_eightbyte_type(offset: usize, struct_size: usize) -> AssemblyType {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Class {
+pub enum Class {
     Memory,
     Sse,
     Integer,
@@ -2708,5 +2634,82 @@ impl Display for CondCode {
             CondCode::Be => write!(f, "be")?,
         }
         Ok(())
+    }
+}
+
+pub fn is_return_in_memory(ty: &VarType, symbol_table: &SymbolTable) -> bool {
+    if let VarType::Struct(name) = ty {
+        let struct_def = symbol_table.struct_def(name);
+        let classes = classify_struct(struct_def, symbol_table);
+        classes[0] == Class::Memory
+    } else {
+        false
+    }
+}
+
+pub fn classify_struct(
+    structure: &type_check::StructDef,
+    symbol_table: &SymbolTable,
+) -> Vec<Class> {
+    if structure.size > 16 {
+        let mut ret = Vec::new();
+        let mut size = structure.size;
+        while size > 0 {
+            if size >= 8 {
+                size -= 8;
+            } else {
+                size = 0;
+            }
+            ret.push(Class::Memory);
+        }
+        ret
+    } else {
+        let mut scalar_types = Vec::new();
+        for member in &structure.members {
+            scalar_types.extend(symbol_table.flatten(&member.ty));
+        }
+
+        if structure.size > 8 {
+            if scalar_types.first() == Some(&BaseType::Double)
+                && scalar_types.last() == Some(&BaseType::Double)
+            {
+                vec![Class::Sse, Class::Sse]
+            } else if scalar_types.first() == Some(&BaseType::Double) {
+                vec![Class::Sse, Class::Integer]
+            } else if scalar_types.last() == Some(&BaseType::Double) {
+                vec![Class::Integer, Class::Sse]
+            } else {
+                vec![Class::Integer, Class::Integer]
+            }
+        } else if scalar_types.first() == Some(&BaseType::Double) {
+            vec![Class::Sse]
+        } else {
+            vec![Class::Integer]
+        }
+    }
+}
+
+pub fn asm_type(ty: &VarType, symbol_table: &SymbolTable) -> AssemblyType {
+    match ty {
+        VarType::Void => panic!("Void type must be eliminated in type checking stage"),
+        VarType::Base(base) => match base {
+            BaseType::Char | BaseType::SChar | BaseType::UChar => AssemblyType::Byte,
+            BaseType::Int | BaseType::Uint => AssemblyType::LongWord,
+            BaseType::Long | BaseType::Ulong => AssemblyType::QuadWord,
+            BaseType::Double => AssemblyType::Double,
+        },
+        VarType::Pointer(_) => AssemblyType::QuadWord,
+        VarType::Array { .. } => AssemblyType::ByteArray {
+            size: symbol_table.size(ty),
+            alignment: symbol_table.alignment(ty),
+        },
+        VarType::Struct(name) => {
+            let struct_def = symbol_table.struct_def(name);
+
+            AssemblyType::ByteArray {
+                size: struct_def.size,
+                alignment: struct_def.alignment,
+            }
+        }
     }
 }
