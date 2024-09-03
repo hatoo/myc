@@ -53,8 +53,9 @@ struct Node {
     pruned: bool,
 }
 
-struct ColoringGraph {
+struct ColoringGraph<'a> {
     map: HashMap<NodeId, Node>,
+    symbol_table: &'a SymbolTable,
 }
 
 impl Node {
@@ -69,35 +70,35 @@ impl Node {
     }
 }
 
-fn is_int_scalar(op: &Operand, symbol_table: &SymbolTable) -> Option<NodeId> {
-    match op {
-        Operand::Pseudo(Pseudo::Mem { name, .. }) => {
+fn is_int_scalar(n: &NodeId, symbol_table: &SymbolTable) -> Option<NodeId> {
+    match n {
+        NodeId::Pseudo(name) => {
             if let Attr::Local(ty) = &symbol_table[name] {
                 if ty.is_scalar() && *ty != VarType::Base(BaseType::Double) {
                     return Some(NodeId::Pseudo(name.clone()));
                 }
             }
         }
-        Operand::Reg(reg) => {
+        NodeId::Register(reg) => {
             if FREE_REGISTERS.contains(reg) {
                 return Some(NodeId::Register(*reg));
             }
         }
-        _ => {}
     }
 
     None
 }
 
-impl ColoringGraph {
-    fn new(program: &[Instruction], symbol_table: &SymbolTable) -> Self {
-        let mut me = Self::base();
+impl<'a> ColoringGraph<'a> {
+    fn new(program: &[Instruction], symbol_table: &'a SymbolTable) -> Self {
+        let mut me = Self::base(symbol_table);
         let cfg = Cfg::new(program);
-        me.add_edges(&cfg, symbol_table);
+        me.collect_pseudo_vars(program);
+        me.add_edges(&cfg);
         me
     }
 
-    fn base() -> Self {
+    fn base(symbol_table: &'a SymbolTable) -> Self {
         let mut map = HashMap::new();
 
         for &reg in &FREE_REGISTERS {
@@ -115,21 +116,27 @@ impl ColoringGraph {
             }
         }
 
-        Self { map }
+        Self { map, symbol_table }
     }
 
-    fn check_node_id(&self, n: &NodeId, symbol_table: &SymbolTable) -> bool {
+    fn check_node_id(&self, n: &NodeId) -> bool {
         match n {
             NodeId::Register(r) => FREE_REGISTERS.contains(r),
-            NodeId::Pseudo(name) => match &symbol_table[name] {
+            NodeId::Pseudo(name) => match &self.symbol_table[name] {
                 Attr::Local(ty) => ty.is_scalar() && *ty != VarType::Base(BaseType::Double),
                 _ => false,
             },
         }
     }
 
-    fn add_edge(&mut self, a: NodeId, b: NodeId, symbol_table: &SymbolTable) {
-        if self.check_node_id(&a, symbol_table) && self.check_node_id(&b, symbol_table) {
+    fn add_var(&mut self, n: NodeId) {
+        if let Some(n) = is_int_scalar(&n, &self.symbol_table) {
+            self.map.insert(n.clone(), Node::new(n));
+        }
+    }
+
+    fn add_edge(&mut self, a: NodeId, b: NodeId) {
+        if self.check_node_id(&a) && self.check_node_id(&b) {
             self.map
                 .entry(a.clone())
                 .or_insert_with_key(|k| Node::new(k.clone()))
@@ -143,16 +150,17 @@ impl ColoringGraph {
         }
     }
 
-    fn add_edges(&mut self, cfg: &Cfg<Instruction>, symbol_table: &SymbolTable) {
+    fn add_edges(&mut self, cfg: &Cfg<Instruction>) {
         let mut annotation = liveness_analysis::Annotation::default();
 
-        annotation.iterate(cfg, &symbol_table);
+        annotation.iterate(cfg, &self.symbol_table);
 
         for node in cfg.nodes.values() {
             let annotation = annotation.instruction_annotation.get(&node.id).unwrap();
 
             for (inst, live) in node.instructions.iter().zip(annotation.iter()) {
-                let (_used, updated) = liveness_analysis::find_used_and_updated(inst, symbol_table);
+                let (_used, updated) =
+                    liveness_analysis::find_used_and_updated(inst, &self.symbol_table);
 
                 for l in live {
                     if let Instruction::Mov { src, .. } = inst {
@@ -163,7 +171,7 @@ impl ColoringGraph {
 
                     for &u in &updated {
                         if let Ok(u) = u.try_into() {
-                            self.add_edge(l.clone(), u, symbol_table);
+                            self.add_edge(l.clone(), u);
                         }
                     }
                 }
@@ -171,12 +179,10 @@ impl ColoringGraph {
         }
     }
 
-    fn collect_pseudo_vars(&mut self, insts: &[Instruction], symbol_table: &SymbolTable) {
-        let mut vars = HashSet::new();
-
+    fn collect_pseudo_vars(&mut self, insts: &[Instruction]) {
         let mut add_op = |op: &Operand| {
-            if let Some(id) = is_int_scalar(op, &symbol_table) {
-                vars.insert(id);
+            if let Ok(id) = op.try_into() {
+                self.add_var(id);
             }
         };
 
@@ -239,10 +245,6 @@ impl ColoringGraph {
                     add_op(src);
                 }
             }
-        }
-
-        for id in vars {
-            self.map.insert(id.clone(), Node::new(id));
         }
     }
 }
