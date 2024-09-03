@@ -2,6 +2,7 @@ use core::panic;
 use std::{
     collections::{hash_map::Entry, HashMap},
     fmt::Display,
+    hash::Hash,
 };
 
 use ecow::EcoString;
@@ -73,7 +74,7 @@ pub struct Function {
     pub body: Vec<Instruction>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Instruction {
     Mov {
         ty: AssemblyType,
@@ -131,14 +132,14 @@ pub enum Instruction {
     },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum UnaryOp {
     Neg,
     Not,
     Shr,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum BinaryOp {
     Add,
     Sub,

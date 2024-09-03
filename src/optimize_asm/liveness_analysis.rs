@@ -5,17 +5,18 @@ use ecow::EcoString;
 use crate::{
     ast::{BaseType, FunType, VarType},
     codegen::{
-        asm_type, classify_struct, is_return_in_memory, Class, CodeGen, Instruction, Operand,
-        Pseudo, Register,
+        asm_type, classify_struct, is_return_in_memory, Class, Instruction, Operand, Pseudo,
+        Register,
     },
     control_flow::{self, Cfg},
     semantics::type_check::{Attr, SymbolTable},
 };
 
-use super::{is_int_scalar, NodeId};
+use super::NodeId;
 
 #[derive(Debug, Default)]
 pub struct Annotation {
+    // those NodId contains variables that isn't suitable for register allocation
     block_annotation: HashMap<usize, HashSet<NodeId>>,
     pub instruction_annotation: HashMap<usize, Vec<HashSet<NodeId>>>,
 }
@@ -54,13 +55,13 @@ impl Annotation {
             let (used, updated) = find_used_and_updated(inst, symbol_table);
 
             for op in updated {
-                if let Some(node) = is_int_scalar(op, symbol_table) {
+                if let Ok(node) = op.try_into() {
                     current_live_variables.remove(&node);
                 }
             }
 
             for op in used {
-                if let Some(node) = is_int_scalar(op, symbol_table) {
+                if let Ok(node) = op.try_into() {
                     current_live_variables.insert(node);
                 }
             }

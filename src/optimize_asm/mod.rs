@@ -32,6 +32,18 @@ enum NodeId {
     Pseudo(EcoString),
 }
 
+impl TryInto<NodeId> for &Operand {
+    type Error = ();
+
+    fn try_into(self) -> Result<NodeId, Self::Error> {
+        match self {
+            Operand::Reg(reg) => Ok(NodeId::Register(*reg)),
+            Operand::Pseudo(Pseudo::Mem { name, .. }) => Ok(NodeId::Pseudo(name.clone())),
+            _ => Err(()),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 struct Node {
     id: NodeId,
@@ -41,7 +53,7 @@ struct Node {
     pruned: bool,
 }
 
-struct Graph {
+struct ColoringGraph {
     map: HashMap<NodeId, Node>,
 }
 
@@ -77,9 +89,12 @@ fn is_int_scalar(op: &Operand, symbol_table: &SymbolTable) -> Option<NodeId> {
     None
 }
 
-impl Graph {
+impl ColoringGraph {
     fn new(program: &[Instruction], symbol_table: &SymbolTable) -> Self {
-        todo!()
+        let mut me = Self::base();
+        let cfg = Cfg::new(program);
+        me.add_edges(&cfg, symbol_table);
+        me
     }
 
     fn base() -> Self {
@@ -103,9 +118,29 @@ impl Graph {
         Self { map }
     }
 
-    fn add_edge(&mut self, a: NodeId, b: NodeId) {
-        self.map.get_mut(&a).unwrap().neighbors.push(b.clone());
-        self.map.get_mut(&b).unwrap().neighbors.push(a);
+    fn check_node_id(&self, n: &NodeId, symbol_table: &SymbolTable) -> bool {
+        match n {
+            NodeId::Register(r) => FREE_REGISTERS.contains(r),
+            NodeId::Pseudo(name) => match &symbol_table[name] {
+                Attr::Local(ty) => ty.is_scalar() && *ty != VarType::Base(BaseType::Double),
+                _ => false,
+            },
+        }
+    }
+
+    fn add_edge(&mut self, a: NodeId, b: NodeId, symbol_table: &SymbolTable) {
+        if self.check_node_id(&a, symbol_table) && self.check_node_id(&b, symbol_table) {
+            self.map
+                .entry(a.clone())
+                .or_insert_with_key(|k| Node::new(k.clone()))
+                .neighbors
+                .push(b.clone());
+            self.map
+                .entry(b)
+                .or_insert_with_key(|k| Node::new(k.clone()))
+                .neighbors
+                .push(a);
+        }
     }
 
     fn add_edges(&mut self, cfg: &Cfg<Instruction>, symbol_table: &SymbolTable) {
@@ -121,14 +156,14 @@ impl Graph {
 
                 for l in live {
                     if let Instruction::Mov { src, .. } = inst {
-                        if is_int_scalar(src, symbol_table).as_ref() == Some(l) {
+                        if src.try_into().as_ref() == Ok(l) {
                             continue;
                         }
                     }
 
-                    for u in &updated {
-                        if let Some(u) = is_int_scalar(&u, symbol_table) {
-                            self.add_edge(l.clone(), u);
+                    for &u in &updated {
+                        if let Ok(u) = u.try_into() {
+                            self.add_edge(l.clone(), u, symbol_table);
                         }
                     }
                 }
