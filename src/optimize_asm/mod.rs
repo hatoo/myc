@@ -64,7 +64,7 @@ pub(crate) fn is_scalar(op: &Operand, symbol_table: &SymbolTable) -> Option<Node
             }
         }
         Operand::Reg(reg) => {
-            if FREE_REGISTERS.contains(reg) {
+            if FREE_REGISTERS.contains(reg) || matches!(reg, Register::Xmm(_)) {
                 return Some(NodeId::Register(*reg));
             }
         }

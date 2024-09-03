@@ -51,8 +51,18 @@ impl Annotation {
         for (i, inst) in block.instructions.iter().enumerate().rev() {
             self.annotate_instruction(block.id, i, current_live_variables.clone());
 
-            match inst {
-                _ => todo!(),
+            let (used, updated) = find_used_and_updated(inst, symbol_table);
+
+            for op in updated {
+                if let Some(node) = is_scalar(op, symbol_table) {
+                    current_live_variables.remove(&node);
+                }
+            }
+
+            for op in used {
+                if let Some(node) = is_scalar(op, symbol_table) {
+                    current_live_variables.insert(node);
+                }
             }
         }
 
