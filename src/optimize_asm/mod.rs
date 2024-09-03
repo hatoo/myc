@@ -4,6 +4,7 @@ use ecow::EcoString;
 
 use crate::{
     codegen::{Instruction, Operand, Pseudo, Register},
+    control_flow::Cfg,
     semantics::type_check::{Attr, SymbolTable},
 };
 
@@ -98,6 +99,39 @@ impl Graph {
         }
 
         Self { map }
+    }
+
+    fn add_edge(&mut self, a: NodeId, b: NodeId) {
+        self.map.get_mut(&a).unwrap().neighbors.push(b.clone());
+        self.map.get_mut(&b).unwrap().neighbors.push(a);
+    }
+
+    fn add_edges(&mut self, cfg: &Cfg<Instruction>, symbol_table: &SymbolTable) {
+        let mut annotation = liveness_analysis::Annotation::default();
+
+        annotation.iterate(cfg, &symbol_table);
+
+        for node in cfg.nodes.values() {
+            let annotation = annotation.instruction_annotation.get(&node.id).unwrap();
+
+            for (inst, live) in node.instructions.iter().zip(annotation.iter()) {
+                let (_used, updated) = liveness_analysis::find_used_and_updated(inst, symbol_table);
+
+                for l in live {
+                    if let Instruction::Mov { src, .. } = inst {
+                        if is_scalar(src, symbol_table).as_ref() == Some(l) {
+                            continue;
+                        }
+                    }
+
+                    for u in &updated {
+                        if let Some(u) = is_scalar(&u, symbol_table) {
+                            self.add_edge(l.clone(), u);
+                        }
+                    }
+                }
+            }
+        }
     }
 
     fn collect_pseudo_vars(&mut self, insts: &[Instruction], symbol_table: &SymbolTable) {

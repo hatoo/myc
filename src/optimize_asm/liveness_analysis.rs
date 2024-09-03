@@ -14,10 +14,10 @@ use crate::{
 
 use super::{is_scalar, NodeId};
 
-#[derive(Debug)]
-struct Annotation {
+#[derive(Debug, Default)]
+pub struct Annotation {
     block_annotation: HashMap<usize, HashSet<NodeId>>,
-    instruction_annotation: HashMap<usize, Vec<HashSet<NodeId>>>,
+    pub instruction_annotation: HashMap<usize, Vec<HashSet<NodeId>>>,
 }
 
 impl Annotation {
@@ -74,14 +74,20 @@ impl Annotation {
 
         for succ in &block.successors {
             match succ {
-                _ => todo!(),
+                control_flow::NodeId::Exit => {
+                    live_variables.insert(NodeId::Register(Register::Ax));
+                }
+                control_flow::NodeId::Block(id) => {
+                    live_variables.extend(self.block_annotation[id].clone());
+                }
+                _ => unreachable!(),
             }
         }
 
         live_variables
     }
 
-    fn iterate(&mut self, graph: &Cfg<Instruction>, symbol_table: &SymbolTable) {
+    pub fn iterate(&mut self, graph: &Cfg<Instruction>, symbol_table: &SymbolTable) {
         let mut worklist = Vec::new();
         for node in graph.nodes.values() {
             self.init_block(node);
@@ -107,7 +113,7 @@ impl Annotation {
     }
 }
 
-fn find_used_and_updated<'a>(
+pub fn find_used_and_updated<'a>(
     inst: &'a Instruction,
     symbol_table: &SymbolTable,
 ) -> (Vec<&'a Operand>, Vec<&'a Operand>) {
