@@ -102,6 +102,7 @@ impl<'a> ColoringGraph<'a> {
 
         let cfg = Cfg::new(program);
         me.collect_pseudo_vars(program);
+        me.add_spill_costs(program);
         me.add_edges(&cfg);
         me
     }
