@@ -367,7 +367,7 @@ impl<'a> CodeGen<'a> {
     }
 
     fn val_asm_type(&self, val: &Val) -> AssemblyType {
-        asm_type(&val.ty(self.symbol_table), &self.symbol_table)
+        asm_type(&val.ty(self.symbol_table), self.symbol_table)
     }
 
     pub fn gen_program(
@@ -483,7 +483,7 @@ impl<'a> CodeGen<'a> {
             unreachable!()
         };
 
-        let return_in_memory = is_return_in_memory(&ty.ret, &self.symbol_table);
+        let return_in_memory = is_return_in_memory(&ty.ret, self.symbol_table);
 
         if return_in_memory {
             body.push(Instruction::Mov {
@@ -610,7 +610,7 @@ impl<'a> CodeGen<'a> {
                                 Operand::Reg(Register::Xmm(0)),
                             ));
                             body.push(Instruction::Mov {
-                                ty: asm_type(&dst_ty, &self.symbol_table),
+                                ty: asm_type(&dst_ty, self.symbol_table),
                                 src: Operand::Imm(0),
                                 dst: dst.into(),
                             });
@@ -664,7 +664,7 @@ impl<'a> CodeGen<'a> {
                                         src.into(),
                                     ));
                                     body.push(Instruction::Mov {
-                                        ty: asm_type(&dst_ty, &self.symbol_table),
+                                        ty: asm_type(&dst_ty, self.symbol_table),
                                         src: Operand::Imm(0),
                                         dst: dst.into(),
                                     });
@@ -749,7 +749,7 @@ impl<'a> CodeGen<'a> {
                                     dst: dst.into(),
                                 });
                             } else if ty.is_signed() {
-                                let ty = asm_type(&ty, &self.symbol_table);
+                                let ty = asm_type(&ty, self.symbol_table);
                                 body.push(Instruction::Mov {
                                     ty,
                                     src: lhs.into(),
@@ -763,7 +763,7 @@ impl<'a> CodeGen<'a> {
                                     dst: dst.into(),
                                 });
                             } else {
-                                let ty = asm_type(&ty, &self.symbol_table);
+                                let ty = asm_type(&ty, self.symbol_table);
                                 body.push(Instruction::Mov {
                                     ty,
                                     src: lhs.into(),
@@ -785,7 +785,7 @@ impl<'a> CodeGen<'a> {
                         Binary::Remainder => {
                             let ty = lhs.ty(self.symbol_table);
                             if ty.is_signed() {
-                                let ty = asm_type(&ty, &self.symbol_table);
+                                let ty = asm_type(&ty, self.symbol_table);
                                 body.push(Instruction::Mov {
                                     ty,
                                     src: lhs.into(),
@@ -799,7 +799,7 @@ impl<'a> CodeGen<'a> {
                                     dst: dst.into(),
                                 });
                             } else {
-                                let ty = asm_type(&ty, &self.symbol_table);
+                                let ty = asm_type(&ty, self.symbol_table);
                                 body.push(Instruction::Mov {
                                     ty,
                                     src: lhs.into(),
@@ -1478,7 +1478,7 @@ impl<'a> CodeGen<'a> {
         }
 
         let callee_saved = if enable_register_relocation {
-            let callee_saved = register_allocation(&mut body, &self.symbol_table);
+            let callee_saved = register_allocation(&mut body, self.symbol_table);
             let mut v: Vec<_> = callee_saved.into_iter().collect();
             v.sort();
             v
@@ -1537,7 +1537,7 @@ impl<'a> CodeGen<'a> {
 
         for val in iter {
             let ty = val.ty(self.symbol_table);
-            let asm_ty = asm_type(&ty, &self.symbol_table);
+            let asm_ty = asm_type(&ty, self.symbol_table);
             match &ty {
                 VarType::Base(BaseType::Double) => {
                     if double_reg_args.len() < 8 {
@@ -1548,7 +1548,7 @@ impl<'a> CodeGen<'a> {
                 }
                 VarType::Struct(name) => {
                     let structure = self.symbol_table.struct_def(name);
-                    let classes = classify_struct(structure, &self.symbol_table);
+                    let classes = classify_struct(structure, self.symbol_table);
                     let mut use_stack = true;
                     let struct_size = structure.size;
                     let Val::Var(val_name) = val else {
@@ -1614,7 +1614,7 @@ impl<'a> CodeGen<'a> {
         retval: &Val,
     ) -> (Vec<(AssemblyType, Operand)>, Vec<Operand>, bool) {
         let ty = retval.ty(self.symbol_table);
-        let asm_ty: AssemblyType = asm_type(&ty, &self.symbol_table);
+        let asm_ty: AssemblyType = asm_type(&ty, self.symbol_table);
 
         match asm_ty {
             AssemblyType::Double => (Vec::new(), vec![retval.into()], false),
@@ -1626,7 +1626,7 @@ impl<'a> CodeGen<'a> {
                     unreachable!()
                 };
                 let struct_def = self.symbol_table.struct_def(struct_name);
-                let classes = classify_struct(struct_def, &self.symbol_table);
+                let classes = classify_struct(struct_def, self.symbol_table);
                 let struct_size = struct_def.size;
 
                 if classes[0] == Class::Memory {

@@ -299,7 +299,7 @@ impl<'a> ColoringGraph<'a> {
         for node in self.map.values() {
             if let NodeId::Register(r) = &node.id {
                 if let Some(color) = node.color {
-                    color_map.insert(color, r.clone());
+                    color_map.insert(color, *r);
                 }
             }
         }
@@ -308,17 +308,14 @@ impl<'a> ColoringGraph<'a> {
         let mut callee_saved = HashSet::new();
 
         for node in self.map.values() {
-            match &node.id {
-                NodeId::Pseudo(name) => {
-                    if let Some(color) = node.color {
-                        let hardreg = color_map[&color];
-                        register_map.insert(name.clone(), hardreg);
-                        if hardreg.is_callee_saved() {
-                            callee_saved.insert(hardreg);
-                        }
+            if let NodeId::Pseudo(name) = &node.id {
+                if let Some(color) = node.color {
+                    let hardreg = color_map[&color];
+                    register_map.insert(name.clone(), hardreg);
+                    if hardreg.is_callee_saved() {
+                        callee_saved.insert(hardreg);
                     }
                 }
-                _ => {}
             }
         }
 
@@ -336,7 +333,7 @@ impl<'a> ColoringGraph<'a> {
     }
 
     fn add_var(&mut self, n: NodeId) {
-        if is_int_scalar(&n, &self.symbol_table) {
+        if is_int_scalar(&n, self.symbol_table) {
             self.map.entry(n.clone()).or_insert(Node::new(n));
         }
     }
@@ -357,13 +354,13 @@ impl<'a> ColoringGraph<'a> {
     fn add_edges(&mut self, cfg: &Cfg<Instruction>) {
         let mut annotation = liveness_analysis::Annotation::default();
 
-        annotation.iterate(cfg, &self.symbol_table);
+        annotation.iterate(cfg, self.symbol_table);
 
         for node in cfg.nodes.values() {
             let annotation = annotation.instruction_annotation.get(&node.id).unwrap();
 
             for (inst, live) in node.instructions.iter().zip(annotation.iter()) {
-                let (_used, updated) = find_used_and_updated(inst, &self.symbol_table);
+                let (_used, updated) = find_used_and_updated(inst, self.symbol_table);
 
                 for l in live {
                     if let Instruction::Mov { src, .. } = inst {
@@ -384,7 +381,7 @@ impl<'a> ColoringGraph<'a> {
 
     fn collect_pseudo_vars(&mut self, insts: &[Instruction]) {
         for inst in insts {
-            let (used, updated) = find_used_and_updated(inst, &self.symbol_table);
+            let (used, updated) = find_used_and_updated(inst, self.symbol_table);
             for &op in used.iter().chain(updated.iter()) {
                 if let Ok(id) = op.try_into() {
                     self.add_var(id);
@@ -395,7 +392,7 @@ impl<'a> ColoringGraph<'a> {
 
     fn add_spill_costs(&mut self, insts: &[Instruction]) {
         for inst in insts {
-            let (used, updated) = find_used_and_updated(inst, &self.symbol_table);
+            let (used, updated) = find_used_and_updated(inst, self.symbol_table);
             for &op in used.iter().chain(updated.iter()) {
                 if let Ok(id) = op.try_into() {
                     self.increment_spill_cost(&id);
@@ -511,7 +508,7 @@ fn fun_use_registers(ty: &FunType, symbol_table: &SymbolTable) -> (usize, usize,
             }
             VarType::Struct(name) => {
                 let structure = symbol_table.struct_def(name);
-                let classes = classify_struct(structure, &symbol_table);
+                let classes = classify_struct(structure, symbol_table);
                 let mut use_stack = true;
                 let struct_size = structure.size;
 
