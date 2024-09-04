@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use ecow::EcoString;
 
@@ -269,31 +269,25 @@ impl<'a> ColoringGraph<'a> {
 
         self.color_graph();
 
-        let mut colors = vec![false; k];
+        let mut colors = (0..k).collect::<BTreeSet<_>>();
 
         let node = self.map.get(&chosen_id).unwrap();
         for neighbor in &node.neighbors {
             if let Some(neighbor) = self.map.get(neighbor) {
                 if let Some(color) = neighbor.color {
-                    colors[color] = true;
+                    colors.remove(&color);
                 }
             }
         }
 
-        if colors.iter().any(|&c| !c) {
+        if !colors.is_empty() {
             match chosen_id {
                 NodeId::Register(r) if r.is_callee_saved() => {
-                    let color = colors
-                        .iter()
-                        .enumerate()
-                        .rev()
-                        .find(|(_, &c)| !c)
-                        .unwrap()
-                        .0;
+                    let color = colors.first().unwrap().clone();
                     self.map.get_mut(&chosen_id).unwrap().color = Some(color);
                 }
                 _ => {
-                    let color = colors.iter().enumerate().find(|(_, &c)| !c).unwrap().0;
+                    let color = colors.last().unwrap().clone();
                     self.map.get_mut(&chosen_id).unwrap().color = Some(color);
                 }
             }
