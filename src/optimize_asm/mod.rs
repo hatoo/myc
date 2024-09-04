@@ -15,7 +15,7 @@ use crate::{
 mod liveness_analysis;
 
 // R10 and R11 are used as temporary registers in the code generator
-const FREE_REGISTERS: [Register; 11] = [
+const FREE_REGISTERS: [Register; 12] = [
     Register::Ax,
     Register::Bx,
     Register::Cx,
@@ -24,6 +24,7 @@ const FREE_REGISTERS: [Register; 11] = [
     Register::Si,
     Register::R8,
     Register::R9,
+    Register::R12,
     Register::R13,
     Register::R14,
     Register::R15,
