@@ -259,7 +259,12 @@ impl Register {
     pub fn is_callee_saved(&self) -> bool {
         matches!(
             self,
-            Register::Bx | Register::BP | Register::Si | Register::Di
+            Register::Bx
+                | Register::BP
+                | Register::R12
+                | Register::R13
+                | Register::R14
+                | Register::R15
         )
     }
 }
@@ -2331,11 +2336,11 @@ impl Display for Function {
         }
         writeln!(f, ".text")?;
         writeln!(f, "{}:", self.name)?;
+        writeln!(f, "pushq %rbp")?;
+        writeln!(f, "movq %rsp, %rbp")?;
         for r in &self.callee_saved {
             writeln!(f, "pushq {}", RegisterSize::Qword(r))?;
         }
-        writeln!(f, "pushq %rbp")?;
-        writeln!(f, "movq %rsp, %rbp")?;
         for inst in &self.body {
             if let Instruction::Ret = inst {
                 for r in self.callee_saved.iter().rev() {

@@ -195,7 +195,7 @@ impl<'a> ColoringGraph<'a> {
     }
 
     fn add_base_registers(&mut self, registers: &[Register]) {
-        for &reg in &FREE_REGISTERS {
+        for &reg in registers {
             self.map.insert(
                 NodeId::Register(reg),
                 Node {
@@ -336,7 +336,7 @@ impl<'a> ColoringGraph<'a> {
 
     fn add_var(&mut self, n: NodeId) {
         if is_int_scalar(&n, &self.symbol_table) {
-            self.map.insert(n.clone(), Node::new(n));
+            self.map.entry(n.clone()).or_insert(Node::new(n));
         }
     }
 
@@ -430,8 +430,11 @@ fn find_used_and_updated<'a>(
             vec![&Operand::Reg(Register::Dx)],
         ),
         Instruction::Call(op) => {
-            let Operand::Pseudo(Pseudo::Mem { name, .. }) = op else {
-                panic!("Do this before pseudo to stack phase")
+            let name = match op {
+                Operand::Pseudo(Pseudo::Mem { name, .. }) => name,
+                Operand::Plt(name) => name,
+                Operand::GotPcrel(name) => name,
+                _ => panic!("Invalid operand {:?}", op),
             };
 
             let Attr::Fun { ty, .. } = &symbol_table[name] else {
