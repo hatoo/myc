@@ -70,53 +70,55 @@ impl Node {
     }
 }
 
-fn is_int_scalar(n: &NodeId, symbol_table: &SymbolTable) -> Option<NodeId> {
+fn is_int_scalar(n: &NodeId, symbol_table: &SymbolTable) -> bool {
     match n {
         NodeId::Pseudo(name) => {
             if let Attr::Local(ty) = &symbol_table[name] {
                 if ty.is_scalar() && *ty != VarType::Base(BaseType::Double) {
-                    return Some(NodeId::Pseudo(name.clone()));
+                    return true;
                 }
             }
         }
         NodeId::Register(reg) => {
             if FREE_REGISTERS.contains(reg) {
-                return Some(NodeId::Register(*reg));
+                return true;
             }
         }
     }
 
-    None
+    false
 }
 
 impl<'a> ColoringGraph<'a> {
     fn new(program: &[Instruction], symbol_table: &'a SymbolTable) -> Self {
-        let mut me = Self::base(symbol_table);
+        let mut me = Self {
+            map: HashMap::new(),
+            symbol_table,
+        };
+        me.add_base_registers(&FREE_REGISTERS);
+
         let cfg = Cfg::new(program);
         me.collect_pseudo_vars(program);
         me.add_edges(&cfg);
         me
     }
 
-    fn base(symbol_table: &'a SymbolTable) -> Self {
-        let mut map = HashMap::new();
-
+    fn add_base_registers(&mut self, registers: &[Register]) {
         for &reg in &FREE_REGISTERS {
-            map.insert(NodeId::Register(reg), Node::new(NodeId::Register(reg)));
+            self.add_var(NodeId::Register(reg));
         }
 
-        for &reg in &FREE_REGISTERS {
-            for &neighbor in &FREE_REGISTERS {
+        for &reg in registers {
+            for &neighbor in registers {
                 if reg != neighbor {
-                    map.get_mut(&NodeId::Register(reg))
+                    self.map
+                        .get_mut(&NodeId::Register(reg))
                         .unwrap()
                         .neighbors
                         .push(NodeId::Register(neighbor));
                 }
             }
         }
-
-        Self { map, symbol_table }
     }
 
     fn check_node_id(&self, n: &NodeId) -> bool {
@@ -130,23 +132,15 @@ impl<'a> ColoringGraph<'a> {
     }
 
     fn add_var(&mut self, n: NodeId) {
-        if let Some(n) = is_int_scalar(&n, &self.symbol_table) {
+        if is_int_scalar(&n, &self.symbol_table) {
             self.map.insert(n.clone(), Node::new(n));
         }
     }
 
     fn add_edge(&mut self, a: NodeId, b: NodeId) {
-        if self.check_node_id(&a) && self.check_node_id(&b) {
-            self.map
-                .entry(a.clone())
-                .or_insert_with_key(|k| Node::new(k.clone()))
-                .neighbors
-                .push(b.clone());
-            self.map
-                .entry(b)
-                .or_insert_with_key(|k| Node::new(k.clone()))
-                .neighbors
-                .push(a);
+        if a != b && self.map.contains_key(&a) && self.map.contains_key(&b) {
+            self.map.get_mut(&a).unwrap().neighbors.push(b.clone());
+            self.map.get_mut(&b).unwrap().neighbors.push(a);
         }
     }
 
