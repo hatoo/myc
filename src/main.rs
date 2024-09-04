@@ -187,7 +187,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let mut codegen = CodeGen::new(&type_checker.sym_table);
-    let code = codegen.gen_program(&tacky);
+    let code = codegen.gen_program(&tacky, true);
 
     if opts.codegen {
         dbg!(code);

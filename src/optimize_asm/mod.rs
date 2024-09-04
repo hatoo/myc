@@ -29,6 +29,93 @@ const FREE_REGISTERS: [Register; 11] = [
     Register::R15,
 ];
 
+pub fn register_allocation(
+    program: &mut [Instruction],
+    symbol_table: &SymbolTable,
+) -> HashSet<Register> {
+    let mut graph = ColoringGraph::new(program, symbol_table);
+    graph.color_graph();
+    let (register_map, callee_saved) = graph.create_register_map();
+
+    let replace = |op: &mut Operand| {
+        if let Operand::Pseudo(Pseudo::Mem { name, offset: _ }) = op {
+            if let Some(reg) = register_map.get(name) {
+                *op = Operand::Reg(*reg);
+            }
+        }
+    };
+
+    for inst in program {
+        match inst {
+            Instruction::Mov { src, dst, .. } => {
+                replace(src);
+                replace(dst);
+
+                if let (Operand::Reg(a), Operand::Reg(b)) = (src, dst) {
+                    if a == b {
+                        *inst = Instruction::Nop;
+                    }
+                }
+            }
+            Instruction::MovZeroExtend { src, dst, .. } => {
+                replace(src);
+                replace(dst);
+            }
+            Instruction::Movsx { src, dst, .. } => {
+                replace(src);
+                replace(dst);
+            }
+            Instruction::Binary { lhs, rhs, .. } => {
+                replace(lhs);
+                replace(rhs);
+            }
+            Instruction::Unary { src, .. } => {
+                replace(src);
+            }
+            Instruction::Cmp(_, v1, v2) => {
+                replace(v1);
+                replace(v2);
+            }
+            Instruction::SetCc(_, dst) => {
+                replace(dst);
+            }
+            Instruction::Push(op) => {
+                replace(op);
+            }
+            Instruction::Idiv(_, divisor) => {
+                replace(divisor);
+            }
+            Instruction::Cdq(_) => {}
+            Instruction::Call(op) => {
+                replace(op);
+            }
+            Instruction::Lea { src, dst } => {
+                replace(src);
+                replace(dst);
+            }
+            Instruction::Div(_, op) => {
+                replace(op);
+            }
+            Instruction::Jmp(_) => {}
+            Instruction::JmpCc(_, _) => {}
+            Instruction::Label(_) => {}
+            Instruction::Ret => {}
+            Instruction::Pop(_) => {}
+            Instruction::Cvttsd2si { src, dst, .. } => {
+                replace(src);
+                replace(dst);
+            }
+            Instruction::Cvtsi2sd { src, dst, .. } => {
+                replace(src);
+                replace(dst);
+            }
+            Instruction::Nop => {}
+        }
+    }
+
+    callee_saved
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 enum NodeId {
     Register(Register),

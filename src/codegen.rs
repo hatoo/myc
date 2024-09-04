@@ -10,6 +10,7 @@ use ecow::EcoString;
 use crate::{
     ast::{self, BaseType, Const, VarType},
     math::round_up,
+    optimize_asm::register_allocation,
     semantics::{
         self,
         type_check::{self, Attr, StructDef, SymbolTable},
@@ -72,10 +73,12 @@ pub struct Function {
     pub global: bool,
     pub name: EcoString,
     pub body: Vec<Instruction>,
+    pub callee_saved: Vec<Register>,
 }
 
 #[derive(Debug, Clone)]
 pub enum Instruction {
+    Nop,
     Mov {
         ty: AssemblyType,
         src: Operand,
@@ -231,7 +234,7 @@ impl<'a> From<&'a tacky::Val> for Operand {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Register {
     Ax,
     Bx,
@@ -361,7 +364,11 @@ impl<'a> CodeGen<'a> {
         asm_type(&val.ty(self.symbol_table), &self.symbol_table)
     }
 
-    pub fn gen_program(&mut self, program: &tacky::Program) -> Program {
+    pub fn gen_program(
+        &mut self,
+        program: &tacky::Program,
+        enable_register_relocation: bool,
+    ) -> Program {
         let top_levels: Vec<_> = program
             .top_levels
             .iter()
@@ -378,7 +385,7 @@ impl<'a> CodeGen<'a> {
                     init: init.clone(),
                 }),
                 tacky::TopLevelItem::Function(function) => {
-                    TopLevel::Function(self.gen_function(function))
+                    TopLevel::Function(self.gen_function(function, enable_register_relocation))
                 }
                 tacky::TopLevelItem::StaticConstant(tacky::StaticConstant { name, ty, init }) => {
                     TopLevel::StaticConstant(StaticConstant {
@@ -459,7 +466,11 @@ impl<'a> CodeGen<'a> {
         }
     }
 
-    fn gen_function(&mut self, function: &tacky::Function) -> Function {
+    fn gen_function(
+        &mut self,
+        function: &tacky::Function,
+        enable_register_relocation: bool,
+    ) -> Function {
         let mut body = Vec::new();
 
         let semantics::type_check::Attr::Fun { ty, .. } = &self.symbol_table[&function.name] else {
@@ -1460,6 +1471,15 @@ impl<'a> CodeGen<'a> {
             }
         }
 
+        let callee_saved = if enable_register_relocation {
+            let callee_saved = register_allocation(&mut body, &self.symbol_table);
+            let mut v: Vec<_> = callee_saved.into_iter().collect();
+            v.sort();
+            v
+        } else {
+            Vec::new()
+        };
+
         let stack_size = pseudo_to_stack(
             &mut body,
             self.symbol_table,
@@ -1482,6 +1502,7 @@ impl<'a> CodeGen<'a> {
             global: function.global,
             name: function.name.clone(),
             body,
+            callee_saved,
         }
     }
 
@@ -1730,6 +1751,7 @@ fn pseudo_to_stack(
 
     for inst in insts {
         match inst {
+            Instruction::Nop => {}
             Instruction::Mov { ty: _, src, dst } => {
                 remove_pseudo(src);
                 remove_pseudo(dst);
@@ -2309,9 +2331,17 @@ impl Display for Function {
         }
         writeln!(f, ".text")?;
         writeln!(f, "{}:", self.name)?;
+        for r in &self.callee_saved {
+            writeln!(f, "pushq {}", RegisterSize::Qword(r))?;
+        }
         writeln!(f, "pushq %rbp")?;
         writeln!(f, "movq %rsp, %rbp")?;
         for inst in &self.body {
+            if let Instruction::Ret = inst {
+                for r in self.callee_saved.iter().rev() {
+                    writeln!(f, "popq {}", RegisterSize::Qword(r))?;
+                }
+            }
             write!(f, "{inst}")?;
         }
         Ok(())
@@ -2360,6 +2390,7 @@ impl Display for StaticVariable {
 impl Display for Instruction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Instruction::Nop => {}
             Instruction::Mov { ty, src, dst } => {
                 writeln!(
                     f,
