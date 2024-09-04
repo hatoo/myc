@@ -5,8 +5,7 @@ use ecow::EcoString;
 use crate::{
     ast::{BaseType, FunType, VarType},
     codegen::{
-        asm_type, classify_struct, is_return_in_memory, Class, Instruction, Operand, Pseudo,
-        Register,
+        classify_struct, is_return_in_memory, Class, Instruction, Operand, Pseudo, Register,
     },
     control_flow::Cfg,
     semantics::type_check::{Attr, SymbolTable},
@@ -322,16 +321,6 @@ impl<'a> ColoringGraph<'a> {
         (register_map, callee_saved)
     }
 
-    fn check_node_id(&self, n: &NodeId) -> bool {
-        match n {
-            NodeId::Register(r) => FREE_REGISTERS.contains(r),
-            NodeId::Pseudo(name) => match &self.symbol_table[name] {
-                Attr::Local(ty) => ty.is_scalar() && *ty != VarType::Base(BaseType::Double),
-                _ => false,
-            },
-        }
-    }
-
     fn add_var(&mut self, n: NodeId) {
         if is_int_scalar(&n, self.symbol_table) {
             self.map.entry(n.clone()).or_insert(Node::new(n));
@@ -497,7 +486,6 @@ fn fun_use_registers(ty: &FunType, symbol_table: &SymbolTable) -> (usize, usize,
     let int_regs_available = 6;
 
     for ty in &ty.params {
-        let asm_ty = asm_type(ty, symbol_table);
         match &ty {
             VarType::Base(BaseType::Double) => {
                 if double_regs < 8 {
@@ -510,20 +498,16 @@ fn fun_use_registers(ty: &FunType, symbol_table: &SymbolTable) -> (usize, usize,
                 let structure = symbol_table.struct_def(name);
                 let classes = classify_struct(structure, symbol_table);
                 let mut use_stack = true;
-                let struct_size = structure.size;
 
                 if classes[0] != Class::Memory {
                     let mut tentative_ints = 0;
                     let mut tentative_doubles = 0;
-                    let mut offset = 0;
                     for &class in &classes {
                         if class == Class::Sse {
                             tentative_doubles += 1;
                         } else {
                             tentative_ints += 1;
                         }
-
-                        offset += 8;
                     }
 
                     if (tentative_doubles + double_regs) <= 8
