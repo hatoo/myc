@@ -369,6 +369,7 @@ impl<'a> ColoringGraph<'a> {
     }
 
     fn collect_pseudo_vars(&mut self, insts: &[Instruction]) {
+        let mut aliased_vars = HashSet::new();
         for inst in insts {
             let (used, updated) = find_used_and_updated(inst, self.symbol_table);
             for &op in used.iter().chain(updated.iter()) {
@@ -376,6 +377,16 @@ impl<'a> ColoringGraph<'a> {
                     self.add_var(id);
                 }
             }
+
+            if let Instruction::Lea { src, .. } = inst {
+                if let Ok(id) = src.try_into() {
+                    aliased_vars.insert(id);
+                }
+            }
+        }
+
+        for id in aliased_vars {
+            self.map.remove(&id);
         }
     }
 
