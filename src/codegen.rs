@@ -2343,10 +2343,10 @@ impl Display for Function {
             writeln!(f, ".globl {}", self.name)?;
         }
         writeln!(f, ".text")?;
+        writeln!(f, "{}:", self.name)?;
+
         writeln!(f, "pushq %rbp")?;
         writeln!(f, "movq %rsp, %rbp")?;
-
-        writeln!(f, "{}:", self.name)?;
         writeln!(
             f,
             "{}",
