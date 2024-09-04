@@ -134,6 +134,77 @@ impl<'a> ColoringGraph<'a> {
         }
     }
 
+    fn color_graph(&mut self) {
+        // TODO: optimize
+        let k = FREE_REGISTERS.len();
+
+        if self.map.values().all(|n| n.pruned) {
+            return;
+        }
+
+        let chosen_id = if let Some(chosen_node) = self
+            .map
+            .values()
+            .filter(|n| !n.pruned)
+            .find(|n| n.neighbors.iter().filter(|&n| !self.map[n].pruned).count() < k)
+        {
+            chosen_node.id.clone()
+        } else {
+            self.map
+                .values()
+                .filter(|n| !n.pruned)
+                .min_by(|n1, n2| {
+                    (n1.spill_cost
+                        / (n1.neighbors.iter().filter(|n| !self.map[n].pruned).count() + 1) as f32)
+                        .total_cmp(
+                            &(n2.spill_cost
+                                / (n2.neighbors.iter().filter(|n| !self.map[n].pruned).count() + 1)
+                                    as f32),
+                        )
+                })
+                .unwrap()
+                .id
+                .clone()
+        };
+
+        let node = self.map.get_mut(&chosen_id).unwrap();
+        node.pruned = true;
+
+        self.color_graph();
+
+        let mut colors = vec![false; k];
+
+        let node = self.map.get(&chosen_id).unwrap();
+        for neighbor in &node.neighbors {
+            if let Some(neighbor) = self.map.get(neighbor) {
+                if let Some(color) = neighbor.color {
+                    colors[color] = true;
+                }
+            }
+        }
+
+        if colors.iter().any(|&c| !c) {
+            match chosen_id {
+                NodeId::Register(r) if r.is_callee_saved() => {
+                    let color = colors
+                        .iter()
+                        .enumerate()
+                        .rev()
+                        .find(|(_, &c)| !c)
+                        .unwrap()
+                        .0;
+                    self.map.get_mut(&chosen_id).unwrap().color = Some(color);
+                }
+                _ => {
+                    let color = colors.iter().enumerate().find(|(_, &c)| !c).unwrap().0;
+                    self.map.get_mut(&chosen_id).unwrap().color = Some(color);
+                }
+            }
+
+            self.map.get_mut(&chosen_id).unwrap().pruned = false;
+        }
+    }
+
     fn check_node_id(&self, n: &NodeId) -> bool {
         match n {
             NodeId::Register(r) => FREE_REGISTERS.contains(r),

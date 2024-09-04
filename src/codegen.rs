@@ -252,6 +252,15 @@ pub enum Register {
     Xmm(u8),
 }
 
+impl Register {
+    pub fn is_callee_saved(&self) -> bool {
+        matches!(
+            self,
+            Register::Bx | Register::BP | Register::Si | Register::Di
+        )
+    }
+}
+
 pub enum RegisterSize<'a> {
     Byte(&'a Register),
     Dword(&'a Register),
