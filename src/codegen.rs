@@ -74,6 +74,7 @@ pub struct Function {
     pub name: EcoString,
     pub body: Vec<Instruction>,
     pub callee_saved: Vec<Register>,
+    pub stack_size: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -1494,6 +1495,8 @@ impl<'a> CodeGen<'a> {
         let total_stack_size = stack_size + 8 * callee_saved.len();
         let adjusted_stack_size = round_up(total_stack_size, 16);
         let stack_size = adjusted_stack_size - 8 * callee_saved.len();
+
+        /*
         body.insert(
             0,
             Instruction::Binary {
@@ -1503,6 +1506,8 @@ impl<'a> CodeGen<'a> {
                 rhs: Operand::Reg(Register::SP),
             },
         );
+        */
+
         body = avoid_mov_mem_mem(body);
 
         Function {
@@ -1510,6 +1515,7 @@ impl<'a> CodeGen<'a> {
             name: function.name.clone(),
             body,
             callee_saved,
+            stack_size,
         }
     }
 
@@ -2337,12 +2343,24 @@ impl Display for Function {
             writeln!(f, ".globl {}", self.name)?;
         }
         writeln!(f, ".text")?;
-        writeln!(f, "{}:", self.name)?;
         writeln!(f, "pushq %rbp")?;
         writeln!(f, "movq %rsp, %rbp")?;
+
+        writeln!(f, "{}:", self.name)?;
+        writeln!(
+            f,
+            "{}",
+            Instruction::Binary {
+                op: BinaryOp::Sub,
+                ty: AssemblyType::QuadWord,
+                lhs: Operand::Imm(self.stack_size as _),
+                rhs: Operand::Reg(Register::SP),
+            }
+        )?;
         for r in &self.callee_saved {
             writeln!(f, "pushq {}", RegisterSize::Qword(r))?;
         }
+
         for inst in &self.body {
             if let Instruction::Ret = inst {
                 for r in self.callee_saved.iter().rev() {
