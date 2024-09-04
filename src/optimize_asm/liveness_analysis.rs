@@ -1,15 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
-use ecow::EcoString;
-
 use crate::{
-    ast::{BaseType, FunType, VarType},
-    codegen::{
-        asm_type, classify_struct, is_return_in_memory, Class, Instruction, Operand, Pseudo,
-        Register,
-    },
+    codegen::{Instruction, Register},
     control_flow::{self, Cfg},
-    semantics::type_check::{Attr, SymbolTable},
+    semantics::type_check::SymbolTable,
 };
 
 use super::{find_used_and_updated, NodeId};
