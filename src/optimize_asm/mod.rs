@@ -205,6 +205,38 @@ impl<'a> ColoringGraph<'a> {
         }
     }
 
+    fn create_register_map(&self) -> (HashMap<EcoString, Register>, HashSet<Register>) {
+        let mut color_map = HashMap::new();
+
+        for node in self.map.values() {
+            if let NodeId::Register(r) = &node.id {
+                if let Some(color) = node.color {
+                    color_map.insert(color, r.clone());
+                }
+            }
+        }
+
+        let mut register_map = HashMap::new();
+        let mut callee_saved = HashSet::new();
+
+        for node in self.map.values() {
+            match &node.id {
+                NodeId::Pseudo(name) => {
+                    if let Some(color) = node.color {
+                        let hardreg = color_map[&color];
+                        register_map.insert(name.clone(), hardreg);
+                        if hardreg.is_callee_saved() {
+                            callee_saved.insert(hardreg);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        (register_map, callee_saved)
+    }
+
     fn check_node_id(&self, n: &NodeId) -> bool {
         match n {
             NodeId::Register(r) => FREE_REGISTERS.contains(r),
