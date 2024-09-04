@@ -47,7 +47,7 @@ impl TryInto<NodeId> for &Operand {
 #[derive(Debug, Clone)]
 struct Node {
     id: NodeId,
-    neighbors: Vec<NodeId>,
+    neighbors: HashSet<NodeId>,
     spill_cost: f32,
     color: Option<usize>,
     pruned: bool,
@@ -62,7 +62,7 @@ impl Node {
     fn new(id: NodeId) -> Self {
         Self {
             id,
-            neighbors: Vec::new(),
+            neighbors: HashSet::new(),
             spill_cost: 0.0,
             color: None,
             pruned: false,
@@ -105,7 +105,16 @@ impl<'a> ColoringGraph<'a> {
 
     fn add_base_registers(&mut self, registers: &[Register]) {
         for &reg in &FREE_REGISTERS {
-            self.add_var(NodeId::Register(reg));
+            self.map.insert(
+                NodeId::Register(reg),
+                Node {
+                    id: NodeId::Register(reg),
+                    spill_cost: 1e9,
+                    neighbors: HashSet::new(),
+                    color: None,
+                    pruned: false,
+                },
+            );
         }
 
         for &reg in registers {
@@ -115,7 +124,7 @@ impl<'a> ColoringGraph<'a> {
                         .get_mut(&NodeId::Register(reg))
                         .unwrap()
                         .neighbors
-                        .push(NodeId::Register(neighbor));
+                        .insert(NodeId::Register(neighbor));
                 }
             }
         }
@@ -139,8 +148,8 @@ impl<'a> ColoringGraph<'a> {
 
     fn add_edge(&mut self, a: NodeId, b: NodeId) {
         if a != b && self.map.contains_key(&a) && self.map.contains_key(&b) {
-            self.map.get_mut(&a).unwrap().neighbors.push(b.clone());
-            self.map.get_mut(&b).unwrap().neighbors.push(a);
+            self.map.get_mut(&a).unwrap().neighbors.insert(b.clone());
+            self.map.get_mut(&b).unwrap().neighbors.insert(a);
         }
     }
 
