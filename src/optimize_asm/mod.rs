@@ -408,7 +408,8 @@ fn find_used_and_updated<'a>(
         Instruction::Cmp(_, v1, v2) => (vec![v1, v2], vec![]),
         Instruction::SetCc(_, dst) => (vec![], vec![dst]),
         Instruction::Push(op) => (vec![op], vec![]),
-        Instruction::Idiv(_, divisor) => (
+
+        Instruction::Div(_, divisor) | Instruction::Idiv(_, divisor) => (
             vec![
                 divisor,
                 &Operand::Reg(Register::Ax),
@@ -472,7 +473,17 @@ fn find_used_and_updated<'a>(
                 ],
             )
         }
-        _ => (vec![], vec![]),
+        Instruction::Nop
+        | Instruction::Pop(_)
+        | Instruction::Jmp(_)
+        | Instruction::JmpCc(_, _)
+        | Instruction::Ret
+        | Instruction::Label(_) => (vec![], vec![]),
+
+        Instruction::Lea { src, dst } => (vec![src], vec![dst]),
+        Instruction::Cvttsd2si { src, dst, .. } | Instruction::Cvtsi2sd { src, dst, .. } => {
+            (vec![src], vec![dst])
+        }
     }
 }
 
