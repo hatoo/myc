@@ -1491,7 +1491,9 @@ impl<'a> CodeGen<'a> {
             &mut self.const_table,
             if return_in_memory { 8 } else { 0 },
         );
-        let stack_size = round_up(stack_size, 16);
+        let total_stack_size = stack_size + 8 * callee_saved.len();
+        let adjusted_stack_size = round_up(total_stack_size, 16);
+        let stack_size = adjusted_stack_size - 8 * callee_saved.len();
         body.insert(
             0,
             Instruction::Binary {
