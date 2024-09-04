@@ -32,8 +32,9 @@ const FREE_REGISTERS: [Register; 12] = [
 pub fn register_allocation(
     program: &mut [Instruction],
     symbol_table: &SymbolTable,
+    aliased_vals: &HashSet<EcoString>,
 ) -> HashSet<Register> {
-    let mut graph = ColoringGraph::new(program, symbol_table);
+    let mut graph = ColoringGraph::new(program, symbol_table, aliased_vals);
     graph.color_graph();
     let (register_map, callee_saved) = graph.create_register_map();
 
@@ -180,7 +181,11 @@ fn is_int_scalar(n: &NodeId, symbol_table: &SymbolTable) -> bool {
 }
 
 impl<'a> ColoringGraph<'a> {
-    fn new(program: &[Instruction], symbol_table: &'a SymbolTable) -> Self {
+    fn new(
+        program: &[Instruction],
+        symbol_table: &'a SymbolTable,
+        aliased_vals: &HashSet<EcoString>,
+    ) -> Self {
         let mut me = Self {
             map: HashMap::new(),
             symbol_table,
@@ -189,6 +194,11 @@ impl<'a> ColoringGraph<'a> {
 
         let cfg = Cfg::new(program);
         me.collect_pseudo_vars(program);
+
+        for name in aliased_vals {
+            me.map.remove(&NodeId::Pseudo(name.clone()));
+        }
+
         me.add_spill_costs(program);
         me.add_edges(&cfg);
         me

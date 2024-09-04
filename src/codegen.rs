@@ -477,6 +477,17 @@ impl<'a> CodeGen<'a> {
         function: &tacky::Function,
         enable_register_relocation: bool,
     ) -> Function {
+        let aliased_vals = function
+            .body
+            .iter()
+            .flat_map(|inst| {
+                if let tacky::Instruction::GetAddress { src, .. } = inst {
+                    Some(src.var().clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
         let mut body = Vec::new();
 
         let semantics::type_check::Attr::Fun { ty, .. } = &self.symbol_table[&function.name] else {
@@ -1478,7 +1489,7 @@ impl<'a> CodeGen<'a> {
         }
 
         let callee_saved = if enable_register_relocation {
-            let callee_saved = register_allocation(&mut body, self.symbol_table);
+            let callee_saved = register_allocation(&mut body, self.symbol_table, &aliased_vals);
             let mut v: Vec<_> = callee_saved.into_iter().collect();
             v.sort();
             v
