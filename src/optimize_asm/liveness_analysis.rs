@@ -6,7 +6,7 @@ use crate::{
     semantics::type_check::SymbolTable,
 };
 
-use super::{find_used_and_updated, NodeId};
+use super::{find_used_and_updated, node_ids, NodeId};
 
 #[derive(Debug, Default)]
 pub struct Annotation<'a> {
@@ -57,14 +57,14 @@ impl<'a> Annotation<'a> {
             let (used, updated) = find_used_and_updated(inst, symbol_table);
 
             for op in updated {
-                if let Ok(node) = op.try_into() {
-                    current_live_variables.remove(&node);
+                for n in node_ids(op) {
+                    current_live_variables.remove(&n);
                 }
             }
 
             for op in used {
-                if let Ok(node) = op.try_into() {
-                    current_live_variables.insert(node);
+                for n in node_ids(op) {
+                    current_live_variables.insert(n);
                 }
             }
         }

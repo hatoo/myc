@@ -150,24 +150,25 @@ enum NodeId {
     Pseudo(EcoString),
 }
 
-impl TryInto<NodeId> for &Operand {
-    type Error = ();
-
-    fn try_into(self) -> Result<NodeId, Self::Error> {
-        match self {
-            Operand::Reg(reg) => Ok(NodeId::Register(*reg)),
-            Operand::Pseudo(Pseudo::Mem { name, offset: 0 }) => Ok(NodeId::Pseudo(name.clone())),
-            _ => Err(()),
-        }
-    }
-}
-
 impl Into<Operand> for NodeId {
     fn into(self) -> Operand {
         match self {
             NodeId::Register(reg) => Operand::Reg(reg),
             NodeId::Pseudo(name) => Operand::Pseudo(Pseudo::Mem { name, offset: 0 }),
         }
+    }
+}
+
+fn node_ids(op: &Operand) -> Vec<NodeId> {
+    match op {
+        Operand::Reg(reg) => vec![NodeId::Register(*reg)],
+        Operand::Pseudo(Pseudo::Mem { name, offset: 0 }) => vec![NodeId::Pseudo(name.clone())],
+        // Operand::Data(name, _) => vec![NodeId::Pseudo(name.clone())],
+        // Operand::Memory(r, _) => vec![NodeId::Register(*r)],
+        Operand::Indexed { base, index, .. } => {
+            vec![NodeId::Register(*base), NodeId::Register(*index)]
+        }
+        _ => vec![],
     }
 }
 
@@ -449,13 +450,13 @@ impl<'a> ColoringGraph<'a> {
 
                 for l in live {
                     if let Instruction::Mov { src, .. } = inst {
-                        if src.try_into().as_ref() == Ok(l) {
+                        if node_ids(src) == &[l.clone()] {
                             continue;
                         }
                     }
 
                     for &u in &updated {
-                        if let Ok(u) = u.try_into() {
+                        for u in node_ids(u) {
                             self.add_edge(l.clone(), u);
                         }
                     }
@@ -468,8 +469,8 @@ impl<'a> ColoringGraph<'a> {
         for inst in insts {
             let (used, updated) = find_used_and_updated(inst, self.symbol_table);
             for &op in used.iter().chain(updated.iter()) {
-                if let Ok(id) = op.try_into() {
-                    self.add_var(id);
+                for n in node_ids(op) {
+                    self.add_var(n);
                 }
             }
         }
@@ -479,8 +480,8 @@ impl<'a> ColoringGraph<'a> {
         for inst in insts {
             let (used, updated) = find_used_and_updated(inst, self.symbol_table);
             for &op in used.iter().chain(updated.iter()) {
-                if let Ok(id) = op.try_into() {
-                    self.increment_spill_cost(&id);
+                for n in node_ids(op) {
+                    self.increment_spill_cost(&n);
                 }
             }
         }
@@ -492,25 +493,30 @@ impl<'a> ColoringGraph<'a> {
         for i in insts.iter() {
             match i {
                 Instruction::Mov { src, dst, .. } => {
-                    if let (Ok(src), Ok(dst)) = (src.try_into(), dst.try_into()) {
-                        let src = dsu.find(&src);
-                        let dst = dsu.find(&dst);
+                    let src_nodes = node_ids(src);
+                    let dst_nodes = node_ids(dst);
 
-                        if self.check_node_id(&src) && self.check_node_id(&dst) {
-                            if self.map.contains_key(&src)
-                                && self.map.contains_key(&dst)
-                                && src != dst
-                                && !self.are_neighbors(&src, &dst)
-                                && self.conservative_coaleasceble(&src, &dst)
-                            {
-                                let (to_keep, to_merge) = if let NodeId::Register(_) = src {
-                                    (src, dst)
-                                } else {
-                                    (dst, src)
-                                };
+                    for src in &src_nodes {
+                        for dst in &dst_nodes {
+                            let src = dsu.find(src);
+                            let dst = dsu.find(dst);
 
-                                dsu.merge(&to_merge, &to_keep);
-                                self.update_graph(&to_merge, &to_keep);
+                            if self.check_node_id(&src) && self.check_node_id(&dst) {
+                                if self.map.contains_key(&src)
+                                    && self.map.contains_key(&dst)
+                                    && src != dst
+                                    && !self.are_neighbors(&src, &dst)
+                                    && self.conservative_coaleasceble(&src, &dst)
+                                {
+                                    let (to_keep, to_merge) = if let NodeId::Register(_) = src {
+                                        (src, dst)
+                                    } else {
+                                        (dst, src)
+                                    };
+
+                                    dsu.merge(&to_merge, &to_keep);
+                                    self.update_graph(&to_merge, &to_keep);
+                                }
                             }
                         }
                     }
@@ -519,10 +525,13 @@ impl<'a> ColoringGraph<'a> {
             }
         }
 
-        let mut replace = |op: &mut Operand| {
-            if let Ok(node_id) = (&*op).try_into() {
-                *op = dsu.find(&node_id).into();
+        let mut replace = |op: &mut Operand| match op {
+            Operand::Pseudo(Pseudo::Mem { name, offset: 0 }) => {
+                if let Some(reg) = dsu.find(&NodeId::Pseudo(name.clone())).into() {
+                    *op = reg.into();
+                }
             }
+            _ => {}
         };
         for inst in insts {
             match inst {
