@@ -150,9 +150,9 @@ enum NodeId {
     Pseudo(EcoString),
 }
 
-impl Into<Operand> for NodeId {
-    fn into(self) -> Operand {
-        match self {
+impl From<NodeId> for Operand {
+    fn from(val: NodeId) -> Self {
+        match val {
             NodeId::Register(reg) => Operand::Reg(reg),
             NodeId::Pseudo(name) => Operand::Pseudo(Pseudo::Mem { name, offset: 0 }),
         }
@@ -360,11 +360,11 @@ impl<'a> ColoringGraph<'a> {
         if !colors.is_empty() {
             match chosen_id {
                 NodeId::Register(r) if r.is_callee_saved() => {
-                    let color = colors.first().unwrap().clone();
+                    let color = *colors.first().unwrap();
                     self.map.get_mut(&chosen_id).unwrap().color = Some(color);
                 }
                 _ => {
-                    let color = colors.last().unwrap().clone();
+                    let color = *colors.last().unwrap();
                     self.map.get_mut(&chosen_id).unwrap().color = Some(color);
                 }
             }
@@ -491,47 +491,43 @@ impl<'a> ColoringGraph<'a> {
         let mut dsu = dsu::DisjointSet::default();
 
         for i in insts.iter() {
-            match i {
-                Instruction::Mov { src, dst, .. } => {
-                    let src_nodes = node_ids(src);
-                    let dst_nodes = node_ids(dst);
+            if let Instruction::Mov { src, dst, .. } = i {
+                let src_nodes = node_ids(src);
+                let dst_nodes = node_ids(dst);
 
-                    for src in &src_nodes {
-                        for dst in &dst_nodes {
-                            let src = dsu.find(src);
-                            let dst = dsu.find(dst);
+                for src in &src_nodes {
+                    for dst in &dst_nodes {
+                        let src = dsu.find(src);
+                        let dst = dsu.find(dst);
 
-                            if self.check_node_id(&src) && self.check_node_id(&dst) {
-                                if self.map.contains_key(&src)
-                                    && self.map.contains_key(&dst)
-                                    && src != dst
-                                    && !self.are_neighbors(&src, &dst)
-                                    && self.conservative_coaleasceble(&src, &dst)
-                                {
-                                    let (to_keep, to_merge) = if let NodeId::Register(_) = src {
-                                        (src, dst)
-                                    } else {
-                                        (dst, src)
-                                    };
+                        if self.check_node_id(&src)
+                            && self.check_node_id(&dst)
+                            && self.map.contains_key(&src)
+                            && self.map.contains_key(&dst)
+                            && src != dst
+                            && !self.are_neighbors(&src, &dst)
+                            && self.conservative_coaleasceble(&src, &dst)
+                        {
+                            let (to_keep, to_merge) = if let NodeId::Register(_) = src {
+                                (src, dst)
+                            } else {
+                                (dst, src)
+                            };
 
-                                    dsu.merge(&to_merge, &to_keep);
-                                    self.update_graph(&to_merge, &to_keep);
-                                }
-                            }
+                            dsu.merge(&to_merge, &to_keep);
+                            self.update_graph(&to_merge, &to_keep);
                         }
                     }
                 }
-                _ => {}
             }
         }
 
-        let mut replace = |op: &mut Operand| match op {
-            Operand::Pseudo(Pseudo::Mem { name, offset: 0 }) => {
+        let mut replace = |op: &mut Operand| {
+            if let Operand::Pseudo(Pseudo::Mem { name, offset: 0 }) = op {
                 if let Some(reg) = dsu.find(&NodeId::Pseudo(name.clone())).into() {
                     *op = reg.into();
                 }
             }
-            _ => {}
         };
         for inst in insts {
             match inst {

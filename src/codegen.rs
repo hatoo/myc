@@ -944,7 +944,7 @@ impl<'a> CodeGen<'a> {
                         (
                             Vec::new(),
                             Vec::new(),
-                            is_return_in_memory(&ty.ret, &self.symbol_table),
+                            is_return_in_memory(&ty.ret, self.symbol_table),
                         )
                     };
 
@@ -1510,7 +1510,7 @@ impl<'a> CodeGen<'a> {
         }
 
         let callee_saved = if enable_register_relocation {
-            let return_regs = return_registers(&function.return_ty, &self.symbol_table);
+            let return_regs = return_registers(&function.return_ty, self.symbol_table);
             let callee_saved_int = register_allocation(
                 &mut body,
                 &return_regs,
@@ -1527,7 +1527,7 @@ impl<'a> CodeGen<'a> {
             );
             let mut v: Vec<_> = callee_saved_int
                 .into_iter()
-                .chain(callee_saved_double.into_iter())
+                .chain(callee_saved_double)
                 .collect();
             v.sort();
             v
@@ -1748,7 +1748,7 @@ pub fn return_registers(ret_type: &VarType, symbol_table: &SymbolTable) -> Vec<R
                 PARAM_REGISTERS[..int_retvals]
                     .iter()
                     .copied()
-                    .chain((0..double_ret_vals).map(|i| Register::Xmm(i)))
+                    .chain((0..double_ret_vals).map(Register::Xmm))
                     .collect()
             }
         }
