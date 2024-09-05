@@ -9,13 +9,21 @@ use crate::{
 use super::{find_used_and_updated, NodeId};
 
 #[derive(Debug, Default)]
-pub struct Annotation {
+pub struct Annotation<'a> {
     // those NodId contains variables that isn't suitable for register allocation
     block_annotation: HashMap<usize, HashSet<NodeId>>,
     pub instruction_annotation: HashMap<usize, Vec<HashSet<NodeId>>>,
+    return_registers: &'a [Register],
 }
 
-impl Annotation {
+impl<'a> Annotation<'a> {
+    pub fn new(return_registers: &'a [Register]) -> Self {
+        Self {
+            return_registers,
+            ..Default::default()
+        }
+    }
+
     fn init_block(&mut self, block: &control_flow::Node<Instruction>) {
         self.block_annotation.insert(block.id, HashSet::new());
         self.instruction_annotation
@@ -70,8 +78,9 @@ impl Annotation {
         for succ in &block.successors {
             match succ {
                 control_flow::NodeId::Exit => {
-                    live_variables.insert(NodeId::Register(Register::Ax));
-                    live_variables.insert(NodeId::Register(Register::Xmm(0)));
+                    for reg in self.return_registers {
+                        live_variables.insert(NodeId::Register(*reg));
+                    }
                 }
                 control_flow::NodeId::Block(id) => {
                     live_variables.extend(self.block_annotation[id].clone());

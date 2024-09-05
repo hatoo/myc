@@ -48,11 +48,12 @@ const FREE_DOUBLE_REGISTERS: [Register; 14] = [
 
 pub fn register_allocation(
     program: &mut [Instruction],
+    return_registers: &[Register],
     symbol_table: &SymbolTable,
     aliased_vals: &HashSet<EcoString>,
     mode: ColoringMode,
 ) -> HashSet<Register> {
-    let mut graph = ColoringGraph::new(program, symbol_table, aliased_vals, mode);
+    let mut graph = ColoringGraph::new(program, symbol_table, aliased_vals, mode, return_registers);
     graph.color_graph();
     let (register_map, callee_saved) = graph.create_register_map();
 
@@ -229,6 +230,7 @@ impl<'a> ColoringGraph<'a> {
         symbol_table: &'a SymbolTable,
         aliased_vals: &HashSet<EcoString>,
         mode: ColoringMode,
+        return_registers: &[Register],
     ) -> Self {
         let mut me = Self {
             map: HashMap::new(),
@@ -245,7 +247,7 @@ impl<'a> ColoringGraph<'a> {
         }
 
         me.add_spill_costs(program);
-        me.add_edges(&cfg);
+        me.add_edges(&cfg, return_registers);
         me
     }
 
@@ -409,8 +411,8 @@ impl<'a> ColoringGraph<'a> {
         }
     }
 
-    fn add_edges(&mut self, cfg: &Cfg<Instruction>) {
-        let mut annotation = liveness_analysis::Annotation::default();
+    fn add_edges(&mut self, cfg: &Cfg<Instruction>, return_registers: &[Register]) {
+        let mut annotation = liveness_analysis::Annotation::new(return_registers);
 
         annotation.iterate(cfg, self.symbol_table);
 

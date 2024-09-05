@@ -1,6 +1,6 @@
 use core::panic;
 use std::{
-    collections::{hash_map::Entry, HashMap},
+    collections::{hash_map::Entry, HashMap, HashSet},
     fmt::Display,
     hash::Hash,
 };
@@ -1489,14 +1489,17 @@ impl<'a> CodeGen<'a> {
         }
 
         let callee_saved = if enable_register_relocation {
+            let return_regs = return_registers(&function.return_ty, &self.symbol_table);
             let callee_saved_int = register_allocation(
                 &mut body,
+                &return_regs,
                 self.symbol_table,
                 &aliased_vals,
                 crate::optimize_asm::ColoringMode::Int,
             );
             let callee_saved_double = register_allocation(
                 &mut body,
+                &return_regs,
                 self.symbol_table,
                 &aliased_vals,
                 crate::optimize_asm::ColoringMode::Double,
@@ -1684,6 +1687,48 @@ impl<'a> CodeGen<'a> {
             // scalar
             _ => (vec![(asm_ty, retval.into())], Vec::new(), false),
         }
+    }
+}
+
+pub fn return_registers(ret_type: &VarType, symbol_table: &SymbolTable) -> Vec<Register> {
+    let asm_ty: AssemblyType = asm_type(ret_type, symbol_table);
+
+    match asm_ty {
+        AssemblyType::Double => vec![Register::Xmm(0)],
+        AssemblyType::ByteArray { .. } => {
+            let VarType::Struct(struct_name) = ret_type else {
+                unreachable!()
+            };
+            let struct_def = symbol_table.struct_def(struct_name);
+            let classes = classify_struct(struct_def, symbol_table);
+
+            if classes[0] == Class::Memory {
+                vec![]
+            } else {
+                let mut int_retvals = 0;
+                let mut double_ret_vals = 0;
+
+                for class in classes {
+                    match class {
+                        Class::Sse => {
+                            double_ret_vals += 1;
+                        }
+                        Class::Integer => {
+                            int_retvals += 1;
+                        }
+                        Class::Memory => unreachable!(),
+                    }
+                }
+
+                PARAM_REGISTERS[..int_retvals]
+                    .iter()
+                    .copied()
+                    .chain((0..double_ret_vals).map(|i| Register::Xmm(i)))
+                    .collect()
+            }
+        }
+        // scalar
+        _ => vec![Register::Ax],
     }
 }
 

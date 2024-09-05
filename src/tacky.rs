@@ -27,6 +27,7 @@ pub struct Function {
     pub name: EcoString,
     pub params: Vec<EcoString>,
     pub body: Vec<Instruction>,
+    pub return_ty: ast::VarType,
 }
 
 #[derive(Debug)]
@@ -1016,6 +1017,7 @@ fn gen_function(generator: &mut InstructionGenerator, function: &ast::FunDecl) -
             name: function.name.data.clone(),
             params: function.params.iter().map(|s| s.data.clone()).collect(),
             body: std::mem::take(&mut generator.instructions),
+            return_ty: function.ty.ret.clone(),
         })
     } else {
         None
