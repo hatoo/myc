@@ -450,7 +450,7 @@ impl<'a> ColoringGraph<'a> {
 
                 for l in live {
                     if let Instruction::Mov { src, .. } = inst {
-                        if node_ids(src) == &[l.clone()] {
+                        if node_ids(src) == [l.clone()] {
                             continue;
                         }
                     }
