@@ -1,6 +1,6 @@
 use core::panic;
 use std::{
-    collections::{hash_map::Entry, HashMap, HashSet},
+    collections::{hash_map::Entry, HashMap},
     fmt::Display,
     hash::Hash,
 };
@@ -1691,6 +1691,10 @@ impl<'a> CodeGen<'a> {
 }
 
 pub fn return_registers(ret_type: &VarType, symbol_table: &SymbolTable) -> Vec<Register> {
+    if *ret_type == VarType::Void {
+        return Vec::new();
+    }
+
     let asm_ty: AssemblyType = asm_type(ret_type, symbol_table);
 
     match asm_ty {
