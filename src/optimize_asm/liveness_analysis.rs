@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    codegen::{Instruction, Register},
+    codegen::{Instruction, Operand, Register},
     control_flow::{self, Cfg},
     semantics::type_check::SymbolTable,
 };
@@ -56,15 +56,21 @@ impl<'a> Annotation<'a> {
 
             let (used, updated) = find_used_and_updated(inst, symbol_table);
 
-            for op in updated {
+            for op in &updated {
                 for n in node_ids(op) {
                     current_live_variables.remove(&n);
                 }
             }
 
-            for op in used {
+            for op in &used {
                 for n in node_ids(op) {
                     current_live_variables.insert(n);
+                }
+            }
+
+            for op in used.iter().chain(updated.iter()) {
+                if let Operand::Memory(r, _) = op {
+                    current_live_variables.insert(NodeId::Register(*r));
                 }
             }
         }
