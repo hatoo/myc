@@ -71,6 +71,7 @@ impl Annotation {
             match succ {
                 control_flow::NodeId::Exit => {
                     live_variables.insert(NodeId::Register(Register::Ax));
+                    live_variables.insert(NodeId::Register(Register::Xmm(0)));
                 }
                 control_flow::NodeId::Block(id) => {
                     live_variables.extend(self.block_annotation[id].clone());
