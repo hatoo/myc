@@ -156,7 +156,7 @@ impl TryInto<NodeId> for &Operand {
     fn try_into(self) -> Result<NodeId, Self::Error> {
         match self {
             Operand::Reg(reg) => Ok(NodeId::Register(*reg)),
-            Operand::Pseudo(Pseudo::Mem { name, .. }) => Ok(NodeId::Pseudo(name.clone())),
+            Operand::Pseudo(Pseudo::Mem { name, offset: 0 }) => Ok(NodeId::Pseudo(name.clone())),
             _ => Err(()),
         }
     }
