@@ -60,7 +60,7 @@ pub fn register_allocation(
     let (register_map, callee_saved) = graph.create_register_map();
     */
 
-    let mut graph = loop {
+    let graph = loop {
         let mut graph =
             ColoringGraph::new(program, symbol_table, aliased_vals, mode, return_registers);
         graph.color_graph();
