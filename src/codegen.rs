@@ -742,7 +742,18 @@ impl<'a> CodeGen<'a> {
                         Binary::Divide => {
                             let ty = lhs.ty(self.symbol_table);
                             if ty == VarType::Base(BaseType::Double) {
-                                let (lhs, rhs) = (rhs, lhs);
+                                body.push(Instruction::Mov {
+                                    ty: AssemblyType::Double,
+                                    src: lhs.into(),
+                                    dst: dst.into(),
+                                });
+                                body.push(Instruction::Binary {
+                                    op: BinaryOp::DivDouble,
+                                    ty: AssemblyType::Double,
+                                    lhs: rhs.into(),
+                                    rhs: dst.into(),
+                                });
+                                /*
                                 body.push(Instruction::Mov {
                                     ty: AssemblyType::Double,
                                     src: rhs.into(),
@@ -759,6 +770,7 @@ impl<'a> CodeGen<'a> {
                                     src: Operand::Reg(Register::Xmm(14)),
                                     dst: dst.into(),
                                 });
+                                */
                             } else if ty.is_signed() {
                                 let ty = asm_type(&ty, self.symbol_table);
                                 body.push(Instruction::Mov {
