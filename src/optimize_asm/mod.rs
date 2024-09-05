@@ -283,6 +283,18 @@ impl<'a> ColoringGraph<'a> {
         }
     }
 
+    fn spill_cost(&self, node_id: &NodeId) -> f32 {
+        let node = &self.map[node_id];
+
+        node.spill_cost
+            / node
+                .neighbors
+                .iter()
+                .filter(|n| !self.map[n].pruned)
+                .count()
+                .max(1) as f32
+    }
+
     fn color_graph(&mut self) {
         // TODO: optimize
         let k = FREE_INT_REGISTERS.len();
@@ -302,15 +314,7 @@ impl<'a> ColoringGraph<'a> {
             self.map
                 .values()
                 .filter(|n| !n.pruned)
-                .min_by(|n1, n2| {
-                    (n1.spill_cost
-                        / (n1.neighbors.iter().filter(|n| !self.map[n].pruned).count() + 1) as f32)
-                        .total_cmp(
-                            &(n2.spill_cost
-                                / (n2.neighbors.iter().filter(|n| !self.map[n].pruned).count() + 1)
-                                    as f32),
-                        )
-                })
+                .min_by(|n1, n2| self.spill_cost(&n1.id).total_cmp(&self.spill_cost(&n2.id)))
                 .unwrap()
                 .id
                 .clone()
