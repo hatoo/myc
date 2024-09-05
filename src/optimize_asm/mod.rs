@@ -14,7 +14,7 @@ use crate::{
 mod liveness_analysis;
 
 // R10 and R11 are used as temporary registers in the code generator
-const FREE_REGISTERS: [Register; 12] = [
+const FREE_INT_REGISTERS: [Register; 12] = [
     Register::Ax,
     Register::Bx,
     Register::Cx,
@@ -29,12 +29,30 @@ const FREE_REGISTERS: [Register; 12] = [
     Register::R15,
 ];
 
+const FREE_DOUBLE_REGISTERS: [Register; 14] = [
+    Register::Xmm(0),
+    Register::Xmm(1),
+    Register::Xmm(2),
+    Register::Xmm(3),
+    Register::Xmm(4),
+    Register::Xmm(5),
+    Register::Xmm(6),
+    Register::Xmm(7),
+    Register::Xmm(8),
+    Register::Xmm(9),
+    Register::Xmm(10),
+    Register::Xmm(11),
+    Register::Xmm(12),
+    Register::Xmm(13),
+];
+
 pub fn register_allocation(
     program: &mut [Instruction],
     symbol_table: &SymbolTable,
     aliased_vals: &HashSet<EcoString>,
+    mode: ColoringMode,
 ) -> HashSet<Register> {
-    let mut graph = ColoringGraph::new(program, symbol_table, aliased_vals);
+    let mut graph = ColoringGraph::new(program, symbol_table, aliased_vals, mode);
     graph.color_graph();
     let (register_map, callee_saved) = graph.create_register_map();
 
@@ -147,6 +165,7 @@ struct Node {
 struct ColoringGraph<'a> {
     map: HashMap<NodeId, Node>,
     symbol_table: &'a SymbolTable,
+    mode: ColoringMode,
 }
 
 impl Node {
@@ -171,7 +190,7 @@ fn is_int_scalar(n: &NodeId, symbol_table: &SymbolTable) -> bool {
             }
         }
         NodeId::Register(reg) => {
-            if FREE_REGISTERS.contains(reg) {
+            if FREE_INT_REGISTERS.contains(reg) {
                 return true;
             }
         }
@@ -180,17 +199,43 @@ fn is_int_scalar(n: &NodeId, symbol_table: &SymbolTable) -> bool {
     false
 }
 
+fn is_double_scalar(n: &NodeId, symbol_table: &SymbolTable) -> bool {
+    match n {
+        NodeId::Pseudo(name) => {
+            if let Attr::Local(ty) = &symbol_table[name] {
+                if *ty == VarType::Base(BaseType::Double) {
+                    return true;
+                }
+            }
+        }
+        NodeId::Register(reg) => {
+            if FREE_DOUBLE_REGISTERS.contains(reg) {
+                return true;
+            }
+        }
+    }
+
+    false
+}
+
+pub enum ColoringMode {
+    Int,
+    Double,
+}
+
 impl<'a> ColoringGraph<'a> {
     fn new(
         program: &[Instruction],
         symbol_table: &'a SymbolTable,
         aliased_vals: &HashSet<EcoString>,
+        mode: ColoringMode,
     ) -> Self {
         let mut me = Self {
             map: HashMap::new(),
             symbol_table,
+            mode,
         };
-        me.add_base_registers(&FREE_REGISTERS);
+        me.add_base_registers();
 
         let cfg = Cfg::new(program);
         me.collect_pseudo_vars(program);
@@ -204,8 +249,15 @@ impl<'a> ColoringGraph<'a> {
         me
     }
 
-    fn add_base_registers(&mut self, registers: &[Register]) {
-        for &reg in registers {
+    fn free_registers(&self) -> &'static [Register] {
+        match self.mode {
+            ColoringMode::Int => &FREE_INT_REGISTERS,
+            ColoringMode::Double => &FREE_DOUBLE_REGISTERS,
+        }
+    }
+
+    fn add_base_registers(&mut self) {
+        for &reg in self.free_registers() {
             self.map.insert(
                 NodeId::Register(reg),
                 Node {
@@ -218,8 +270,8 @@ impl<'a> ColoringGraph<'a> {
             );
         }
 
-        for &reg in registers {
-            for &neighbor in registers {
+        for &reg in self.free_registers() {
+            for &neighbor in self.free_registers() {
                 if reg != neighbor {
                     self.map
                         .get_mut(&NodeId::Register(reg))
@@ -233,7 +285,7 @@ impl<'a> ColoringGraph<'a> {
 
     fn color_graph(&mut self) {
         // TODO: optimize
-        let k = FREE_REGISTERS.len();
+        let k = FREE_INT_REGISTERS.len();
 
         if self.map.values().all(|n| n.pruned) {
             return;
@@ -326,8 +378,17 @@ impl<'a> ColoringGraph<'a> {
     }
 
     fn add_var(&mut self, n: NodeId) {
-        if is_int_scalar(&n, self.symbol_table) {
-            self.map.entry(n.clone()).or_insert(Node::new(n));
+        match self.mode {
+            ColoringMode::Int => {
+                if is_int_scalar(&n, self.symbol_table) {
+                    self.map.entry(n.clone()).or_insert(Node::new(n));
+                }
+            }
+            ColoringMode::Double => {
+                if is_double_scalar(&n, self.symbol_table) {
+                    self.map.entry(n.clone()).or_insert(Node::new(n));
+                }
+            }
         }
     }
 
