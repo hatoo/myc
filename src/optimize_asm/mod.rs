@@ -460,6 +460,65 @@ impl<'a> ColoringGraph<'a> {
             }
         }
     }
+
+    fn are_neighbors(&self, x: &NodeId, y: &NodeId) -> bool {
+        self.map[x].neighbors.contains(y)
+    }
+
+    fn conservative_coaleasceble(&self, src: &NodeId, dst: &NodeId) -> bool {
+        if self.briggs_test(src, dst) {
+            return true;
+        }
+        match (&src, &dst) {
+            (NodeId::Register(src), NodeId::Pseudo(dst)) => self.george_test(*src, dst.clone()),
+            (NodeId::Pseudo(src), NodeId::Register(dst)) => self.george_test(*dst, src.clone()),
+            _ => false,
+        }
+    }
+
+    fn briggs_test(&self, x: &NodeId, y: &NodeId) -> bool {
+        let mut significant_neighbors = 0;
+
+        let x_node = &self.map[x];
+        let y_node = &self.map[y];
+
+        let combined_neighbors = x_node
+            .neighbors
+            .iter()
+            .chain(y_node.neighbors.iter())
+            .cloned()
+            .collect::<HashSet<_>>();
+
+        for n in combined_neighbors {
+            let node = &self.map[&n];
+            let mut degree = node.neighbors.len();
+            if self.are_neighbors(&n, x) && self.are_neighbors(&n, y) {
+                degree -= 1;
+            }
+            if degree >= self.free_registers().len() {
+                significant_neighbors += 1;
+            }
+        }
+
+        significant_neighbors < self.free_registers().len()
+    }
+
+    fn george_test(&self, hardreg: Register, pseudoreg: EcoString) -> bool {
+        let pseudo_node = &self.map[&NodeId::Pseudo(pseudoreg)];
+
+        for n in &pseudo_node.neighbors {
+            if self.are_neighbors(n, &NodeId::Register(hardreg)) {
+                continue;
+            }
+            let node = &self.map[n];
+            if node.neighbors.len() < self.free_registers().len() {
+                continue;
+            }
+            return false;
+        }
+
+        true
+    }
 }
 
 fn find_used_and_updated<'a>(
