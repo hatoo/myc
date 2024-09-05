@@ -164,7 +164,7 @@ fn node_ids(op: &Operand) -> Vec<NodeId> {
         Operand::Reg(reg) => vec![NodeId::Register(*reg)],
         Operand::Pseudo(Pseudo::Mem { name, offset: 0 }) => vec![NodeId::Pseudo(name.clone())],
         // Operand::Data(name, _) => vec![NodeId::Pseudo(name.clone())],
-        // Operand::Memory(r, _) => vec![NodeId::Register(*r)],
+        Operand::Memory(r, _) => vec![NodeId::Register(*r)],
         Operand::Indexed { base, index, .. } => {
             vec![NodeId::Register(*base), NodeId::Register(*index)]
         }
