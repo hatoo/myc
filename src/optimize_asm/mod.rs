@@ -408,6 +408,13 @@ impl<'a> ColoringGraph<'a> {
         }
     }
 
+    fn check_node_id(&self, n: &NodeId) -> bool {
+        match self.mode {
+            ColoringMode::Int => is_int_scalar(n, self.symbol_table),
+            ColoringMode::Double => is_double_scalar(n, self.symbol_table),
+        }
+    }
+
     fn add_edge(&mut self, a: NodeId, b: NodeId) {
         if a != b && self.map.contains_key(&a) && self.map.contains_key(&b) {
             self.map.get_mut(&a).unwrap().neighbors.insert(b.clone());
@@ -481,20 +488,22 @@ impl<'a> ColoringGraph<'a> {
                         let src = dsu.find(&src);
                         let dst = dsu.find(&dst);
 
-                        if self.map.contains_key(&src)
-                            && self.map.contains_key(&dst)
-                            && src != dst
-                            && !self.are_neighbors(&src, &dst)
-                            && self.conservative_coaleasceble(&src, &dst)
-                        {
-                            let (to_keep, to_merge) = if let NodeId::Register(_) = src {
-                                (src, dst)
-                            } else {
-                                (dst, src)
-                            };
+                        if self.check_node_id(&src) && self.check_node_id(&dst) {
+                            if self.map.contains_key(&src)
+                                && self.map.contains_key(&dst)
+                                && src != dst
+                                && !self.are_neighbors(&src, &dst)
+                                && self.conservative_coaleasceble(&src, &dst)
+                            {
+                                let (to_keep, to_merge) = if let NodeId::Register(_) = src {
+                                    (src, dst)
+                                } else {
+                                    (dst, src)
+                                };
 
-                            dsu.merge(&to_merge, &to_keep);
-                            self.update_graph(&to_merge, &to_keep);
+                                dsu.merge(&to_merge, &to_keep);
+                                self.update_graph(&to_merge, &to_keep);
+                            }
                         }
                     }
                 }
