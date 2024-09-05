@@ -297,7 +297,7 @@ impl<'a> ColoringGraph<'a> {
 
     fn color_graph(&mut self) {
         // TODO: optimize
-        let k = FREE_INT_REGISTERS.len();
+        let k = self.free_registers().len();
 
         if self.map.values().all(|n| n.pruned) {
             return;
