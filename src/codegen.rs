@@ -1489,8 +1489,22 @@ impl<'a> CodeGen<'a> {
         }
 
         let callee_saved = if enable_register_relocation {
-            let callee_saved = register_allocation(&mut body, self.symbol_table, &aliased_vals);
-            let mut v: Vec<_> = callee_saved.into_iter().collect();
+            let callee_saved_int = register_allocation(
+                &mut body,
+                self.symbol_table,
+                &aliased_vals,
+                crate::optimize_asm::ColoringMode::Int,
+            );
+            let callee_saved_double = register_allocation(
+                &mut body,
+                self.symbol_table,
+                &aliased_vals,
+                crate::optimize_asm::ColoringMode::Double,
+            );
+            let mut v: Vec<_> = callee_saved_int
+                .into_iter()
+                .chain(callee_saved_double.into_iter())
+                .collect();
             v.sort();
             v
         } else {
