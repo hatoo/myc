@@ -938,14 +938,23 @@ impl<'a> CodeGen<'a> {
                     let (int_dests, double_dests, return_in_memory) = if let Some(retval) = dst {
                         self.classify_return_value(retval)
                     } else {
-                        (Vec::new(), Vec::new(), false)
+                        let Attr::Fun { ty, .. } = &self.symbol_table[callee.var()] else {
+                            panic!()
+                        };
+                        (
+                            Vec::new(),
+                            Vec::new(),
+                            is_return_in_memory(&ty.ret, &self.symbol_table),
+                        )
                     };
 
                     let param_regs = if return_in_memory {
-                        body.push(Instruction::Lea {
-                            src: dst.as_ref().unwrap().into(),
-                            dst: Operand::Reg(Register::Di),
-                        });
+                        if let Some(dst) = dst {
+                            body.push(Instruction::Lea {
+                                src: dst.into(),
+                                dst: Operand::Reg(Register::Di),
+                            });
+                        }
                         &PARAM_REGISTERS[1..]
                     } else {
                         &PARAM_REGISTERS
