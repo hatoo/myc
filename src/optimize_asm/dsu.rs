@@ -9,25 +9,17 @@ pub struct DisjointSet {
 
 impl DisjointSet {
     pub fn find(&mut self, x: &NodeId) -> NodeId {
-        match x {
-            NodeId::Register(_) => x.clone(),
-            NodeId::Pseudo(_) => {
-                if let Some(p) = self.map.get(x) {
-                    if let NodeId::Register(_) = p {
-                        return p.clone();
-                    }
-                    if p == x {
-                        return x.clone();
-                    }
-                    let p = p.clone();
-                    let x = x.clone();
-                    let root = self.find(&p);
-                    self.map.insert(x, root.clone());
-                    root
-                } else {
-                    x.clone()
-                }
+        if let Some(p) = self.map.get(x) {
+            if p == x {
+                return x.clone();
             }
+            let p = p.clone();
+            let x = x.clone();
+            let root = self.find(&p);
+            self.map.insert(x, root.clone());
+            root
+        } else {
+            x.clone()
         }
     }
 
