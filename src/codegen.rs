@@ -2442,16 +2442,18 @@ impl Display for Function {
 
         writeln!(f, "pushq %rbp")?;
         writeln!(f, "movq %rsp, %rbp")?;
-        writeln!(
-            f,
-            "{}",
-            Instruction::Binary {
-                op: BinaryOp::Sub,
-                ty: AssemblyType::QuadWord,
-                lhs: Operand::Imm(self.stack_size as _),
-                rhs: Operand::Reg(Register::SP),
-            }
-        )?;
+        if self.stack_size != 0 {
+            writeln!(
+                f,
+                "{}",
+                Instruction::Binary {
+                    op: BinaryOp::Sub,
+                    ty: AssemblyType::QuadWord,
+                    lhs: Operand::Imm(self.stack_size as _),
+                    rhs: Operand::Reg(Register::SP),
+                }
+            )?;
+        }
         for r in &self.callee_saved {
             writeln!(f, "pushq {}", RegisterSize::Qword(r))?;
         }
