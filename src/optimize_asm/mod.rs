@@ -11,8 +11,8 @@ use crate::{
     semantics::type_check::{Attr, SymbolTable},
 };
 
+mod dsu;
 mod liveness_analysis;
-mod uft;
 
 // R10 and R11 are used as temporary registers in the code generator
 const FREE_INT_REGISTERS: [Register; 12] = [
@@ -151,6 +151,15 @@ impl TryInto<NodeId> for &Operand {
             Operand::Reg(reg) => Ok(NodeId::Register(*reg)),
             Operand::Pseudo(Pseudo::Mem { name, .. }) => Ok(NodeId::Pseudo(name.clone())),
             _ => Err(()),
+        }
+    }
+}
+
+impl Into<Operand> for NodeId {
+    fn into(self) -> Operand {
+        match self {
+            NodeId::Register(reg) => Operand::Reg(reg),
+            NodeId::Pseudo(name) => Operand::Pseudo(Pseudo::Mem { name, offset: 0 }),
         }
     }
 }
@@ -459,6 +468,46 @@ impl<'a> ColoringGraph<'a> {
                     self.increment_spill_cost(&id);
                 }
             }
+        }
+    }
+
+    fn coalesce(&mut self, insts: &[Instruction]) {
+        let mut dsu = dsu::DisjointSet::default();
+
+        for i in insts {
+            match i {
+                Instruction::Mov { src, dst, .. } => {
+                    if let (Ok(src), Ok(dst)) = (src.try_into(), dst.try_into()) {
+                        let src = dsu.find(&src);
+                        let dst = dsu.find(&dst);
+
+                        if self.map.contains_key(&src)
+                            && self.map.contains_key(&dst)
+                            && src != dst
+                            && !self.are_neighbors(&src, &dst)
+                            && self.conservative_coaleasceble(&src, &dst)
+                        {
+                            let (to_keep, to_merge) = if let NodeId::Register(_) = src {
+                                (src, dst)
+                            } else {
+                                (dst, src)
+                            };
+
+                            dsu.merge(&to_merge, &to_keep);
+                            self.update_graph(&to_merge, &to_keep);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn update_graph(&mut self, x: &NodeId, y: &NodeId) {
+        let to_remove = self.map.remove(x).unwrap();
+        for neighbor in &to_remove.neighbors {
+            self.add_edge(y.clone(), neighbor.clone());
+            self.map.get_mut(neighbor).unwrap().neighbors.remove(x);
         }
     }
 
