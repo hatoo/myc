@@ -54,8 +54,21 @@ pub fn register_allocation(
     aliased_vals: &HashSet<EcoString>,
     mode: ColoringMode,
 ) -> HashSet<Register> {
+    /*
     let mut graph = ColoringGraph::new(program, symbol_table, aliased_vals, mode, return_registers);
     graph.color_graph();
+    let (register_map, callee_saved) = graph.create_register_map();
+    */
+
+    let mut graph = loop {
+        let mut graph =
+            ColoringGraph::new(program, symbol_table, aliased_vals, mode, return_registers);
+        graph.color_graph();
+        if graph.coalesce(program) {
+            break graph;
+        }
+    };
+
     let (register_map, callee_saved) = graph.create_register_map();
 
     let replace = |op: &mut Operand| {
@@ -229,6 +242,7 @@ fn is_double_scalar(n: &NodeId, symbol_table: &SymbolTable) -> bool {
     false
 }
 
+#[derive(Debug, Clone, Copy)]
 pub enum ColoringMode {
     Int,
     Double,
@@ -478,10 +492,10 @@ impl<'a> ColoringGraph<'a> {
         }
     }
 
-    fn coalesce(&mut self, insts: &[Instruction]) {
+    fn coalesce(&mut self, insts: &mut [Instruction]) -> bool {
         let mut dsu = dsu::DisjointSet::default();
 
-        for i in insts {
+        for i in insts.iter() {
             match i {
                 Instruction::Mov { src, dst, .. } => {
                     if let (Ok(src), Ok(dst)) = (src.try_into(), dst.try_into()) {
@@ -510,6 +524,81 @@ impl<'a> ColoringGraph<'a> {
                 _ => {}
             }
         }
+
+        let mut replace = |op: &mut Operand| {
+            if let Ok(node_id) = (&*op).try_into() {
+                *op = dsu.find(&node_id).into();
+            }
+        };
+        for inst in insts {
+            match inst {
+                Instruction::Mov { src, dst, .. } => {
+                    replace(src);
+                    replace(dst);
+
+                    if let (Operand::Reg(a), Operand::Reg(b)) = (src, dst) {
+                        if a == b {
+                            *inst = Instruction::Nop;
+                        }
+                    }
+                }
+                Instruction::MovZeroExtend { src, dst, .. } => {
+                    replace(src);
+                    replace(dst);
+                }
+                Instruction::Movsx { src, dst, .. } => {
+                    replace(src);
+                    replace(dst);
+                }
+                Instruction::Binary { lhs, rhs, .. } => {
+                    replace(lhs);
+                    replace(rhs);
+                }
+                Instruction::Unary { src, .. } => {
+                    replace(src);
+                }
+                Instruction::Cmp(_, v1, v2) => {
+                    replace(v1);
+                    replace(v2);
+                }
+                Instruction::SetCc(_, dst) => {
+                    replace(dst);
+                }
+                Instruction::Push(op) => {
+                    replace(op);
+                }
+                Instruction::Idiv(_, divisor) => {
+                    replace(divisor);
+                }
+                Instruction::Cdq(_) => {}
+                Instruction::Call(op) => {
+                    replace(op);
+                }
+                Instruction::Lea { src, dst } => {
+                    replace(src);
+                    replace(dst);
+                }
+                Instruction::Div(_, op) => {
+                    replace(op);
+                }
+                Instruction::Jmp(_) => {}
+                Instruction::JmpCc(_, _) => {}
+                Instruction::Label(_) => {}
+                Instruction::Ret => {}
+                Instruction::Pop(_) => {}
+                Instruction::Cvttsd2si { src, dst, .. } => {
+                    replace(src);
+                    replace(dst);
+                }
+                Instruction::Cvtsi2sd { src, dst, .. } => {
+                    replace(src);
+                    replace(dst);
+                }
+                Instruction::Nop => {}
+            }
+        }
+
+        dsu.is_empty()
     }
 
     fn update_graph(&mut self, x: &NodeId, y: &NodeId) {
