@@ -12,6 +12,7 @@ use crate::{
 };
 
 mod liveness_analysis;
+mod uft;
 
 // R10 and R11 are used as temporary registers in the code generator
 const FREE_INT_REGISTERS: [Register; 12] = [
