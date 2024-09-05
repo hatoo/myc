@@ -54,21 +54,15 @@ pub fn register_allocation(
     aliased_vals: &HashSet<EcoString>,
     mode: ColoringMode,
 ) -> HashSet<Register> {
-    /*
-    let mut graph = ColoringGraph::new(program, symbol_table, aliased_vals, mode, return_registers);
-    graph.color_graph();
-    let (register_map, callee_saved) = graph.create_register_map();
-    */
-
-    let graph = loop {
+    let mut graph = loop {
         let mut graph =
             ColoringGraph::new(program, symbol_table, aliased_vals, mode, return_registers);
-        graph.color_graph();
         if graph.coalesce(program) {
             break graph;
         }
     };
 
+    graph.color_graph();
     let (register_map, callee_saved) = graph.create_register_map();
 
     let replace = |op: &mut Operand| {
