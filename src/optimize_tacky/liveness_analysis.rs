@@ -206,11 +206,7 @@ impl Annotation {
                 let live_variables = &self.instruction_annotation[&node.id][i];
                 if let Some(dst) = dst_field(inst) {
                     if !live_variables.contains(dst) {
-                        if let Instruction::FunCall { dst: _, .. } = inst {
-                            // *dst = None;
-                        } else {
-                            *inst = Instruction::Nop;
-                        }
+                        *inst = Instruction::Nop;
                     }
                 }
             }
@@ -227,7 +223,6 @@ fn dst_field(inst: &Instruction) -> Option<&EcoString> {
         | Instruction::Cast { dst, .. }
         | Instruction::Copy { dst, .. }
         | Instruction::GetAddress { dst, .. }
-        | Instruction::FunCall { dst: Some(dst), .. }
         | Instruction::CopyFromOffset { dst, .. } => Some(dst.var()),
         Instruction::CopyToOffset { dst, .. } => Some(dst),
         _ => None,
