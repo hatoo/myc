@@ -502,7 +502,7 @@ impl<'a> ColoringGraph<'a> {
                             && self.map.contains_key(&dst)
                             && src != dst
                             && !self.are_neighbors(&src, &dst)
-                            && self.conservative_coaleasceble(&src, &dst)
+                            && self.conservative_coalesceble(&src, &dst)
                         {
                             let (to_keep, to_merge) = if let NodeId::Register(_) = src {
                                 (src, dst)
@@ -608,7 +608,7 @@ impl<'a> ColoringGraph<'a> {
         self.map[x].neighbors.contains(y)
     }
 
-    fn conservative_coaleasceble(&self, src: &NodeId, dst: &NodeId) -> bool {
+    fn conservative_coalesceble(&self, src: &NodeId, dst: &NodeId) -> bool {
         if self.briggs_test(src, dst) {
             return true;
         }
