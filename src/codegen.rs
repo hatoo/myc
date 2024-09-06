@@ -77,7 +77,7 @@ pub struct Function {
     pub stack_size: usize,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Instruction {
     Nop,
     Mov {
@@ -136,14 +136,14 @@ pub enum Instruction {
     },
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnaryOp {
     Neg,
     Not,
     Shr,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinaryOp {
     Add,
     Sub,
@@ -156,7 +156,7 @@ pub enum BinaryOp {
     ShrTwo,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Pseudo {
     // Must be placed in read only section
     Double { value: f64, alignment: usize },
@@ -169,7 +169,7 @@ impl Pseudo {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Operand {
     Imm(u64),
     Reg(Register),
@@ -276,7 +276,7 @@ pub enum RegisterSize<'a> {
     Qword(&'a Register),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CondCode {
     E,
     Ne,
@@ -1518,6 +1518,7 @@ impl<'a> CodeGen<'a> {
                 &aliased_vals,
                 crate::optimize_asm::ColoringMode::Int,
             );
+            // There is no callee saved xmm registers
             let callee_saved_double = register_allocation(
                 &mut body,
                 &return_regs,
@@ -1525,6 +1526,9 @@ impl<'a> CodeGen<'a> {
                 &aliased_vals,
                 crate::optimize_asm::ColoringMode::Double,
             );
+
+            body.retain(|i| *i != Instruction::Nop);
+
             let mut v: Vec<_> = callee_saved_int
                 .into_iter()
                 .chain(callee_saved_double)
