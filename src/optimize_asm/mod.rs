@@ -317,59 +317,55 @@ impl<'a> ColoringGraph<'a> {
     }
 
     fn color_graph(&mut self) {
-        // TODO: optimize
         let k = self.free_registers().len();
 
-        if self.map.values().all(|n| n.pruned) {
-            return;
+        let mut stack = Vec::new();
+        let mut rest: HashSet<_> = self.map.keys().cloned().collect();
+
+        while !rest.is_empty() {
+            let chosen_id = if let Some(chosen_id) = rest.iter().find(|n| {
+                self.map[n]
+                    .neighbors
+                    .iter()
+                    .filter(|&n| !self.map[n].pruned)
+                    .count()
+                    < k
+            }) {
+                chosen_id.clone()
+            } else {
+                rest.iter()
+                    .min_by(|n1, n2| self.spill_cost(n1).total_cmp(&self.spill_cost(n2)))
+                    .unwrap()
+                    .clone()
+            };
+
+            rest.remove(&chosen_id);
+            self.map.get_mut(&chosen_id).unwrap().pruned = true;
+            stack.push(chosen_id);
         }
 
-        let chosen_id = if let Some(chosen_node) = self
-            .map
-            .values()
-            .filter(|n| !n.pruned)
-            .find(|n| n.neighbors.iter().filter(|&n| !self.map[n].pruned).count() < k)
-        {
-            chosen_node.id.clone()
-        } else {
-            self.map
-                .values()
-                .filter(|n| !n.pruned)
-                .min_by(|n1, n2| self.spill_cost(&n1.id).total_cmp(&self.spill_cost(&n2.id)))
-                .unwrap()
-                .id
-                .clone()
-        };
+        while let Some(chosen_id) = stack.pop() {
+            let node = self.map.get(&chosen_id).unwrap();
 
-        let node = self.map.get_mut(&chosen_id).unwrap();
-        node.pruned = true;
+            let mut colors = (0..k).collect::<BTreeSet<_>>();
 
-        self.color_graph();
-
-        let mut colors = (0..k).collect::<BTreeSet<_>>();
-
-        let node = self.map.get(&chosen_id).unwrap();
-        for neighbor in &node.neighbors {
-            if let Some(neighbor) = self.map.get(neighbor) {
-                if let Some(color) = neighbor.color {
-                    colors.remove(&color);
-                }
-            }
-        }
-
-        if !colors.is_empty() {
-            match chosen_id {
-                NodeId::Register(r) if r.is_callee_saved() => {
-                    let color = *colors.first().unwrap();
-                    self.map.get_mut(&chosen_id).unwrap().color = Some(color);
-                }
-                _ => {
-                    let color = *colors.last().unwrap();
-                    self.map.get_mut(&chosen_id).unwrap().color = Some(color);
+            for neighbor in &node.neighbors {
+                if let Some(neighbor) = self.map.get(neighbor) {
+                    if let Some(color) = neighbor.color {
+                        colors.remove(&color);
+                    }
                 }
             }
 
-            self.map.get_mut(&chosen_id).unwrap().pruned = false;
+            if !colors.is_empty() {
+                let node = self.map.get_mut(&chosen_id).unwrap();
+                node.color = Some(match chosen_id {
+                    NodeId::Register(r) if r.is_callee_saved() => *colors.first().unwrap(),
+                    _ => *colors.last().unwrap(),
+                });
+
+                node.pruned = false;
+            }
         }
     }
 
