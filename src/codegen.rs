@@ -510,9 +510,9 @@ impl<'a> CodeGen<'a> {
         );
 
         let int_regs = if return_in_memory {
-            &PARAM_REGISTERS[1..]
+            &INT_PARAM_REGISTERS[1..]
         } else {
-            &PARAM_REGISTERS
+            &INT_PARAM_REGISTERS
         };
 
         for (i, (asm_ty, op)) in int_reg_args.into_iter().enumerate() {
@@ -530,7 +530,7 @@ impl<'a> CodeGen<'a> {
         for (i, (_asm_ty, op)) in double_reg_args.into_iter().enumerate() {
             body.push(Instruction::Mov {
                 ty: AssemblyType::Double,
-                src: Operand::Reg(Register::Xmm(i as _)),
+                src: Operand::Reg(DOUBLE_PARAM_REGISTERS[i]),
                 dst: op,
             });
         }
@@ -596,7 +596,7 @@ impl<'a> CodeGen<'a> {
                                 body.push(Instruction::Mov {
                                     ty: AssemblyType::Double,
                                     src: op,
-                                    dst: Operand::Reg(Register::Xmm(i as _)),
+                                    dst: Operand::Reg(DOUBLE_PARAM_REGISTERS[i]),
                                 });
                             }
                         }
@@ -955,9 +955,9 @@ impl<'a> CodeGen<'a> {
                                 dst: Operand::Reg(Register::Di),
                             });
                         }
-                        &PARAM_REGISTERS[1..]
+                        &INT_PARAM_REGISTERS[1..]
                     } else {
-                        &PARAM_REGISTERS
+                        &INT_PARAM_REGISTERS
                     };
 
                     let (int_reg_args, double_reg_args, stack_args) =
@@ -990,7 +990,7 @@ impl<'a> CodeGen<'a> {
                         body.push(Instruction::Mov {
                             ty: AssemblyType::Double,
                             src: op,
-                            dst: Operand::Reg(Register::Xmm(i as _)),
+                            dst: Operand::Reg(DOUBLE_PARAM_REGISTERS[i]),
                         });
                     }
 
@@ -1071,7 +1071,7 @@ impl<'a> CodeGen<'a> {
                         for (i, op) in double_dests.into_iter().enumerate() {
                             body.push(Instruction::Mov {
                                 ty: AssemblyType::Double,
-                                src: Operand::Reg(Register::Xmm(i as _)),
+                                src: Operand::Reg(DOUBLE_PARAM_REGISTERS[i]),
                                 dst: op,
                             });
                         }
@@ -1745,7 +1745,7 @@ pub fn return_registers(ret_type: &VarType, symbol_table: &SymbolTable) -> Vec<R
                     }
                 }
 
-                PARAM_REGISTERS[..int_retvals]
+                INT_PARAM_REGISTERS[..int_retvals]
                     .iter()
                     .copied()
                     .chain((0..double_ret_vals).map(Register::Xmm))
@@ -1780,13 +1780,24 @@ pub enum Class {
     Integer,
 }
 
-const PARAM_REGISTERS: [Register; 6] = [
+pub const INT_PARAM_REGISTERS: [Register; 6] = [
     Register::Di,
     Register::Si,
     Register::Dx,
     Register::Cx,
     Register::R8,
     Register::R9,
+];
+
+pub const DOUBLE_PARAM_REGISTERS: [Register; 8] = [
+    Register::Xmm(0),
+    Register::Xmm(1),
+    Register::Xmm(2),
+    Register::Xmm(3),
+    Register::Xmm(4),
+    Register::Xmm(5),
+    Register::Xmm(6),
+    Register::Xmm(7),
 ];
 
 fn pseudo_to_stack(
