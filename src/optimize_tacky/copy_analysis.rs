@@ -66,7 +66,7 @@ impl Annotation {
                 }
                 Instruction::CopyFromOffset { src, dst, .. } => {
                     let cpy = Copy {
-                        src: Val::Var(src.clone()),
+                        src: src.clone(),
                         dst: dst.clone(),
                     };
                     if !current_reaching_copies.contains(&cpy) {
@@ -76,7 +76,7 @@ impl Annotation {
                 Instruction::CopyToOffset { src, dst, .. } => {
                     let cpy = Copy {
                         src: src.clone(),
-                        dst: Val::Var(dst.clone()),
+                        dst: dst.clone(),
                     };
                     if !current_reaching_copies.contains(&cpy) {
                         current_reaching_copies.retain(|c| !(c.src == cpy.dst || c.dst == cpy.dst));
@@ -206,9 +206,7 @@ impl Annotation {
                         *src = replace_operand(src.clone(), anno);
                     }
                     Instruction::CopyFromOffset { src, .. } => {
-                        if let Val::Var(var) = replace_operand(Val::Var(src.clone()), anno) {
-                            *src = var
-                        }
+                        *src = replace_operand(src.clone(), anno);
                     }
                     Instruction::Binary {
                         lhs: src1,

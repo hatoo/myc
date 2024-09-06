@@ -46,6 +46,7 @@ pub struct StaticConstant {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+// We use `Val` as operand even if it's not gonna be a constant (e.g. dst) for easiness.
 pub enum Instruction {
     Nop,
     Return(Option<Val>),
@@ -103,11 +104,11 @@ pub enum Instruction {
     },
     CopyToOffset {
         src: Val,
-        dst: EcoString,
+        dst: Val,
         offset: usize,
     },
     CopyFromOffset {
-        src: EcoString,
+        src: Val,
         offset: usize,
         dst: Val,
     },
@@ -253,7 +254,7 @@ impl<'a> InstructionGenerator<'a> {
                         ])));
                         self.instructions.push(Instruction::CopyToOffset {
                             src: val,
-                            dst: name.clone(),
+                            dst: Val::Var(name.clone()),
                             offset: *offset,
                         });
                         *offset += chunk.len();
@@ -262,7 +263,7 @@ impl<'a> InstructionGenerator<'a> {
                             let val = Val::Constant(ast::Const::UChar(*byte));
                             self.instructions.push(Instruction::CopyToOffset {
                                 src: val,
-                                dst: name.clone(),
+                                dst: Val::Var(name.clone()),
                                 offset: *offset,
                             });
                             *offset += 1;
@@ -281,7 +282,7 @@ impl<'a> InstructionGenerator<'a> {
                 } else {
                     self.instructions.push(Instruction::CopyToOffset {
                         src: val,
-                        dst: name.clone(),
+                        dst: Val::Var(name.clone()),
                         offset: *offset,
                     });
                 }
@@ -672,7 +673,7 @@ impl<'a> InstructionGenerator<'a> {
                     ExpResult::SubObject { base, offset } => {
                         self.instructions.push(Instruction::CopyToOffset {
                             src: rhs.clone(),
-                            dst: base.clone(),
+                            dst: Val::Var(base.clone()),
                             offset: *offset,
                         });
                         ExpResult::PlainOperand(rhs)
@@ -938,7 +939,7 @@ impl<'a> InstructionGenerator<'a> {
             ExpResult::SubObject { base, offset } => {
                 let dst = self.make_tmp_local(expression.ty().clone());
                 self.instructions.push(Instruction::CopyFromOffset {
-                    src: base,
+                    src: Val::Var(base),
                     offset,
                     dst: dst.clone(),
                 });

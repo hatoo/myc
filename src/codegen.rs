@@ -1412,7 +1412,7 @@ impl<'a> CodeGen<'a> {
                             ty: self.val_asm_type(src),
                             src: src.into(),
                             dst: Operand::Pseudo(Pseudo::Mem {
-                                name: dst.clone(),
+                                name: dst.var().clone(),
                                 offset: *offset,
                             }),
                         });
@@ -1428,7 +1428,7 @@ impl<'a> CodeGen<'a> {
                                     offset: offset2,
                                 }),
                                 dst: Operand::Pseudo(Pseudo::Mem {
-                                    name: dst.clone(),
+                                    name: dst.var().clone(),
                                     offset: offset + offset2,
                                 }),
                             });
@@ -1443,7 +1443,7 @@ impl<'a> CodeGen<'a> {
                         body.push(Instruction::Mov {
                             ty: asm,
                             src: Operand::Pseudo(Pseudo::Mem {
-                                name: src.clone(),
+                                name: src.var().clone(),
                                 offset: offset + offset2,
                             }),
                             dst: Operand::Pseudo(Pseudo::Mem {
