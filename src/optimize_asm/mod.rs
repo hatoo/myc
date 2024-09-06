@@ -754,6 +754,7 @@ fn find_used_and_updated<'a>(
                     &Operand::Reg(Register::Xmm(12)),
                     &Operand::Reg(Register::Xmm(13)),
                     &Operand::Reg(Register::Xmm(14)),
+                    &Operand::Reg(Register::Xmm(15)),
                 ],
             )
         }
