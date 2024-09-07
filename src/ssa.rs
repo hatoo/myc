@@ -117,7 +117,7 @@ pub struct Ssa<I> {
     cfg: Cfg<I>,
     dominators: HashMap<usize, HashSet<usize>>,
     dominate_frontiers: HashMap<usize, HashSet<usize>>,
-    phi: HashMap<usize, HashMap<usize, EcoString>>,
+    phi: HashMap<usize, HashMap<EcoString, HashMap<usize, EcoString>>>,
 }
 
 impl<I: SsaInstruction> Ssa<I> {
@@ -228,7 +228,13 @@ impl<I: SsaInstruction> Ssa<I> {
         for v in &vars {
             for d in defs[v].clone() {
                 for block in &self.dominate_frontiers[&d] {
-                    self.phi.entry(*block).or_default().insert(d, v.clone());
+                    self.phi
+                        .entry(*block)
+                        .or_default()
+                        .entry(v.clone())
+                        .or_default()
+                        .insert(d, v.clone());
+
                     defs.entry(v.clone()).or_default().insert(*block);
                 }
             }
@@ -258,6 +264,21 @@ impl<I: SsaInstruction> Ssa<I> {
 
         let mut pushed = Vec::new();
 
+        for (old_name, phi) in self.phi.entry(block).or_default().clone() {
+            let new_name = stack
+                .entry(old_name.clone())
+                .or_default()
+                .last()
+                .unwrap_or_else(|| &old_name)
+                .clone();
+
+            self.phi.get_mut(&block).unwrap().remove(&old_name);
+            self.phi
+                .get_mut(&block)
+                .unwrap()
+                .insert(new_name.clone(), phi);
+        }
+
         for inst in &mut self.cfg.nodes.get_mut(&block).unwrap().instructions {
             inst.map_args(|var| {
                 *var = stack
@@ -283,13 +304,15 @@ impl<I: SsaInstruction> Ssa<I> {
                 None
             }
         }) {
-            for (_from, new_name) in self.phi.entry(*s).or_default() {
-                *new_name = stack
-                    .entry(new_name.clone())
+            for (old_name, phi) in self.phi.entry(*s).or_default() {
+                let new_name = stack
+                    .entry(old_name.clone())
                     .or_default()
                     .last()
-                    .unwrap_or_else(|| new_name)
+                    .unwrap_or_else(|| old_name)
                     .clone();
+
+                phi.insert(block, new_name.clone());
             }
         }
 
