@@ -224,20 +224,24 @@ impl<I: SsaInstruction> Ssa<I> {
     }
 
     fn add_phi(&mut self) {
-        let mut defs = self.defs();
+        let defs = self.defs();
         let vars = defs.keys().cloned().collect::<Vec<_>>();
 
         let mut phi: HashMap<usize, HashMap<EcoString, (EcoString, HashMap<usize, EcoString>)>> =
             Default::default();
 
         for v in &vars {
-            for d in defs[v].clone() {
-                for block in &self.dominate_frontiers[&d] {
-                    phi.entry(*block)
-                        .or_default()
-                        .insert(v.clone(), (v.clone(), Default::default()));
+            let mut stack: Vec<usize> = defs[v].iter().copied().collect();
+            let mut visited = HashSet::new();
+            while let Some(d) = stack.pop() {
+                if visited.insert(d) {
+                    for block in &self.dominate_frontiers[&d] {
+                        phi.entry(*block)
+                            .or_default()
+                            .insert(v.clone(), (v.clone(), Default::default()));
 
-                    defs.entry(v.clone()).or_default().insert(*block);
+                        stack.push(*block);
+                    }
                 }
             }
         }
