@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     fs::File,
     io::{stdin, Read, Write},
     path::PathBuf,
@@ -257,6 +258,10 @@ fn print_ssa(ssa: &Ssa<Instruction>) {
         println!("{}:", id);
         for (var, incoming) in &ssa.phi[id] {
             print!("{} = φ(", var);
+            let incoming = incoming
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect::<BTreeMap<_, _>>();
             for (pred, val) in incoming {
                 print!("{}: {}, ", pred, val);
             }

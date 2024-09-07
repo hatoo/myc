@@ -322,6 +322,10 @@ impl<I: SsaInstruction> Ssa<I> {
                 None
             }
         }) {
+            self.phi.get_mut(s).unwrap().retain(|_, map| {
+                let old_name = map[&block].clone();
+                stack.get(&old_name).map(|s| !s.is_empty()).unwrap_or(false)
+            });
             for (_, map) in self.phi.entry(*s).or_default() {
                 let old_name = map[&block].clone();
 
@@ -350,16 +354,17 @@ impl<I: SsaInstruction> Ssa<I> {
     }
 
     fn immediate_dominates(&self, a: usize) -> HashSet<usize> {
-        self.dominates[&a]
+        self.cfg.nodes[&a]
+            .successors
             .iter()
-            .filter(|&&b| {
-                a != b
-                    && !self.dominated[&b]
-                        .iter()
-                        .filter(|&&x| x != b)
-                        .any(|&x| self.strictly_dominates(a, x))
+            .filter_map(|s| {
+                if let NodeId::Block(s) = s {
+                    Some(*s)
+                } else {
+                    None
+                }
             })
-            .copied()
+            .filter(|s| self.dominated[s].contains(&a))
             .collect()
     }
 }
