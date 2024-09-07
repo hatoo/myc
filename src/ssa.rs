@@ -272,13 +272,42 @@ impl<I: SsaInstruction> Ssa<I> {
                     .unwrap_or_else(|| var)
                     .clone();
             });
+        }
 
+        let mut dsts = HashSet::new();
+
+        for inst in &mut self.cfg.nodes.get_mut(&block).unwrap().instructions {
             if let Some(dst) = inst.dst() {
-                let new_name = new_name(dst);
-                stack.entry(dst.clone()).or_default().push(new_name.clone());
-                pushed.push(dst.clone());
-                *dst = new_name;
+                dsts.insert(dst.clone());
             }
+        }
+        for (var, _) in self.phi.entry(block).or_default() {
+            dsts.insert(var.clone());
+        }
+
+        let mut dst_rename = HashMap::new();
+
+        for dst in &dsts {
+            let new_name = new_name(dst);
+            stack.entry(dst.clone()).or_default().push(new_name.clone());
+            pushed.push(dst.clone());
+            dst_rename.insert(dst.clone(), new_name);
+        }
+
+        for inst in &mut self.cfg.nodes.get_mut(&block).unwrap().instructions {
+            if let Some(dst) = inst.dst() {
+                *dst = dst_rename[dst].clone();
+            }
+        }
+
+        for (var, phi) in self.phi.entry(block).or_default().clone() {
+            let new_name = dst_rename[&var].clone();
+
+            self.phi.get_mut(&block).unwrap().remove(&var);
+            self.phi
+                .get_mut(&block)
+                .unwrap()
+                .insert(new_name.clone(), phi);
         }
 
         for s in self.cfg.nodes[&block].successors.iter().filter_map(|id| {
