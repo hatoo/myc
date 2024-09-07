@@ -116,6 +116,7 @@ impl SsaInstruction for Instruction {
 pub struct Ssa<I> {
     cfg: Cfg<I>,
     dominates: HashMap<usize, HashSet<usize>>,
+    dominated: HashMap<usize, HashSet<usize>>,
     dominate_frontiers: HashMap<usize, HashSet<usize>>,
     phi: HashMap<usize, HashMap<EcoString, HashMap<usize, EcoString>>>,
 }
@@ -125,6 +126,7 @@ impl<I: SsaInstruction> Ssa<I> {
         let mut me = Ssa {
             cfg,
             dominates: HashMap::new(),
+            dominated: HashMap::new(),
             dominate_frontiers: HashMap::new(),
             phi: HashMap::new(),
         };
@@ -186,6 +188,7 @@ impl<I: SsaInstruction> Ssa<I> {
             }
         }
 
+        self.dominated = dominators;
         self.dominates = dominates;
     }
 
@@ -286,13 +289,6 @@ impl<I: SsaInstruction> Ssa<I> {
             .instructions
             .iter_mut()
         {
-            if let Some(dst) = inst.dst() {
-                let new_name = new_name(dst);
-                stack.entry(dst.clone()).or_default().push(new_name.clone());
-                pushed.push(dst.clone());
-                *dst = new_name;
-            }
-
             inst.map_args(|arg| {
                 let new_name = stack
                     .entry(arg.clone())
@@ -301,6 +297,12 @@ impl<I: SsaInstruction> Ssa<I> {
                     .unwrap_or_else(|| arg);
                 *arg = new_name.clone();
             });
+            if let Some(dst) = inst.dst() {
+                let new_name = new_name(dst);
+                stack.entry(dst.clone()).or_default().push(new_name.clone());
+                pushed.push(dst.clone());
+                *dst = new_name;
+            }
         }
 
         for s in self.cfg.nodes[&block].successors.iter().filter_map(|id| {
@@ -322,30 +324,32 @@ impl<I: SsaInstruction> Ssa<I> {
             }
         }
 
-        let immediate_dominant = self.dominates[&block]
-            .intersection(
-                &self.cfg.nodes[&block]
-                    .successors
-                    .iter()
-                    .filter_map(|id| {
-                        if let NodeId::Block(id) = id {
-                            Some(id)
-                        } else {
-                            None
-                        }
-                    })
-                    .copied()
-                    .collect(),
-            )
-            .cloned()
-            .collect::<Vec<_>>();
-
-        for d in immediate_dominant {
+        dbg!(block, self.immediate_dominates(block));
+        for d in self.immediate_dominates(block) {
             self.rename(d, stack, counter);
         }
 
         for var in pushed {
             stack.get_mut(&var).unwrap().pop();
         }
+    }
+
+    fn strictly_dominates(&self, a: usize, b: usize) -> bool {
+        self.dominates[&a].contains(&b) && a != b
+    }
+
+    fn immediate_dominates(&self, a: usize) -> HashSet<usize> {
+        dbg!(&self.dominates);
+        self.dominates[&a]
+            .iter()
+            .filter(|&&b| {
+                a != b
+                    && !self.dominated[&b]
+                        .iter()
+                        .filter(|&&x| x != b)
+                        .any(|&x| self.strictly_dominates(a, x))
+            })
+            .copied()
+            .collect()
     }
 }
