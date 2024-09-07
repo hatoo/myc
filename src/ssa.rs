@@ -264,7 +264,6 @@ impl<I: SsaInstruction> Ssa<I> {
         counter: &mut usize,
         phi: &mut HashMap<usize, HashMap<EcoString, (EcoString, HashMap<usize, EcoString>)>>,
     ) {
-        dbg!(block);
         let mut new_name = |old: &EcoString| -> EcoString {
             let n = format!("ssa.{}.{}", old, counter).into();
             *counter += 1;
