@@ -231,10 +231,6 @@ impl<I: SsaInstruction> Ssa<I> {
 
         let mut stack = HashMap::new();
 
-        for v in &vars {
-            stack.insert(v.clone(), vec![v.clone()]);
-        }
-
         let mut counter = 0;
         for s in self.cfg.entry.successors.clone() {
             if let NodeId::Block(s) = s {
@@ -259,12 +255,17 @@ impl<I: SsaInstruction> Ssa<I> {
 
         for inst in &mut self.cfg.nodes.get_mut(&block).unwrap().instructions {
             inst.map_args(|var| {
-                *var = stack[var].last().unwrap().clone();
+                *var = stack
+                    .entry(var.clone())
+                    .or_default()
+                    .last()
+                    .unwrap_or_else(|| var)
+                    .clone();
             });
 
             if let Some(dst) = inst.dst() {
                 let new_name = new_name(dst);
-                stack.get_mut(dst).unwrap().push(new_name.clone());
+                stack.entry(dst.clone()).or_default().push(new_name.clone());
                 pushed.push(dst.clone());
                 *dst = new_name;
             }
@@ -277,8 +278,13 @@ impl<I: SsaInstruction> Ssa<I> {
                 None
             }
         }) {
-            for (_from, new_name) in self.phi.get_mut(s).unwrap() {
-                *new_name = stack[new_name].last().unwrap().clone();
+            for (_from, new_name) in self.phi.entry(*s).or_default() {
+                *new_name = stack
+                    .entry(new_name.clone())
+                    .or_default()
+                    .last()
+                    .unwrap_or_else(|| new_name)
+                    .clone();
             }
         }
 

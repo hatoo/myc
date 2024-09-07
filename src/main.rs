@@ -11,9 +11,11 @@ use clap::Parser;
 use myc::{
     ast::parse,
     codegen::CodeGen,
+    control_flow::Cfg,
     lexer::{lexer, TokenSpannedError},
     semantics::{LoopLabel, TypeChecker, VarResolver},
     span::SpannedError,
+    ssa::Ssa,
 };
 
 #[derive(Debug, Parser)]
@@ -131,6 +133,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let mut tacky = myc::tacky::gen_program(&program, &mut type_checker.sym_table);
+
+    for f in &tacky.top_levels {
+        if let myc::tacky::TopLevelItem::Function(f) = f {
+            let cfg = Cfg::new(&f.body);
+            let ssa = Ssa::new(cfg);
+            dbg!(ssa);
+        }
+    }
 
     if opts.optimize
         || opts.fold_constants
