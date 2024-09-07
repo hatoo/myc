@@ -115,7 +115,7 @@ impl SsaInstruction for Instruction {
 #[derive(Debug)]
 pub struct Ssa<I> {
     cfg: Cfg<I>,
-    dominators: HashMap<usize, HashSet<usize>>,
+    dominates: HashMap<usize, HashSet<usize>>,
     dominate_frontiers: HashMap<usize, HashSet<usize>>,
     phi: HashMap<usize, HashMap<EcoString, HashMap<usize, EcoString>>>,
 }
@@ -124,7 +124,7 @@ impl<I: SsaInstruction> Ssa<I> {
     pub fn new(cfg: Cfg<I>) -> Self {
         let mut me = Ssa {
             cfg,
-            dominators: HashMap::new(),
+            dominates: HashMap::new(),
             dominate_frontiers: HashMap::new(),
             phi: HashMap::new(),
         };
@@ -137,8 +137,9 @@ impl<I: SsaInstruction> Ssa<I> {
     fn compute_dominators(&mut self) {
         let all_nodes = self.cfg.nodes.keys().copied().collect::<HashSet<_>>();
 
+        let mut dominators = HashMap::new();
         for &node in &all_nodes {
-            self.dominators.insert(node, all_nodes.clone());
+            dominators.insert(node, all_nodes.clone());
         }
 
         loop {
@@ -159,19 +160,16 @@ impl<I: SsaInstruction> Ssa<I> {
                     .enumerate()
                 {
                     if i == 0 {
-                        new_dom = self.dominators[&pred].clone();
+                        new_dom = dominators[&pred].clone();
                     } else {
-                        new_dom = new_dom
-                            .intersection(&self.dominators[&pred])
-                            .copied()
-                            .collect();
+                        new_dom = new_dom.intersection(&dominators[&pred]).copied().collect();
                     }
                 }
 
                 new_dom.insert(node);
 
-                if new_dom != self.dominators[&node] {
-                    self.dominators.insert(node, new_dom);
+                if new_dom != dominators[&node] {
+                    dominators.insert(node, new_dom);
                     changed = true;
                 }
             }
@@ -180,21 +178,22 @@ impl<I: SsaInstruction> Ssa<I> {
                 break;
             }
         }
-    }
-
-    fn compute_dominate_frontiers(&mut self) {
         let mut dominates: HashMap<usize, HashSet<usize>> = HashMap::new();
 
-        for (n, dom) in &self.dominators {
+        for (n, dom) in &dominators {
             for d in dom {
                 dominates.entry(*d).or_default().insert(*n);
             }
         }
 
-        for (n, dom) in dominates {
+        self.dominates = dominates;
+    }
+
+    fn compute_dominate_frontiers(&mut self) {
+        for (n, dom) in &self.dominates {
             let mut one_step = HashSet::new();
 
-            for d in &dom {
+            for d in dom {
                 for next in &self.cfg.nodes[&d].successors {
                     if let NodeId::Block(next) = next {
                         one_step.insert(*next);
@@ -203,7 +202,7 @@ impl<I: SsaInstruction> Ssa<I> {
             }
 
             let domf = one_step.difference(&dom).cloned().collect();
-            self.dominate_frontiers.insert(n, domf);
+            self.dominate_frontiers.insert(*n, domf);
         }
     }
 
@@ -257,27 +256,12 @@ impl<I: SsaInstruction> Ssa<I> {
         counter: &mut usize,
     ) {
         let mut new_name = |old: &EcoString| -> EcoString {
-            let n = format!("ssa.{}{}", old, counter).into();
+            let n = format!("ssa.{}.{}", old, counter).into();
             *counter += 1;
             n
         };
 
         let mut pushed = Vec::new();
-
-        for (old_name, phi) in self.phi.entry(block).or_default().clone() {
-            let new_name = stack
-                .entry(old_name.clone())
-                .or_default()
-                .last()
-                .unwrap_or_else(|| &old_name)
-                .clone();
-
-            self.phi.get_mut(&block).unwrap().remove(&old_name);
-            self.phi
-                .get_mut(&block)
-                .unwrap()
-                .insert(new_name.clone(), phi);
-        }
 
         for inst in &mut self.cfg.nodes.get_mut(&block).unwrap().instructions {
             inst.map_args(|var| {
@@ -316,7 +300,7 @@ impl<I: SsaInstruction> Ssa<I> {
             }
         }
 
-        let immediate_dominant = self.dominators[&block]
+        let immediate_dominant = self.dominates[&block]
             .intersection(
                 &self.cfg.nodes[&block]
                     .successors
