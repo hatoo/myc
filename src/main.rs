@@ -165,34 +165,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     if opts.tacky {
-        for item in tacky.top_levels {
-            match item {
-                myc::tacky::TopLevelItem::Function(f) => {
-                    println!(
-                        "{} {} {:?}:",
-                        if f.global { "global" } else { "private" },
-                        f.name,
-                        f.params
-                    );
-
-                    for inst in f.body {
-                        println!("    {:?}", inst);
-                    }
-                }
-                myc::tacky::TopLevelItem::StaticVariable(v) => {
-                    println!(
-                        "static {} {} align({}) = {:?};",
-                        if v.global { "global" } else { "private" },
-                        v.name,
-                        v.alignment,
-                        v.init
-                    );
-                }
-                myc::tacky::TopLevelItem::StaticConstant(s) => {
-                    println!("const {} = {:?}", s.name, s.init)
-                }
-            }
-        }
+        print_tacky(&tacky);
         return Ok(());
     }
 
@@ -240,4 +213,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+fn print_tacky(tacky: &myc::tacky::Program) {
+    for item in &tacky.top_levels {
+        match item {
+            myc::tacky::TopLevelItem::Function(f) => {
+                println!(
+                    "{} {} {:?}:",
+                    if f.global { "global" } else { "private" },
+                    f.name,
+                    f.params
+                );
+
+                for inst in &f.body {
+                    println!("    {:?}", inst);
+                }
+            }
+            myc::tacky::TopLevelItem::StaticVariable(v) => {
+                println!(
+                    "static {} {} align({}) = {:?};",
+                    if v.global { "global" } else { "private" },
+                    v.name,
+                    v.alignment,
+                    v.init
+                );
+            }
+            myc::tacky::TopLevelItem::StaticConstant(s) => {
+                println!("const {} = {:?}", s.name, s.init)
+            }
+        }
+    }
 }
