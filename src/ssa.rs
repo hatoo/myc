@@ -114,11 +114,11 @@ impl SsaInstruction for Instruction {
 
 #[derive(Debug)]
 pub struct Ssa<I> {
-    cfg: Cfg<I>,
+    pub cfg: Cfg<I>,
     dominates: HashMap<usize, HashSet<usize>>,
     dominated: HashMap<usize, HashSet<usize>>,
     dominate_frontiers: HashMap<usize, HashSet<usize>>,
-    phi: HashMap<usize, HashMap<EcoString, HashMap<usize, EcoString>>>,
+    pub phi: HashMap<usize, HashMap<EcoString, HashMap<usize, EcoString>>>,
 }
 
 impl<I: SsaInstruction> Ssa<I> {

@@ -16,6 +16,7 @@ use myc::{
     semantics::{LoopLabel, TypeChecker, VarResolver},
     span::SpannedError,
     ssa::Ssa,
+    tacky::Instruction,
 };
 
 #[derive(Debug, Parser)]
@@ -49,6 +50,8 @@ struct Opts {
     optimize: bool,
     #[clap(short = 's')]
     s: bool,
+    #[clap(long)]
+    ssa: bool,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -134,12 +137,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut tacky = myc::tacky::gen_program(&program, &mut type_checker.sym_table);
 
-    for f in &tacky.top_levels {
-        if let myc::tacky::TopLevelItem::Function(f) = f {
-            let cfg = Cfg::new(&f.body);
-            let ssa = Ssa::new(cfg);
-            dbg!(ssa);
+    if opts.ssa {
+        for f in &tacky.top_levels {
+            if let myc::tacky::TopLevelItem::Function(f) = f {
+                let cfg = Cfg::new(&f.body);
+                let ssa = Ssa::new(cfg);
+                print_ssa(&ssa);
+            }
         }
+        return Ok(());
     }
 
     if opts.optimize
@@ -242,6 +248,23 @@ fn print_tacky(tacky: &myc::tacky::Program) {
             myc::tacky::TopLevelItem::StaticConstant(s) => {
                 println!("const {} = {:?}", s.name, s.init)
             }
+        }
+    }
+}
+
+fn print_ssa(ssa: &Ssa<Instruction>) {
+    for (id, node) in &ssa.cfg.nodes {
+        println!("{}:", id);
+        for (var, incoming) in &ssa.phi[id] {
+            print!("{} = φ(", var);
+            for (pred, val) in incoming {
+                print!("{}: {}, ", pred, val);
+            }
+            println!(")");
+        }
+
+        for inst in &node.instructions {
+            println!("    {:?}", inst);
         }
     }
 }
