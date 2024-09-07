@@ -4,14 +4,15 @@ use ecow::EcoString;
 
 use crate::{
     control_flow::{Cfg, NodeId},
-    tacky::Instruction,
+    tacky::{Instruction, Val},
 };
 
-pub trait MayHasDst {
+pub trait SsaInstruction {
     fn dst(&self) -> Option<EcoString>;
+    fn map_operands<F: FnMut(&mut EcoString)>(&mut self, f: F);
 }
 
-impl MayHasDst for Instruction {
+impl SsaInstruction for Instruction {
     fn dst(&self) -> Option<EcoString> {
         match self {
             Instruction::Nop => None,
@@ -33,6 +34,87 @@ impl MayHasDst for Instruction {
             Instruction::CopyFromOffset { dst, .. } => Some(dst.var().clone()),
         }
     }
+
+    fn map_operands<F: FnMut(&mut EcoString)>(&mut self, mut f: F) {
+        let mut apply = |var: &mut Val| {
+            if let Val::Var(var) = var {
+                f(var);
+            }
+        };
+
+        match self {
+            Instruction::Nop => {}
+            Instruction::Return(val) => {
+                if let Some(val) = val {
+                    apply(val);
+                }
+            }
+            Instruction::Cast { src, dst } => {
+                apply(src);
+                apply(dst);
+            }
+            Instruction::Unary { op, src, dst } => {
+                apply(src);
+                apply(dst);
+            }
+            Instruction::Binary { op, lhs, rhs, dst } => {
+                apply(lhs);
+                apply(rhs);
+                apply(dst);
+            }
+            Instruction::Copy { src, dst } => {
+                apply(src);
+                apply(dst);
+            }
+            Instruction::GetAddress { src, dst } => {
+                apply(src);
+                apply(dst);
+            }
+            Instruction::Load { src, dst } => {
+                apply(src);
+                apply(dst);
+            }
+            Instruction::Store { src, dst } => {
+                apply(src);
+                apply(dst);
+            }
+            Instruction::Jump(_) => {}
+            Instruction::JumpIfZero { src, dst } => {
+                apply(src);
+            }
+            Instruction::JumpIfNotZero { src, dst } => {
+                apply(src);
+            }
+            Instruction::Label(_) => {}
+            Instruction::FunCall { callee, args, dst } => {
+                apply(callee);
+                for arg in args {
+                    apply(arg);
+                }
+                if let Some(dst) = dst {
+                    apply(dst);
+                }
+            }
+            Instruction::AddPtr {
+                ptr,
+                index,
+                scale,
+                dst,
+            } => {
+                apply(ptr);
+                apply(index);
+                apply(dst);
+            }
+            Instruction::CopyToOffset { src, dst, offset } => {
+                apply(src);
+                apply(dst);
+            }
+            Instruction::CopyFromOffset { src, offset, dst } => {
+                apply(src);
+                apply(dst);
+            }
+        }
+    }
 }
 
 pub struct Ssa<I> {
@@ -42,7 +124,7 @@ pub struct Ssa<I> {
     phi: HashMap<usize, HashMap<usize, EcoString>>,
 }
 
-impl<I: MayHasDst> Ssa<I> {
+impl<I: SsaInstruction> Ssa<I> {
     pub fn new(cfg: Cfg<I>) -> Self {
         let mut me = Ssa {
             cfg,
@@ -146,5 +228,9 @@ impl<I: MayHasDst> Ssa<I> {
                 }
             }
         }
+    }
+
+    fn rename(&mut self, block: usize, stack: &mut HashMap<EcoString, Vec<EcoString>>) {
+        todo!()
     }
 }
