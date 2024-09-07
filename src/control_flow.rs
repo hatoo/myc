@@ -54,16 +54,19 @@ pub struct Node<I> {
     pub successors: HashSet<NodeId>,
 }
 
-struct Entry {
-    successors: HashSet<NodeId>,
+#[derive(Debug)]
+pub struct Entry {
+    pub successors: HashSet<NodeId>,
 }
 
+#[derive(Debug)]
 struct Exit {
     predecessors: HashSet<NodeId>,
 }
 
+#[derive(Debug)]
 pub struct Cfg<I> {
-    entry: Entry,
+    pub entry: Entry,
     exit: Exit,
     pub nodes: BTreeMap<usize, Node<I>>,
     label_map: HashMap<EcoString, NodeId>,

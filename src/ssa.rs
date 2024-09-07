@@ -1,4 +1,7 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    clone,
+    collections::{HashMap, HashSet},
+};
 
 use ecow::EcoString;
 
@@ -8,34 +11,42 @@ use crate::{
 };
 
 pub trait SsaInstruction {
-    fn dst(&self) -> Option<EcoString>;
-    fn map_operands<F: FnMut(&mut EcoString)>(&mut self, f: F);
+    fn dst(&mut self) -> Option<&mut EcoString>;
+    fn map_args<F: FnMut(&mut EcoString)>(&mut self, f: F);
 }
 
 impl SsaInstruction for Instruction {
-    fn dst(&self) -> Option<EcoString> {
+    fn dst(&mut self) -> Option<&mut EcoString> {
+        fn f(dst: &mut Val) -> Option<&mut EcoString> {
+            if let Val::Var(dst) = dst {
+                Some(dst)
+            } else {
+                None
+            }
+        }
+
         match self {
             Instruction::Nop => None,
             Instruction::Return(_) => None,
-            Instruction::Cast { dst, .. } => Some(dst.var().clone()),
-            Instruction::Unary { dst, .. } => Some(dst.var().clone()),
-            Instruction::Binary { dst, .. } => Some(dst.var().clone()),
-            Instruction::Copy { dst, .. } => Some(dst.var().clone()),
-            Instruction::GetAddress { dst, .. } => Some(dst.var().clone()),
-            Instruction::Load { dst, .. } => Some(dst.var().clone()),
-            Instruction::Store { dst, .. } => Some(dst.var().clone()),
+            Instruction::Cast { dst, .. } => f(dst),
+            Instruction::Unary { dst, .. } => f(dst),
+            Instruction::Binary { dst, .. } => f(dst),
+            Instruction::Copy { dst, .. } => f(dst),
+            Instruction::GetAddress { dst, .. } => f(dst),
+            Instruction::Load { dst, .. } => f(dst),
+            Instruction::Store { dst, .. } => f(dst),
             Instruction::Jump(_) => None,
             Instruction::JumpIfZero { .. } => None,
             Instruction::JumpIfNotZero { .. } => None,
             Instruction::Label(_) => None,
-            Instruction::FunCall { dst, .. } => dst.clone().map(|dst| dst.var().clone()),
-            Instruction::AddPtr { dst, .. } => Some(dst.var().clone()),
-            Instruction::CopyToOffset { dst, .. } => Some(dst.var().clone()),
-            Instruction::CopyFromOffset { dst, .. } => Some(dst.var().clone()),
+            Instruction::FunCall { dst, .. } => dst.as_mut().and_then(f),
+            Instruction::AddPtr { dst, .. } => f(dst),
+            Instruction::CopyToOffset { dst, .. } => f(dst),
+            Instruction::CopyFromOffset { dst, .. } => f(dst),
         }
     }
 
-    fn map_operands<F: FnMut(&mut EcoString)>(&mut self, mut f: F) {
+    fn map_args<F: FnMut(&mut EcoString)>(&mut self, mut f: F) {
         let mut apply = |var: &mut Val| {
             if let Val::Var(var) = var {
                 f(var);
@@ -50,33 +61,26 @@ impl SsaInstruction for Instruction {
                 }
             }
             Instruction::Cast { src, dst } => {
-                apply(src);
                 apply(dst);
             }
             Instruction::Unary { op, src, dst } => {
-                apply(src);
                 apply(dst);
             }
             Instruction::Binary { op, lhs, rhs, dst } => {
                 apply(lhs);
                 apply(rhs);
-                apply(dst);
             }
             Instruction::Copy { src, dst } => {
                 apply(src);
-                apply(dst);
             }
             Instruction::GetAddress { src, dst } => {
                 apply(src);
-                apply(dst);
             }
             Instruction::Load { src, dst } => {
                 apply(src);
-                apply(dst);
             }
             Instruction::Store { src, dst } => {
                 apply(src);
-                apply(dst);
             }
             Instruction::Jump(_) => {}
             Instruction::JumpIfZero { src, dst } => {
@@ -91,9 +95,6 @@ impl SsaInstruction for Instruction {
                 for arg in args {
                     apply(arg);
                 }
-                if let Some(dst) = dst {
-                    apply(dst);
-                }
             }
             Instruction::AddPtr {
                 ptr,
@@ -103,20 +104,18 @@ impl SsaInstruction for Instruction {
             } => {
                 apply(ptr);
                 apply(index);
-                apply(dst);
             }
             Instruction::CopyToOffset { src, dst, offset } => {
                 apply(src);
-                apply(dst);
             }
             Instruction::CopyFromOffset { src, offset, dst } => {
                 apply(src);
-                apply(dst);
             }
         }
     }
 }
 
+#[derive(Debug)]
 pub struct Ssa<I> {
     cfg: Cfg<I>,
     dominates: HashMap<usize, HashSet<usize>>,
@@ -134,6 +133,7 @@ impl<I: SsaInstruction> Ssa<I> {
         };
         me.compute_dominates();
         me.compute_dominate_frontiers();
+        me.add_phi();
         me
     }
 
@@ -202,13 +202,13 @@ impl<I: SsaInstruction> Ssa<I> {
         }
     }
 
-    fn defs(&self) -> HashMap<EcoString, HashSet<usize>> {
+    fn defs(&mut self) -> HashMap<EcoString, HashSet<usize>> {
         let mut defs: HashMap<EcoString, HashSet<usize>> = HashMap::new();
 
-        for (node, block) in &self.cfg.nodes {
-            for inst in &block.instructions {
+        for (node, block) in &mut self.cfg.nodes {
+            for inst in &mut block.instructions {
                 if let Some(dst) = inst.dst() {
-                    defs.entry(dst).or_default().insert(*node);
+                    defs.entry(dst.clone()).or_default().insert(*node);
                 }
             }
         }
@@ -220,17 +220,92 @@ impl<I: SsaInstruction> Ssa<I> {
         let mut defs = self.defs();
         let vars = defs.keys().cloned().collect::<Vec<_>>();
 
-        for v in vars {
-            for d in defs[&v].clone() {
+        for v in &vars {
+            for d in defs[v].clone() {
                 for block in &self.dominate_frontiers[&d] {
                     self.phi.entry(*block).or_default().insert(d, v.clone());
                     defs.entry(v.clone()).or_default().insert(*block);
                 }
             }
         }
+
+        let mut stack = HashMap::new();
+
+        for v in &vars {
+            stack.insert(v.clone(), vec![v.clone()]);
+        }
+
+        let mut counter = 0;
+        for s in self.cfg.entry.successors.clone() {
+            if let NodeId::Block(s) = s {
+                self.rename(s, &mut stack, &mut counter);
+            }
+        }
     }
 
-    fn rename(&mut self, block: usize, stack: &mut HashMap<EcoString, Vec<EcoString>>) {
-        todo!()
+    fn rename(
+        &mut self,
+        block: usize,
+        stack: &mut HashMap<EcoString, Vec<EcoString>>,
+        counter: &mut usize,
+    ) {
+        let mut new_name = |old: &EcoString| -> EcoString {
+            let n = format!("ssa.{}{}", old, counter).into();
+            *counter += 1;
+            n
+        };
+
+        let mut pushed = Vec::new();
+
+        for inst in &mut self.cfg.nodes.get_mut(&block).unwrap().instructions {
+            inst.map_args(|var| {
+                *var = stack[var].last().unwrap().clone();
+            });
+
+            if let Some(dst) = inst.dst() {
+                let new_name = new_name(dst);
+                stack.get_mut(dst).unwrap().push(new_name.clone());
+                pushed.push(dst.clone());
+                *dst = new_name;
+            }
+        }
+
+        for s in self.cfg.nodes[&block].successors.iter().filter_map(|id| {
+            if let NodeId::Block(id) = id {
+                Some(id)
+            } else {
+                None
+            }
+        }) {
+            for (_from, new_name) in self.phi.get_mut(s).unwrap() {
+                *new_name = stack[new_name].last().unwrap().clone();
+            }
+        }
+
+        let immediate_dominant = self.dominates[&block]
+            .intersection(
+                &self.cfg.nodes[&block]
+                    .successors
+                    .iter()
+                    .filter_map(|id| {
+                        if let NodeId::Block(id) = id {
+                            Some(id)
+                        } else {
+                            None
+                        }
+                    })
+                    .copied()
+                    .collect(),
+            )
+            .cloned()
+            .collect::<Vec<_>>();
+
+        for d in immediate_dominant {
+            self.rename(d, stack, counter);
+        }
+
+        for var in pushed {
+            stack.get_mut(&var).unwrap().pop();
+        }
     }
 }
