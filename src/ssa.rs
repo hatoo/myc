@@ -227,8 +227,12 @@ impl<I: SsaInstruction> Ssa<I> {
         let defs = self.defs();
         let vars = defs.keys().cloned().collect::<Vec<_>>();
 
-        let mut phi: HashMap<usize, HashMap<EcoString, (EcoString, HashMap<usize, EcoString>)>> =
-            Default::default();
+        let mut phis: HashMap<usize, HashMap<EcoString, HashMap<usize, EcoString>>> = self
+            .cfg
+            .nodes
+            .keys()
+            .map(|&k| (k, HashMap::new()))
+            .collect();
 
         for v in &vars {
             let mut stack: Vec<usize> = defs[v].iter().copied().collect();
@@ -236,9 +240,9 @@ impl<I: SsaInstruction> Ssa<I> {
             while let Some(d) = stack.pop() {
                 if visited.insert(d) {
                     for block in &self.dominate_frontiers[&d] {
-                        phi.entry(*block)
+                        phis.entry(*block)
                             .or_default()
-                            .insert(v.clone(), (v.clone(), Default::default()));
+                            .insert(v.clone(), HashMap::new());
 
                         stack.push(*block);
                     }
@@ -246,46 +250,45 @@ impl<I: SsaInstruction> Ssa<I> {
             }
         }
 
-        let mut stack = HashMap::new();
-
-        let mut counter = 0;
-        for s in self.cfg.entry.successors.clone() {
-            if let NodeId::Block(s) = s {
-                self.rename(s, &mut stack, &mut counter, &mut phi);
+        for (block, phi) in &mut phis {
+            for p in &self.cfg.nodes[block].predecessors {
+                if let NodeId::Block(p) = p {
+                    for (v, map) in phi.iter_mut() {
+                        map.insert(p.clone(), v.clone());
+                    }
+                }
             }
         }
 
-        self.phi = phi
-            .into_iter()
-            .map(|(k, v)| (k, v.into_values().collect()))
-            .collect();
+        self.phi = phis;
+
+        let mut stack = HashMap::new();
+        for s in self.cfg.entry.successors.clone() {
+            if let NodeId::Block(s) = s {
+                self.rename(s, &mut stack);
+            }
+        }
     }
 
-    fn rename(
-        &mut self,
-        block: usize,
-        stack: &mut HashMap<EcoString, Vec<EcoString>>,
-        counter: &mut usize,
-        phi: &mut HashMap<usize, HashMap<EcoString, (EcoString, HashMap<usize, EcoString>)>>,
-    ) {
+    fn rename(&mut self, block: usize, stack: &mut HashMap<EcoString, Vec<EcoString>>) {
+        let mut counter = 0;
         let mut new_name = |old: &EcoString| -> EcoString {
-            let n = format!("ssa.{}.{}", old, counter).into();
-            *counter += 1;
+            let n = format!("ssa.{}.{}_{}", old, block, counter).into();
             n
         };
 
         let mut pushed = Vec::new();
 
-        for (orig_name, (name, phi)) in phi.entry(block).or_default() {
-            let new_name = new_name(name);
-            stack
-                .entry(orig_name.clone())
-                .or_default()
-                .push(new_name.clone());
-            pushed.push(orig_name.clone());
-
-            *name = new_name;
-        }
+        let new_phi = self.phi[&block]
+            .clone()
+            .into_iter()
+            .map(|(k, v)| {
+                let new_name = new_name(&k);
+                stack.entry(k.clone()).or_default().push(new_name.clone());
+                (new_name, v)
+            })
+            .collect();
+        self.phi.insert(block, new_phi);
 
         for inst in self
             .cfg
@@ -318,20 +321,22 @@ impl<I: SsaInstruction> Ssa<I> {
                 None
             }
         }) {
-            for (old_name, (_name, phi)) in phi.entry(*s).or_default() {
+            for (_, map) in self.phi.entry(*s).or_default() {
+                let old_name = map[&block].clone();
+
                 let new_name = stack
                     .entry(old_name.clone())
                     .or_default()
                     .last()
-                    .unwrap_or_else(|| old_name)
+                    .unwrap_or_else(|| &old_name)
                     .clone();
 
-                phi.insert(block, new_name.clone());
+                map.insert(block, new_name);
             }
         }
 
         for d in self.immediate_dominates(block) {
-            self.rename(d, stack, counter, phi);
+            self.rename(d, stack);
         }
 
         for var in pushed {
