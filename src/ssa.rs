@@ -1,11 +1,50 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::control_flow::{Cfg, NodeId};
+use ecow::EcoString;
+
+use crate::{
+    control_flow::{Cfg, NodeId},
+    tacky::Instruction,
+};
+
+pub trait MayHasDst {
+    fn dst(&self) -> Option<EcoString>;
+}
+
+impl MayHasDst for Instruction {
+    fn dst(&self) -> Option<EcoString> {
+        match self {
+            Instruction::Nop => None,
+            Instruction::Return(_) => None,
+            Instruction::Cast { src, dst } => Some(dst.var().clone()),
+            Instruction::Unary { op, src, dst } => Some(dst.var().clone()),
+            Instruction::Binary { op, lhs, rhs, dst } => Some(dst.var().clone()),
+            Instruction::Copy { src, dst } => Some(dst.var().clone()),
+            Instruction::GetAddress { src, dst } => Some(dst.var().clone()),
+            Instruction::Load { src, dst } => Some(dst.var().clone()),
+            Instruction::Store { src, dst } => Some(dst.var().clone()),
+            Instruction::Jump(_) => None,
+            Instruction::JumpIfZero { src, dst } => None,
+            Instruction::JumpIfNotZero { src, dst } => None,
+            Instruction::Label(_) => None,
+            Instruction::FunCall { callee, args, dst } => dst.clone().map(|dst| dst.var().clone()),
+            Instruction::AddPtr {
+                ptr,
+                index,
+                scale,
+                dst,
+            } => Some(dst.var().clone()),
+            Instruction::CopyToOffset { src, dst, offset } => Some(dst.var().clone()),
+            Instruction::CopyFromOffset { src, offset, dst } => Some(dst.var().clone()),
+        }
+    }
+}
 
 pub struct Ssa<I> {
     cfg: Cfg<I>,
     dominates: HashMap<usize, HashSet<usize>>,
     dominate_frontiers: HashMap<usize, HashSet<usize>>,
+    phi: HashMap<usize, HashMap<usize, EcoString>>,
 }
 
 impl<I> Ssa<I> {
@@ -14,6 +53,7 @@ impl<I> Ssa<I> {
             cfg,
             dominates: HashMap::new(),
             dominate_frontiers: HashMap::new(),
+            phi: HashMap::new(),
         };
         me.compute_dominates();
         me.compute_dominate_frontiers();
@@ -84,4 +124,25 @@ impl<I> Ssa<I> {
             self.dominate_frontiers.insert(*n, domf);
         }
     }
+
+    fn defs(&self) -> HashMap<EcoString, HashSet<usize>> {
+        let defs: HashMap<EcoString, HashSet<usize>> = HashMap::new();
+
+        /*
+        for (node, block) in &self.cfg.nodes {
+            for inst in &block.instructions {
+                if let Instruction::Copy {
+                    dst: Val::Var(dst), ..
+                } = inst
+                {
+                    defs.entry(dst.clone()).or_default().insert(*node);
+                }
+            }
+        }
+        */
+
+        defs
+    }
+
+    fn add_phi(&mut self) {}
 }
