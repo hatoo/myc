@@ -7,4 +7,5 @@ pub mod optimize_asm;
 pub mod optimize_tacky;
 pub mod semantics;
 pub mod span;
+pub mod ssa;
 pub mod tacky;
