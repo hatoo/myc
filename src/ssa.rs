@@ -16,26 +16,21 @@ impl MayHasDst for Instruction {
         match self {
             Instruction::Nop => None,
             Instruction::Return(_) => None,
-            Instruction::Cast { src, dst } => Some(dst.var().clone()),
-            Instruction::Unary { op, src, dst } => Some(dst.var().clone()),
-            Instruction::Binary { op, lhs, rhs, dst } => Some(dst.var().clone()),
-            Instruction::Copy { src, dst } => Some(dst.var().clone()),
-            Instruction::GetAddress { src, dst } => Some(dst.var().clone()),
-            Instruction::Load { src, dst } => Some(dst.var().clone()),
-            Instruction::Store { src, dst } => Some(dst.var().clone()),
+            Instruction::Cast { dst, .. } => Some(dst.var().clone()),
+            Instruction::Unary { dst, .. } => Some(dst.var().clone()),
+            Instruction::Binary { dst, .. } => Some(dst.var().clone()),
+            Instruction::Copy { dst, .. } => Some(dst.var().clone()),
+            Instruction::GetAddress { dst, .. } => Some(dst.var().clone()),
+            Instruction::Load { dst, .. } => Some(dst.var().clone()),
+            Instruction::Store { dst, .. } => Some(dst.var().clone()),
             Instruction::Jump(_) => None,
-            Instruction::JumpIfZero { src, dst } => None,
-            Instruction::JumpIfNotZero { src, dst } => None,
+            Instruction::JumpIfZero { .. } => None,
+            Instruction::JumpIfNotZero { .. } => None,
             Instruction::Label(_) => None,
-            Instruction::FunCall { callee, args, dst } => dst.clone().map(|dst| dst.var().clone()),
-            Instruction::AddPtr {
-                ptr,
-                index,
-                scale,
-                dst,
-            } => Some(dst.var().clone()),
-            Instruction::CopyToOffset { src, dst, offset } => Some(dst.var().clone()),
-            Instruction::CopyFromOffset { src, offset, dst } => Some(dst.var().clone()),
+            Instruction::FunCall { dst, .. } => dst.clone().map(|dst| dst.var().clone()),
+            Instruction::AddPtr { dst, .. } => Some(dst.var().clone()),
+            Instruction::CopyToOffset { dst, .. } => Some(dst.var().clone()),
+            Instruction::CopyFromOffset { dst, .. } => Some(dst.var().clone()),
         }
     }
 }
@@ -47,7 +42,7 @@ pub struct Ssa<I> {
     phi: HashMap<usize, HashMap<usize, EcoString>>,
 }
 
-impl<I> Ssa<I> {
+impl<I: MayHasDst> Ssa<I> {
     pub fn new(cfg: Cfg<I>) -> Self {
         let mut me = Ssa {
             cfg,
@@ -126,23 +121,30 @@ impl<I> Ssa<I> {
     }
 
     fn defs(&self) -> HashMap<EcoString, HashSet<usize>> {
-        let defs: HashMap<EcoString, HashSet<usize>> = HashMap::new();
+        let mut defs: HashMap<EcoString, HashSet<usize>> = HashMap::new();
 
-        /*
         for (node, block) in &self.cfg.nodes {
             for inst in &block.instructions {
-                if let Instruction::Copy {
-                    dst: Val::Var(dst), ..
-                } = inst
-                {
-                    defs.entry(dst.clone()).or_default().insert(*node);
+                if let Some(dst) = inst.dst() {
+                    defs.entry(dst).or_default().insert(*node);
                 }
             }
         }
-        */
 
         defs
     }
 
-    fn add_phi(&mut self) {}
+    fn add_phi(&mut self) {
+        let mut defs = self.defs();
+        let vars = defs.keys().cloned().collect::<Vec<_>>();
+
+        for v in vars {
+            for d in defs[&v].clone() {
+                for block in &self.dominate_frontiers[&d] {
+                    self.phi.entry(*block).or_default().insert(d, v.clone());
+                    defs.entry(v.clone()).or_default().insert(*block);
+                }
+            }
+        }
+    }
 }
