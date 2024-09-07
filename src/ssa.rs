@@ -5,6 +5,7 @@ use crate::control_flow::{Cfg, NodeId};
 pub struct Ssa<I> {
     cfg: Cfg<I>,
     dominates: HashMap<usize, HashSet<usize>>,
+    dominate_frontiers: HashMap<usize, HashSet<usize>>,
 }
 
 impl<I> Ssa<I> {
@@ -12,8 +13,10 @@ impl<I> Ssa<I> {
         let mut me = Ssa {
             cfg,
             dominates: HashMap::new(),
+            dominate_frontiers: HashMap::new(),
         };
         me.compute_dominates();
+        me.compute_dominate_frontiers();
         me
     }
 
@@ -62,6 +65,23 @@ impl<I> Ssa<I> {
             if !changed {
                 break;
             }
+        }
+    }
+
+    fn compute_dominate_frontiers(&mut self) {
+        for (n, dom) in &self.dominates {
+            let mut one_step = HashSet::new();
+
+            for d in dom {
+                for next in &self.cfg.nodes[d].successors {
+                    if let NodeId::Block(next) = next {
+                        one_step.insert(*next);
+                    }
+                }
+            }
+
+            let domf = one_step.difference(&one_step).cloned().collect();
+            self.dominate_frontiers.insert(*n, domf);
         }
     }
 }
