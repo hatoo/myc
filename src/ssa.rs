@@ -274,6 +274,7 @@ impl<I: SsaInstruction> Ssa<I> {
         let mut counter = 0;
         let mut new_name = |old: &EcoString| -> EcoString {
             let n = format!("ssa.{}.{}_{}", old, block, counter).into();
+            counter += 1;
             n
         };
 
