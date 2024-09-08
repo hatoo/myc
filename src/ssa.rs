@@ -321,7 +321,7 @@ impl<I: SsaInstruction> Ssa<I> {
                 let old_name = map[&block].clone();
                 stack.get(&old_name).map(|s| !s.is_empty()).unwrap_or(false)
             });
-            for (_, map) in self.phi.entry(*s).or_default() {
+            for (_, map) in self.phi.get_mut(s).unwrap() {
                 let old_name = map[&block].clone();
 
                 let new_name = stack
