@@ -57,55 +57,50 @@ impl SsaInstruction for Instruction {
                     apply(val);
                 }
             }
-            Instruction::Cast { src, dst } => {
-                apply(dst);
+            Instruction::Cast { src, .. } => {
+                apply(src);
             }
-            Instruction::Unary { op, src, dst } => {
-                apply(dst);
+            Instruction::Unary { src, .. } => {
+                apply(src);
             }
-            Instruction::Binary { op, lhs, rhs, dst } => {
+            Instruction::Binary { lhs, rhs, .. } => {
                 apply(lhs);
                 apply(rhs);
             }
-            Instruction::Copy { src, dst } => {
+            Instruction::Copy { src, .. } => {
                 apply(src);
             }
-            Instruction::GetAddress { src, dst } => {
+            Instruction::GetAddress { src, .. } => {
                 apply(src);
             }
-            Instruction::Load { src, dst } => {
+            Instruction::Load { src, .. } => {
                 apply(src);
             }
-            Instruction::Store { src, dst } => {
+            Instruction::Store { src, .. } => {
                 apply(src);
             }
             Instruction::Jump(_) => {}
-            Instruction::JumpIfZero { src, dst } => {
+            Instruction::JumpIfZero { src, .. } => {
                 apply(src);
             }
-            Instruction::JumpIfNotZero { src, dst } => {
+            Instruction::JumpIfNotZero { src, .. } => {
                 apply(src);
             }
             Instruction::Label(_) => {}
-            Instruction::FunCall { callee, args, dst } => {
+            Instruction::FunCall { callee, args, .. } => {
                 apply(callee);
                 for arg in args {
                     apply(arg);
                 }
             }
-            Instruction::AddPtr {
-                ptr,
-                index,
-                scale,
-                dst,
-            } => {
+            Instruction::AddPtr { ptr, index, .. } => {
                 apply(ptr);
                 apply(index);
             }
-            Instruction::CopyToOffset { src, dst, offset } => {
+            Instruction::CopyToOffset { src, .. } => {
                 apply(src);
             }
-            Instruction::CopyFromOffset { src, offset, dst } => {
+            Instruction::CopyFromOffset { src, .. } => {
                 apply(src);
             }
         }
@@ -347,10 +342,6 @@ impl<I: SsaInstruction> Ssa<I> {
         for var in pushed {
             stack.get_mut(&var).unwrap().pop();
         }
-    }
-
-    fn strictly_dominates(&self, a: usize, b: usize) -> bool {
-        self.dominates[&a].contains(&b) && a != b
     }
 
     fn immediate_dominates(&self, a: usize) -> HashSet<usize> {
