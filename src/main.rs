@@ -173,6 +173,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         println!("Back from SSA:");
         print_tacky(&tacky);
+        println!("symbol table:");
+        for (k, v) in type_checker.sym_table.0.iter().collect::<BTreeMap<_, _>>() {
+            println!("{}: {:?}", k, v);
+        }
         return Ok(());
     }
 
