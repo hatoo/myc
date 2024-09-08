@@ -161,13 +161,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     if opts.ssa {
-        for f in &tacky.top_levels {
+        for f in &mut tacky.top_levels {
             if let myc::tacky::TopLevelItem::Function(f) = f {
                 let cfg = Cfg::new(&f.body);
                 let ssa = Ssa::new(cfg, &mut type_checker.sym_table);
                 print_ssa(&ssa);
+
+                f.body = ssa.to_non_ssa();
             }
         }
+
+        println!("Back from SSA:");
+        print_tacky(&tacky);
         return Ok(());
     }
 

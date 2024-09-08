@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use ecow::EcoString;
 
 use crate::{
-    control_flow::{Cfg, NodeId},
+    control_flow::{Cfg, GeneralizedInstruction, NodeId},
     semantics::type_check::{Attr, SymbolTable},
     tacky::{Instruction, Val},
 };
@@ -118,8 +118,8 @@ pub struct Ssa<'a, I> {
     symbol_table: &'a mut SymbolTable,
 }
 
-impl<'a, I: SsaInstruction> Ssa<'a, I> {
-    pub fn new(cfg: Cfg<I>, symbol_table: &'a mut SymbolTable) -> Self {
+impl<'a> Ssa<'a, Instruction> {
+    pub fn new(cfg: Cfg<Instruction>, symbol_table: &'a mut SymbolTable) -> Self {
         let mut me = Ssa {
             cfg,
             dominates: HashMap::new(),
@@ -365,6 +365,43 @@ impl<'a, I: SsaInstruction> Ssa<'a, I> {
             })
             .filter(|s| self.dominated[s].contains(&a))
             .collect()
+    }
+
+    pub fn to_non_ssa(&self) -> Vec<Instruction> {
+        let mut instructions = Vec::new();
+
+        let mut phi_insts = Vec::new();
+
+        for (id, node) in &self.cfg.nodes {
+            for succ in self.cfg.nodes[id].successors.iter() {
+                if let NodeId::Block(succ) = succ {
+                    for (new_name, map) in &self.phi[succ] {
+                        let old_name = map[id].clone();
+
+                        let inst = Instruction::Copy {
+                            src: Val::Var(old_name.clone()),
+                            dst: Val::Var(new_name.clone()),
+                        };
+
+                        phi_insts.push(inst);
+                    }
+                }
+            }
+
+            instructions.extend(node.instructions.iter().cloned());
+            if matches!(
+                node.instructions.last().map(Into::into),
+                Some(GeneralizedInstruction::Jump(_) | GeneralizedInstruction::MayJump(_))
+            ) {
+                let j = instructions.pop().unwrap();
+                instructions.extend(phi_insts.drain(..));
+                instructions.push(j.into());
+            } else {
+                instructions.extend(phi_insts.drain(..));
+            }
+        }
+
+        instructions
     }
 }
 
