@@ -4,6 +4,7 @@ use ecow::EcoString;
 
 use crate::{
     control_flow::{Cfg, NodeId},
+    semantics::type_check::{Attr, SymbolTable},
     tacky::{Instruction, Val},
 };
 
@@ -108,22 +109,24 @@ impl SsaInstruction for Instruction {
 }
 
 #[derive(Debug)]
-pub struct Ssa<I> {
+pub struct Ssa<'a, I> {
     pub cfg: Cfg<I>,
     dominates: HashMap<usize, HashSet<usize>>,
     dominated: HashMap<usize, HashSet<usize>>,
     dominate_frontiers: HashMap<usize, HashSet<usize>>,
     pub phi: HashMap<usize, HashMap<EcoString, HashMap<usize, EcoString>>>,
+    symbol_table: &'a mut SymbolTable,
 }
 
-impl<I: SsaInstruction> Ssa<I> {
-    pub fn new(cfg: Cfg<I>) -> Self {
+impl<'a, I: SsaInstruction> Ssa<'a, I> {
+    pub fn new(cfg: Cfg<I>, symbol_table: &'a mut SymbolTable) -> Self {
         let mut me = Ssa {
             cfg,
             dominates: HashMap::new(),
             dominated: HashMap::new(),
             dominate_frontiers: HashMap::new(),
             phi: HashMap::new(),
+            symbol_table,
         };
         me.compute_dominators();
         me.compute_dominate_frontiers();
@@ -210,7 +213,9 @@ impl<I: SsaInstruction> Ssa<I> {
         for (node, block) in &mut self.cfg.nodes {
             for inst in &mut block.instructions {
                 if let Some(dst) = inst.dst() {
-                    defs.entry(dst.clone()).or_default().insert(*node);
+                    if let Attr::Local(_) = &self.symbol_table[dst] {
+                        defs.entry(dst.clone()).or_default().insert(*node);
+                    }
                 }
             }
         }
@@ -303,10 +308,13 @@ impl<I: SsaInstruction> Ssa<I> {
                 *arg = new_name.clone();
             });
             if let Some(dst) = inst.dst() {
-                let new_name = new_name(dst);
-                stack.entry(dst.clone()).or_default().push(new_name.clone());
-                pushed.push(dst.clone());
-                *dst = new_name;
+                if let Attr::Local(_) = &self.symbol_table[dst] {
+                    let new_name = new_name(dst);
+                    copy_attr(&mut self.symbol_table, &dst, &new_name);
+                    stack.entry(dst.clone()).or_default().push(new_name.clone());
+                    pushed.push(dst.clone());
+                    *dst = new_name;
+                }
             }
         }
 
@@ -358,4 +366,9 @@ impl<I: SsaInstruction> Ssa<I> {
             .filter(|s| self.dominated[s].contains(&a))
             .collect()
     }
+}
+
+fn copy_attr(symbol_table: &mut SymbolTable, old_name: &EcoString, new_name: &EcoString) {
+    let attr = symbol_table[old_name].clone();
+    symbol_table.insert(new_name.clone(), attr);
 }

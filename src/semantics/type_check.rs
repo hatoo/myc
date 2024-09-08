@@ -159,7 +159,7 @@ pub struct TypeChecker {
     pub sym_table: SymbolTable,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Attr {
     Fun {
         ty: ast::FunType,

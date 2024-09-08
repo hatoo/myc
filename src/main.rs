@@ -142,7 +142,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         for f in &tacky.top_levels {
             if let myc::tacky::TopLevelItem::Function(f) = f {
                 let cfg = Cfg::new(&f.body);
-                let ssa = Ssa::new(cfg);
+                let ssa = Ssa::new(cfg, &mut type_checker.sym_table);
                 print_ssa(&ssa);
             }
         }
