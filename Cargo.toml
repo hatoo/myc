@@ -6,6 +6,8 @@ edition = "2021"
 [dependencies]
 clap = { version = "4.5.16", features = ["derive"] }
 ecow = "0.2.2"
+egglog = { version = "0.2.0", default-features = false }
 miette = { version = "7.2.0", features = ["fancy"] }
+ordered-float = "3.9.2"
 regex = "1.10.6"
 thiserror = "1.0.63"

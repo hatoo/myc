@@ -11,6 +11,7 @@ use crate::{
 };
 
 mod copy_analysis;
+mod egglog;
 mod liveness_analysis;
 
 macro_rules! fold_binary {

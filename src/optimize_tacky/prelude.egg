@@ -1,0 +1,89 @@
+(datatype Const
+    (Integer i64)
+    (Double f64)
+)
+
+(datatype Val
+    (Constant Const :cost 0)
+    (Var String :cost 8)
+    (Static String)
+)
+
+(datatype BinaryOp
+    (Add)
+    (Subtract)
+    (Multiply)
+    (Divide)
+    (Remainder)
+    (Equal)
+    (NotEqual)
+    (LessThan)
+    (LessOrEqual)
+    (GreaterThan)
+    (GreaterOrEqual)
+)
+
+(datatype UnaryOp
+    (Negate)
+    (Complement)
+    (Not)
+)
+
+(datatype OptionVal
+    (Some Val)
+    (None)
+)
+
+(sort VVec (Vec Val))
+
+(datatype PhiVal
+    (P Val i64)
+)
+
+(sort PVec (Vec PhiVal))
+
+(datatype Instruction
+    (Nop :cost 0)
+    (Return OptionVal)
+    (Cast Val Val)
+    (Unary UnaryOp Val Val)
+    (Binary BinaryOp Val Val Val)
+    (Copy Val Val)
+    (GetAggress Val Val)
+    (Load Val Val)
+    (Store Val Val)
+    (Jump String)
+    (JumpIfZero Val String)
+    (JumpIfNonZero Val String)
+    (Label String)
+    (FunCall
+        Val
+        VVec
+        Val
+    )
+    (AddPtr
+        Val
+        Val
+        i64
+        Val
+    )
+    (CopyToOffset
+        Val Val i64
+    )
+    (CopyFromOffset
+        Val i64 Val
+    )
+
+    (Phi Val PVec)
+)
+
+(sort IVec (Vec Instruction))
+
+(rewrite
+    (Binary (Add) (Constant (Integer x)) (Constant (Integer y)) dst)
+    (Copy (Constant (Integer (+ x y))) dst)
+)
+(rule
+    ((= i (Copy (Constant c) (Var x))))
+    ((union i (Nop)) (union (Constant c) (Var x)))
+)
