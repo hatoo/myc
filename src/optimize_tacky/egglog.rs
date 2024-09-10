@@ -4,7 +4,10 @@ use ecow::vec;
 use egglog::ast::{Action, Command, Expr, Symbol};
 use ordered_float::OrderedFloat;
 
-use crate::tacky::{BinaryOp, UnaryOp, Val};
+use crate::{
+    ast::Const,
+    tacky::{BinaryOp, Instruction, UnaryOp, Val},
+};
 
 pub trait ToEgglogExpr {
     fn to_egglog_expr(&self) -> Expr;
@@ -38,25 +41,136 @@ impl ToEgglogExpr for BinaryOp {
     }
 }
 
-impl ToEgglogExpr for i64 {
+impl ToEgglogExpr for Const {
     fn to_egglog_expr(&self) -> Expr {
-        Expr::lit(*self)
-    }
-}
-
-impl ToEgglogExpr for f64 {
-    fn to_egglog_expr(&self) -> Expr {
-        Expr::lit(OrderedFloat::from(*self))
+        match self {
+            Const::Char(i) => Expr::lit(*i as i64),
+            Const::UChar(i) => Expr::lit(*i as i64),
+            Const::Int(i) => Expr::lit(*i as i64),
+            Const::Long(i) => Expr::lit(*i),
+            Const::Uint(i) => Expr::lit(*i as i64),
+            Const::Ulong(i) => Expr::lit(*i as i64),
+            Const::Double(d) => Expr::lit(OrderedFloat::from(*d)),
+        }
     }
 }
 
 impl ToEgglogExpr for Val {
     fn to_egglog_expr(&self) -> Expr {
         match self {
-            Val::Constant(_) => todo!(),
-            Val::Var(var) => Expr::call(
-                "Var",
-                std::iter::once(Expr::lit(Symbol::from(var.as_str()))),
+            Val::Constant(c) => c.to_egglog_expr(),
+            Val::Var(var) => Expr::call("Var", Some(Expr::lit(Symbol::from(var.as_str())))),
+        }
+    }
+}
+
+impl ToEgglogExpr for Instruction {
+    fn to_egglog_expr(&self) -> Expr {
+        match self {
+            Instruction::Nop => Expr::call("Nop", None),
+            Instruction::Return(val) => {
+                if let Some(val) = val {
+                    Expr::call(
+                        "Return",
+                        Some(Expr::call("Some", Some(val.to_egglog_expr()))),
+                    )
+                } else {
+                    Expr::call("Return", Some(Expr::call("None", None)))
+                }
+            }
+            Instruction::Cast { src, dst } => {
+                Expr::call("Cast", vec![src.to_egglog_expr(), dst.to_egglog_expr()])
+            }
+            Instruction::Unary { op, src, dst } => Expr::call(
+                "Unary",
+                vec![
+                    op.to_egglog_expr(),
+                    src.to_egglog_expr(),
+                    dst.to_egglog_expr(),
+                ],
+            ),
+            Instruction::Binary { op, lhs, rhs, dst } => Expr::call(
+                "Binary",
+                vec![
+                    op.to_egglog_expr(),
+                    lhs.to_egglog_expr(),
+                    rhs.to_egglog_expr(),
+                    dst.to_egglog_expr(),
+                ],
+            ),
+            Instruction::Copy { src, dst } => {
+                Expr::call("Copy", vec![src.to_egglog_expr(), dst.to_egglog_expr()])
+            }
+            Instruction::GetAddress { src, dst } => Expr::call(
+                "GetAddress",
+                vec![src.to_egglog_expr(), dst.to_egglog_expr()],
+            ),
+            Instruction::Load { src, dst } => {
+                Expr::call("Load", vec![src.to_egglog_expr(), dst.to_egglog_expr()])
+            }
+            Instruction::Store { src, dst } => {
+                Expr::call("Store", vec![src.to_egglog_expr(), dst.to_egglog_expr()])
+            }
+            Instruction::Jump(l) => Expr::call("Jump", vec![Expr::lit(Symbol::from(l.as_str()))]),
+            Instruction::JumpIfZero { src, dst } => Expr::call(
+                "JumpIfZero",
+                vec![src.to_egglog_expr(), Expr::lit(Symbol::from(dst.as_str()))],
+            ),
+            Instruction::JumpIfNotZero { src, dst } => Expr::call(
+                "JumpIfNotZero",
+                vec![src.to_egglog_expr(), Expr::lit(Symbol::from(dst.as_str()))],
+            ),
+            Instruction::Label(l) => Expr::call("Label", vec![Expr::lit(Symbol::from(l.as_str()))]),
+            Instruction::FunCall { callee, args, dst } => {
+                let dst = if let Some(dst) = dst {
+                    Expr::call("Some", Some(dst.to_egglog_expr()))
+                } else {
+                    Expr::call("None", None)
+                };
+
+                Expr::call(
+                    "FunCall",
+                    vec![
+                        callee.to_egglog_expr(),
+                        Expr::call(
+                            "vec-of",
+                            args.iter()
+                                .map(|arg| arg.to_egglog_expr())
+                                .collect::<Vec<_>>(),
+                        ),
+                        dst,
+                    ],
+                )
+            }
+            Instruction::AddPtr {
+                ptr,
+                index,
+                scale,
+                dst,
+            } => Expr::call(
+                "AddPtr",
+                vec![
+                    ptr.to_egglog_expr(),
+                    index.to_egglog_expr(),
+                    Expr::lit(*scale as i64),
+                    dst.to_egglog_expr(),
+                ],
+            ),
+            Instruction::CopyToOffset { src, dst, offset } => Expr::call(
+                "CopyToOffset",
+                vec![
+                    src.to_egglog_expr(),
+                    dst.to_egglog_expr(),
+                    Expr::lit(*offset as i64),
+                ],
+            ),
+            Instruction::CopyFromOffset { src, offset, dst } => Expr::call(
+                "CopyFromOffset",
+                vec![
+                    src.to_egglog_expr(),
+                    Expr::lit(*offset as i64),
+                    dst.to_egglog_expr(),
+                ],
             ),
         }
     }
