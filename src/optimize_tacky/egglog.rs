@@ -216,6 +216,47 @@ impl<'a> ToEgglogExpr for Ssa<'a, Instruction> {
     }
 }
 
+fn node_egglog<'a>(ssa: &Ssa<'a, Instruction>, id: usize) -> Expr {
+    let mut exprs = vec![];
+    let node = &ssa.cfg.nodes[&id];
+    let phis = ssa.phi[&id].iter().map(|(name, table)| {
+        let table = table
+            .iter()
+            .map(|(pred, val)| {
+                Expr::call(
+                    "P",
+                    vec![
+                        Expr::call("Var", Some(Expr::lit(Symbol::from(val.as_str())))),
+                        Expr::lit(*pred as i64),
+                    ],
+                )
+            })
+            .collect::<Vec<_>>();
+
+        Expr::call(
+            "Phi",
+            vec![
+                Expr::lit(Symbol::from(name.as_str())),
+                Expr::call("vec-of", table),
+            ],
+        )
+    });
+
+    if let Some(i @ Instruction::Label(_)) = node.instructions.first() {
+        exprs.push(i.to_egglog_expr());
+        exprs.extend(phis);
+        exprs.extend(node.instructions.iter().skip(1).map(|i| i.to_egglog_expr()));
+    } else {
+        exprs.extend(phis);
+        exprs.extend(node.instructions.iter().map(|i| i.to_egglog_expr()));
+    }
+
+    Expr::call(
+        "Node",
+        vec![Expr::lit(id as i64), Expr::call("vec-of", exprs)],
+    )
+}
+
 pub fn do_egglog<'a>(ssa: &Ssa<'a, Instruction>) {
     const PRELUDE: &str = include_str!("./prelude.egg");
 

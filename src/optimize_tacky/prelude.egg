@@ -79,6 +79,16 @@
 
 (sort IVec (Vec Instruction))
 
+(datatype NodeId
+    (Start)
+    (Block i64)
+    (Exit)
+)
+
+(datatype Node
+    (Node i64 IVec)
+)
+
 (rewrite
     (Binary (Add) (Constant (Integer x)) (Constant (Integer y)) dst)
     (Copy (Constant (Integer (+ x y))) dst)
