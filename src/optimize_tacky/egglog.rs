@@ -1,12 +1,8 @@
-use std::f32::consts::{E, PI};
-
-use ecow::vec;
-use egglog::ast::{Action, Command, Expr, Symbol};
+use egglog::ast::{Expr, Symbol};
 use ordered_float::OrderedFloat;
 
 use crate::{
     ast::Const,
-    control_flow::NodeId,
     ssa::Ssa,
     tacky::{BinaryOp, Instruction, UnaryOp, Val},
 };
@@ -236,6 +232,7 @@ pub fn do_egglog<'a>(ssa: &Ssa<'a, Instruction>) {
 
 #[test]
 fn test_egglog() {
+    use egglog::ast::{Action, Command};
     const PRELUDE: &str = include_str!("./prelude.egg");
 
     let mut egraph = egglog::EGraph::default();
