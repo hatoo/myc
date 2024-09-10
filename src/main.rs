@@ -14,6 +14,7 @@ use myc::{
     codegen::CodeGen,
     control_flow::Cfg,
     lexer::{lexer, TokenSpannedError},
+    optimize_tacky::egglog::do_egglog,
     semantics::{LoopLabel, TypeChecker, VarResolver},
     span::SpannedError,
     ssa::Ssa,
@@ -53,6 +54,8 @@ struct Opts {
     s: bool,
     #[clap(long)]
     ssa: bool,
+    #[clap(long)]
+    egglog: bool,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -158,6 +161,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             optimizes.push(myc::optimize_tacky::OptimizeOption::EliminateDeadStores);
         }
         myc::optimize_tacky::optimize(&mut tacky, &type_checker.sym_table, &optimizes);
+    }
+
+    if opts.egglog {
+        for f in &mut tacky.top_levels {
+            if let myc::tacky::TopLevelItem::Function(f) = f {
+                let cfg = Cfg::new(&f.body);
+                let ssa = Ssa::new(cfg, &mut type_checker.sym_table);
+
+                do_egglog(&ssa);
+            }
+        }
+
+        return Ok(());
     }
 
     if opts.ssa {

@@ -1,4 +1,4 @@
-use std::f32::consts::E;
+use std::f32::consts::{E, PI};
 
 use ecow::vec;
 use egglog::ast::{Action, Command, Expr, Symbol};
@@ -6,6 +6,8 @@ use ordered_float::OrderedFloat;
 
 use crate::{
     ast::Const,
+    control_flow::NodeId,
+    ssa::Ssa,
     tacky::{BinaryOp, Instruction, UnaryOp, Val},
 };
 
@@ -44,13 +46,13 @@ impl ToEgglogExpr for BinaryOp {
 impl ToEgglogExpr for Const {
     fn to_egglog_expr(&self) -> Expr {
         match self {
-            Const::Char(i) => Expr::lit(*i as i64),
-            Const::UChar(i) => Expr::lit(*i as i64),
-            Const::Int(i) => Expr::lit(*i as i64),
-            Const::Long(i) => Expr::lit(*i),
-            Const::Uint(i) => Expr::lit(*i as i64),
-            Const::Ulong(i) => Expr::lit(*i as i64),
-            Const::Double(d) => Expr::lit(OrderedFloat::from(*d)),
+            Const::Char(i) => Expr::call("Integer", Some(Expr::lit(*i as i64))),
+            Const::UChar(i) => Expr::call("Integer", Some(Expr::lit(*i as i64))),
+            Const::Int(i) => Expr::call("Integer", Some(Expr::lit(*i as i64))),
+            Const::Long(i) => Expr::call("Integer", Some(Expr::lit(*i))),
+            Const::Uint(i) => Expr::call("Integer", Some(Expr::lit(*i as i64))),
+            Const::Ulong(i) => Expr::call("Integer", Some(Expr::lit(*i as i64))),
+            Const::Double(d) => Expr::call("Double", Some(Expr::lit(OrderedFloat::from(*d)))),
         }
     }
 }
@@ -58,7 +60,7 @@ impl ToEgglogExpr for Const {
 impl ToEgglogExpr for Val {
     fn to_egglog_expr(&self) -> Expr {
         match self {
-            Val::Constant(c) => c.to_egglog_expr(),
+            Val::Constant(c) => Expr::call("Constant", Some(c.to_egglog_expr())),
             Val::Var(var) => Expr::call("Var", Some(Expr::lit(Symbol::from(var.as_str())))),
         }
     }
@@ -174,6 +176,62 @@ impl ToEgglogExpr for Instruction {
             ),
         }
     }
+}
+
+impl<'a> ToEgglogExpr for Ssa<'a, Instruction> {
+    fn to_egglog_expr(&self) -> Expr {
+        let mut exprs = vec![];
+        for (id, node) in &self.cfg.nodes {
+            let phis = self.phi[id].iter().map(|(name, table)| {
+                let table = table
+                    .iter()
+                    .map(|(pred, val)| {
+                        Expr::call(
+                            "P",
+                            vec![
+                                Expr::call("Var", Some(Expr::lit(Symbol::from(val.as_str())))),
+                                Expr::lit(*pred as i64),
+                            ],
+                        )
+                    })
+                    .collect::<Vec<_>>();
+
+                Expr::call(
+                    "Phi",
+                    vec![
+                        Expr::lit(Symbol::from(name.as_str())),
+                        Expr::call("vec-of", table),
+                    ],
+                )
+            });
+
+            if let Some(i @ Instruction::Label(_)) = node.instructions.first() {
+                exprs.push(i.to_egglog_expr());
+                exprs.extend(phis);
+                exprs.extend(node.instructions.iter().skip(1).map(|i| i.to_egglog_expr()));
+            } else {
+                exprs.extend(phis);
+                exprs.extend(node.instructions.iter().map(|i| i.to_egglog_expr()));
+            }
+        }
+
+        Expr::call("vec-of", exprs)
+    }
+}
+
+pub fn do_egglog<'a>(ssa: &Ssa<'a, Instruction>) {
+    const PRELUDE: &str = include_str!("./prelude.egg");
+
+    let mut egraph = egglog::EGraph::default();
+    egraph.parse_and_run_program(PRELUDE).unwrap();
+
+    let program = ssa.to_egglog_expr();
+
+    let (_, v) = egraph.eval_expr(&program).unwrap();
+
+    egraph.parse_and_run_program("(run 1000)").unwrap();
+
+    println!("{}", egraph.extract_value_to_string(v));
 }
 
 #[test]
