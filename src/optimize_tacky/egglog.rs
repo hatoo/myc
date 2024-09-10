@@ -57,6 +57,7 @@ impl ToEgglogExpr for Val {
     fn to_egglog_expr(&self) -> Expr {
         match self {
             Val::Constant(c) => Expr::call("Constant", Some(c.to_egglog_expr())),
+            // TODO: Look up symbol table to check if it's a static variable
             Val::Var(var) => Expr::call("Var", Some(Expr::lit(Symbol::from(var.as_str())))),
         }
     }
