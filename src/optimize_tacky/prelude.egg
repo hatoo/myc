@@ -86,14 +86,22 @@
 )
 
 (datatype Node
-    (Node i64 IVec)
+    (N i64 IVec)
 )
 
+(rewrite
+    (Binary (Add) x y dst)
+    (Binary (Add) y x dst)
+)
+(rewrite
+    (Binary (Add) x (Constant (Integer 0)) dst)
+    (Copy x dst)
+)
 (rewrite
     (Binary (Add) (Constant (Integer x)) (Constant (Integer y)) dst)
     (Copy (Constant (Integer (+ x y))) dst)
 )
 (rule
-    ((= i (Copy (Constant c) (Var x))))
-    ((union i (Nop)) (union (Constant c) (Var x)))
+    ((= i (Copy src (Var x))))
+    ((union i (Nop)) (union src (Var x)))
 )
