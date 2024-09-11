@@ -129,12 +129,11 @@
     ((union (VI v) (VI (vec-remove v i))))
 )
 
+; remove common sub-expression
 (rule
     ((Binary op l r dst1) (Binary op l r dst2))
     ((union dst1 dst2))
 )
-
-; remove common sub-expression
 (rule
     ((ValidIndex (VI v) i) (ValidIndex (VI v) k) (= (vec-get v i) (Binary op l r dst)) (= (vec-get v k) (Binary op l r dst)) (< i k))
     ((union (VI v) (VI (vec-set v k (Nop)))))
