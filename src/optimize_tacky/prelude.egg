@@ -43,7 +43,7 @@
 (sort PVec (Vec PhiVal))
 
 (datatype Instruction
-    (Nop :cost 0)
+    (Nop)
     (Return OptionVal)
     (Cast Val Val)
     (Unary UnaryOp Val Val)
@@ -77,7 +77,8 @@
     (Phi Val PVec)
 )
 
-(sort IVec (Vec Instruction))
+(sort VecInstructionBase (Vec Instruction))
+(datatype VecInstruction (VI VecInstructionBase))
 
 (datatype NodeId
     (Start)
@@ -86,7 +87,7 @@
 )
 
 (datatype Node
-    (N i64 IVec)
+    (N i64 VecInstruction)
 )
 
 (rewrite
@@ -105,3 +106,38 @@
     ((= i (Copy src (Var x))))
     ((union i (Nop)) (union src (Var x)))
 )
+
+(datatype ValidIndexBase
+    (ValidIndex VecInstruction i64)
+)
+(rule
+    ((VI v))
+    ((ValidIndex (VI v) 0))
+)
+(rule
+    ((ValidIndex (VI v) i) (< (+ i 1) (vec-length v)))
+    ((ValidIndex (VI v) (+ i 1)))
+)
+
+; remove nop
+(rule
+    ((ValidIndex (VI v) i) (= (vec-get v i) (Nop)))
+    ((union (VI v) (VI (vec-remove v i))))
+)
+
+(rule
+    ((Binary op l r dst1) (Binary op l r dst2))
+    ((union dst1 dst2))
+)
+
+; remove common sub-expression
+(rule
+    ((ValidIndex (VI v) i) (ValidIndex (VI v) k) (= (vec-get v i) (Binary op l r dst)) (= (vec-get v k) (Binary op l r dst)) (< i k))
+    ((union (VI v) (VI (vec-set v k (Nop)))))
+)
+
+; (let x (VI (vec-of (Nop) (Nop))))
+
+; (run 10)
+
+; (query-extract x)

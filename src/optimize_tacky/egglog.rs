@@ -212,7 +212,8 @@ impl<'a> ToEgglogExpr for Ssa<'a, Instruction> {
             }
         }
 
-        Expr::call("vec-of", exprs)
+        let v = Expr::call("vec-of", exprs);
+        Expr::call("VI", vec![v])
     }
 }
 
