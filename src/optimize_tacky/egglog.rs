@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use egglog::ast::{Expr, Symbol};
 use ordered_float::OrderedFloat;
 
@@ -213,7 +215,7 @@ impl<'a> ToEgglogExpr for Ssa<'a, Instruction> {
         }
 
         let v = Expr::call("vec-of", exprs);
-        Expr::call("VI", vec![v])
+        Expr::call("Block", vec![v])
     }
 }
 
@@ -252,10 +254,7 @@ fn node_egglog<'a>(ssa: &Ssa<'a, Instruction>, id: usize) -> Expr {
         exprs.extend(node.instructions.iter().map(|i| i.to_egglog_expr()));
     }
 
-    Expr::call(
-        "Node",
-        vec![Expr::lit(id as i64), Expr::call("vec-of", exprs)],
-    )
+    Expr::call("Block", vec![Expr::call("vec-of", exprs)])
 }
 
 pub fn do_egglog<'a>(ssa: &Ssa<'a, Instruction>) {
@@ -264,6 +263,23 @@ pub fn do_egglog<'a>(ssa: &Ssa<'a, Instruction>) {
     let mut egraph = egglog::EGraph::default();
     egraph.parse_and_run_program(PRELUDE).unwrap();
 
+    let values = ssa
+        .cfg
+        .nodes
+        .iter()
+        .map(|(id, _)| {
+            let (_, v) = egraph.eval_expr(&node_egglog(ssa, *id)).unwrap();
+            (*id, v)
+        })
+        .collect::<BTreeMap<usize, _>>();
+
+    egraph.parse_and_run_program("(run 1000)").unwrap();
+
+    for (id, value) in values {
+        println!("{}:\n {}", id, egraph.extract_value_to_string(value));
+    }
+
+    /*
     let program = ssa.to_egglog_expr();
 
     let (_, v) = egraph.eval_expr(&program).unwrap();
@@ -271,6 +287,7 @@ pub fn do_egglog<'a>(ssa: &Ssa<'a, Instruction>) {
     egraph.parse_and_run_program("(run 1000)").unwrap();
 
     println!("{}", egraph.extract_value_to_string(v));
+    */
 }
 
 #[test]
