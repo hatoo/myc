@@ -90,6 +90,20 @@
     (N i64 VecInstruction)
 )
 
+; Assign Indices to Instructions
+(datatype ValidIndexBase
+    (ValidIndex VecInstruction i64)
+)
+(rule
+    ((VI v))
+    ((ValidIndex (VI v) 0))
+)
+(rule
+    ((ValidIndex (VI v) i) (< (+ i 1) (vec-length v)))
+    ((ValidIndex (VI v) (+ i 1)))
+)
+
+; Constant folding for addition
 (rewrite
     (Binary (Add) x y dst)
     (Binary (Add) y x dst)
@@ -102,21 +116,11 @@
     (Binary (Add) (Constant (Integer x)) (Constant (Integer y)) dst)
     (Copy (Constant (Integer (+ x y))) dst)
 )
+
+; Copy propagation
 (rule
     ((= i (Copy src (Var x))))
     ((union i (Nop)) (union src (Var x)))
-)
-
-(datatype ValidIndexBase
-    (ValidIndex VecInstruction i64)
-)
-(rule
-    ((VI v))
-    ((ValidIndex (VI v) 0))
-)
-(rule
-    ((ValidIndex (VI v) i) (< (+ i 1) (vec-length v)))
-    ((ValidIndex (VI v) (+ i 1)))
 )
 
 ; remove nop
@@ -135,9 +139,3 @@
     ((ValidIndex (VI v) i) (ValidIndex (VI v) k) (= (vec-get v i) (Binary op l r dst)) (= (vec-get v k) (Binary op l r dst)) (< i k))
     ((union (VI v) (VI (vec-set v k (Nop)))))
 )
-
-; (let x (VI (vec-of (Nop) (Nop))))
-
-; (run 10)
-
-; (query-extract x)
