@@ -77,8 +77,8 @@
     (Phi Val PVec)
 )
 
-(sort VecInstructionBase (Vec Instruction))
-(datatype VecInstruction (VI VecInstructionBase))
+(sort VecInstructionSort (Vec Instruction))
+(datatype VecInstruction (VI VecInstructionSort))
 
 (datatype NodeId
     (Start)
@@ -115,6 +115,25 @@
 (rewrite
     (Binary (Add) (Constant (Integer x)) (Constant (Integer y)) dst)
     (Copy (Constant (Integer (+ x y))) dst)
+)
+
+(rewrite
+    (JumpIfZero (Constant (Integer 0)) label)
+    (Jump label)
+)
+(rewrite
+    (JumpIfZero (Constant (Integer x)) label)
+    (Nop)
+    :when ((!= x 0))
+)
+(rewrite
+    (JumpIfNonZero (Constant (Integer 0)) label)
+    (Nop)
+)
+(rewrite
+    (JumpIfNonZero (Constant (Integer x)) label)
+    (Jump label)
+    :when ((!= x 0))
 )
 
 ; Copy propagation
