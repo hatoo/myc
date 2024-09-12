@@ -881,7 +881,8 @@ impl<'a> CodeGen<'a> {
                                 dst: dst.into(),
                             });
 
-                            if rhs.is_constant() {
+                            if let Val::Constant(c) = rhs {
+                                let rhs = Val::Constant(Const::UChar(c.get_uchar()));
                                 body.push(Instruction::Binary {
                                     op,
                                     ty: self.val_asm_type(lhs),
