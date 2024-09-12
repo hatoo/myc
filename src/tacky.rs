@@ -182,6 +182,10 @@ impl Val {
             Val::Var(var) => matches!(symbol_table[var], Attr::Static { .. }),
         }
     }
+
+    pub fn is_constant(&self) -> bool {
+        matches!(self, Val::Constant(_))
+    }
 }
 
 struct InstructionGenerator<'a> {

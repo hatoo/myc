@@ -153,7 +153,7 @@ pub enum BinaryOp {
     Or,
     Xor,
     Shl,
-    ShrTwo,
+    Shr,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -462,7 +462,7 @@ impl<'a> CodeGen<'a> {
             });
             if offset < byte_count - 1 {
                 body.push(Instruction::Binary {
-                    op: BinaryOp::ShrTwo,
+                    op: BinaryOp::Shr,
                     ty: AssemblyType::QuadWord,
                     lhs: Operand::Imm(8),
                     rhs: Operand::Reg(src_reg),
@@ -688,6 +688,8 @@ impl<'a> CodeGen<'a> {
                 tacky::Instruction::Binary { op, lhs, rhs, dst } => {
                     enum Binary {
                         Simple(BinaryOp),
+                        Shl,
+                        Shr,
                         Divide,
                         Remainder,
                         Compare(CondCode),
@@ -702,8 +704,8 @@ impl<'a> CodeGen<'a> {
                         tacky::BinaryOp::BitAnd => Binary::Simple(BinaryOp::And),
                         tacky::BinaryOp::BitOr => Binary::Simple(BinaryOp::Or),
                         tacky::BinaryOp::Xor => Binary::Simple(BinaryOp::Xor),
-                        tacky::BinaryOp::ShiftLeft => Binary::Simple(BinaryOp::Shl),
-                        tacky::BinaryOp::ShiftRight => Binary::Simple(BinaryOp::ShrTwo),
+                        tacky::BinaryOp::ShiftLeft => Binary::Shl,
+                        tacky::BinaryOp::ShiftRight => Binary::Shr,
                         tacky::BinaryOp::Divide => Binary::Divide,
                         tacky::BinaryOp::Remainder => Binary::Remainder,
                         tacky::BinaryOp::Equal => Binary::Compare(CondCode::E),
@@ -858,6 +860,40 @@ impl<'a> CodeGen<'a> {
                                 dst: dst.into(),
                             });
                             body.push(Instruction::SetCc(cond, dst.into()));
+                        }
+                        Binary::Shl | Binary::Shr => {
+                            let op = match op {
+                                Binary::Shl => BinaryOp::Shl,
+                                Binary::Shr => BinaryOp::Shr,
+                                _ => unreachable!(),
+                            };
+
+                            body.push(Instruction::Mov {
+                                ty: self.val_asm_type(lhs),
+                                src: lhs.into(),
+                                dst: dst.into(),
+                            });
+
+                            if rhs.is_constant() {
+                                body.push(Instruction::Binary {
+                                    op,
+                                    ty: self.val_asm_type(lhs),
+                                    lhs: rhs.into(),
+                                    rhs: dst.into(),
+                                });
+                            } else {
+                                body.push(Instruction::Mov {
+                                    ty: self.val_asm_type(rhs),
+                                    src: rhs.into(),
+                                    dst: Operand::Reg(Register::Cx),
+                                });
+                                body.push(Instruction::Binary {
+                                    op,
+                                    ty: self.val_asm_type(lhs),
+                                    lhs: Operand::Reg(Register::Cx),
+                                    rhs: dst.into(),
+                                });
+                            }
                         }
                     }
                 }
@@ -2747,7 +2783,7 @@ impl Display for BinaryOp {
             BinaryOp::DivDouble => write!(f, "div")?,
             BinaryOp::Xor => write!(f, "xor")?,
             BinaryOp::Shl => write!(f, "shl")?,
-            BinaryOp::ShrTwo => write!(f, "shr")?,
+            BinaryOp::Shr => write!(f, "shr")?,
         }
         Ok(())
     }
