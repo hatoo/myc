@@ -617,12 +617,14 @@ pub enum BinaryOp {
     GreaterOrEqual,
     BitAnd,
     BitOr,
+    Xor,
 }
 
 impl BinaryOp {
     fn precedence(&self) -> usize {
         match self {
             Self::BitAnd => 2,
+            Self::Xor => 3,
             Self::BitOr => 4,
             Self::Or => 5,
             Self::And => 10,
@@ -654,6 +656,7 @@ impl TryFrom<&Token> for BinaryOp {
             Token::GreaterThanEquals => Ok(Self::GreaterOrEqual),
             Token::Ampersand => Ok(Self::BitAnd),
             Token::Pipe => Ok(Self::BitOr),
+            Token::Caret => Ok(Self::Xor),
             _ => Err(()),
         }
     }

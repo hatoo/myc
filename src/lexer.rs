@@ -156,6 +156,7 @@ pub enum Token {
     Struct,
     Dot,
     Arrow,
+    Caret,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -666,6 +667,13 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
                         span: index..index + 1,
                     }));
                 }
+            }
+            b'^' => {
+                tokens.push(Spanned {
+                    data: Token::Caret,
+                    span: index..index + 1,
+                });
+                index += 1;
             }
 
             // TODO

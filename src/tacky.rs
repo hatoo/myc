@@ -136,6 +136,7 @@ pub enum BinaryOp {
     GreaterOrEqual,
     BitAnd,
     BitOr,
+    Xor,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -635,6 +636,7 @@ impl<'a> InstructionGenerator<'a> {
                         ast::BinaryOp::And | ast::BinaryOp::Or => unreachable!(),
                         ast::BinaryOp::BitAnd => BinaryOp::BitAnd,
                         ast::BinaryOp::BitOr => BinaryOp::BitOr,
+                        ast::BinaryOp::Xor => BinaryOp::Xor,
                     },
                     lhs,
                     rhs,
