@@ -618,18 +618,21 @@ pub enum BinaryOp {
     BitAnd,
     BitOr,
     Xor,
+    ShiftLeft,
+    ShiftRight,
 }
 
 impl BinaryOp {
     fn precedence(&self) -> usize {
         match self {
-            Self::BitAnd => 2,
-            Self::Xor => 3,
-            Self::BitOr => 4,
             Self::Or => 5,
             Self::And => 10,
+            Self::BitOr => 11,
+            Self::Xor => 12,
+            Self::BitAnd => 13,
             Self::Equal | Self::NotEqual => 30,
             Self::LessThan | Self::LessOrEqual | Self::GreaterThan | Self::GreaterOrEqual => 35,
+            Self::ShiftLeft | Self::ShiftRight => 40,
             Self::Add | Self::Subtract => 45,
             Self::Multiply | Self::Divide | Self::Remainder => 50,
         }
@@ -657,6 +660,8 @@ impl TryFrom<&Token> for BinaryOp {
             Token::Ampersand => Ok(Self::BitAnd),
             Token::Pipe => Ok(Self::BitOr),
             Token::Caret => Ok(Self::Xor),
+            Token::TwoLessThan => Ok(Self::ShiftLeft),
+            Token::TwoGreaterThan => Ok(Self::ShiftRight),
             _ => Err(()),
         }
     }

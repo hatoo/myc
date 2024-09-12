@@ -137,6 +137,8 @@ pub enum BinaryOp {
     BitAnd,
     BitOr,
     Xor,
+    ShiftLeft,
+    ShiftRight,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -637,6 +639,8 @@ impl<'a> InstructionGenerator<'a> {
                         ast::BinaryOp::BitAnd => BinaryOp::BitAnd,
                         ast::BinaryOp::BitOr => BinaryOp::BitOr,
                         ast::BinaryOp::Xor => BinaryOp::Xor,
+                        ast::BinaryOp::ShiftLeft => BinaryOp::ShiftLeft,
+                        ast::BinaryOp::ShiftRight => BinaryOp::ShiftRight,
                     },
                     lhs,
                     rhs,
