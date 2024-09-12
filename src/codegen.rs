@@ -154,6 +154,7 @@ pub enum BinaryOp {
     Xor,
     Shl,
     Shr,
+    Sar,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -864,7 +865,13 @@ impl<'a> CodeGen<'a> {
                         Binary::Shl | Binary::Shr => {
                             let op = match op {
                                 Binary::Shl => BinaryOp::Shl,
-                                Binary::Shr => BinaryOp::Shr,
+                                Binary::Shr => {
+                                    if ty.is_signed() {
+                                        BinaryOp::Sar
+                                    } else {
+                                        BinaryOp::Shr
+                                    }
+                                }
                                 _ => unreachable!(),
                             };
 
@@ -2784,6 +2791,7 @@ impl Display for BinaryOp {
             BinaryOp::Xor => write!(f, "xor")?,
             BinaryOp::Shl => write!(f, "shl")?,
             BinaryOp::Shr => write!(f, "shr")?,
+            BinaryOp::Sar => write!(f, "sar")?,
         }
         Ok(())
     }
