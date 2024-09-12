@@ -113,6 +113,7 @@
     (Copy (Constant (Integer (+ x y))) dst)
 )
 
+; Constant folding for jumps
 (rewrite
     (JumpIfZero (Constant (Integer 0)) label)
     (Jump label)

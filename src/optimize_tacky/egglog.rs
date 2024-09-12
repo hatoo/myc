@@ -1,6 +1,13 @@
-use std::collections::BTreeMap;
+use std::{
+    collections::{BTreeMap, HashMap},
+    f32::consts::E,
+};
 
-use egglog::ast::{Expr, Symbol};
+use ecow::EcoString;
+use egglog::{
+    ast::{Expr, Literal, Symbol},
+    EGraph, Term, TermDag, TermId, Value,
+};
 use ordered_float::OrderedFloat;
 
 use crate::{
@@ -198,7 +205,7 @@ impl<'a> ToEgglogExpr for Ssa<'a, Instruction> {
                 Expr::call(
                     "Phi",
                     vec![
-                        Expr::lit(Symbol::from(name.as_str())),
+                        Expr::call("Var", Some(Expr::lit(Symbol::from(name.as_str())))),
                         Expr::call("vec-of", table),
                     ],
                 )
@@ -239,7 +246,7 @@ fn node_egglog<'a>(ssa: &Ssa<'a, Instruction>, id: usize) -> Expr {
         Expr::call(
             "Phi",
             vec![
-                Expr::lit(Symbol::from(name.as_str())),
+                Expr::call("Var", Some(Expr::lit(Symbol::from(name.as_str())))),
                 Expr::call("vec-of", table),
             ],
         )
@@ -275,6 +282,8 @@ pub fn do_egglog<'a>(ssa: &Ssa<'a, Instruction>) {
 
     egraph.parse_and_run_program("(run 1000)").unwrap();
 
+    dbg!(&ssa.cfg.entry);
+
     for (id, value) in values {
         println!("{}:\n {}", id, egraph.extract_value_to_string(value));
     }
@@ -288,6 +297,123 @@ pub fn do_egglog<'a>(ssa: &Ssa<'a, Instruction>) {
 
     println!("{}", egraph.extract_value_to_string(v));
     */
+}
+
+trait FromEgglog {
+    fn from_egglog(termdag: &TermDag, term: &Term) -> Self;
+}
+
+impl FromEgglog for i64 {
+    fn from_egglog(_termdag: &TermDag, term: &Term) -> Self {
+        match term {
+            Term::Lit(Literal::Int(i)) => *i,
+            _ => panic!(),
+        }
+    }
+}
+
+impl FromEgglog for f64 {
+    fn from_egglog(_termdag: &TermDag, term: &Term) -> Self {
+        match term {
+            Term::Lit(Literal::F64(f)) => f.into_inner(),
+            _ => panic!(),
+        }
+    }
+}
+
+impl FromEgglog for Const {
+    fn from_egglog(termdag: &TermDag, term: &Term) -> Self {
+        match term {
+            Term::App(head, args) => match head.as_str() {
+                // TODO: Handle other types
+                "Integer" => Const::Int(i64::from_egglog(termdag, &termdag.get(args[0])) as i32),
+                "Double" => Const::Double(f64::from_egglog(termdag, &termdag.get(args[0]))),
+                _ => panic!(),
+            },
+            _ => panic!(),
+        }
+    }
+}
+
+impl FromEgglog for EcoString {
+    fn from_egglog(_termdag: &TermDag, term: &Term) -> Self {
+        match term {
+            Term::Lit(Literal::String(s)) => s.as_str().into(),
+            _ => panic!(),
+        }
+    }
+}
+
+impl FromEgglog for Val {
+    fn from_egglog(termdag: &TermDag, term: &Term) -> Self {
+        match term {
+            Term::App(head, args) => match head.as_str() {
+                "Constant" => Val::Constant(Const::from_egglog(termdag, &termdag.get(args[0]))),
+                "Var" => Val::Var(EcoString::from_egglog(termdag, &termdag.get(args[0]))),
+                "Static" => Val::Var(EcoString::from_egglog(termdag, &termdag.get(args[0]))),
+                _ => panic!(),
+            },
+            _ => panic!(),
+        }
+    }
+}
+
+impl FromEgglog for UnaryOp {
+    fn from_egglog(_termdag: &TermDag, term: &Term) -> Self {
+        match term {
+            Term::App(head, _) => match head.as_str() {
+                "Negate" => UnaryOp::Negate,
+                "Complement" => UnaryOp::Complement,
+                "Not" => UnaryOp::Not,
+                _ => panic!(),
+            },
+            _ => panic!(),
+        }
+    }
+}
+
+impl FromEgglog for BinaryOp {
+    fn from_egglog(_termdag: &TermDag, term: &Term) -> Self {
+        match term {
+            Term::App(head, _) => match head.as_str() {
+                "Add" => BinaryOp::Add,
+                "Subtract" => BinaryOp::Subtract,
+                "Multiply" => BinaryOp::Multiply,
+                "Divide" => BinaryOp::Divide,
+                "Remainder" => BinaryOp::Remainder,
+                "Equal" => BinaryOp::Equal,
+                "NotEqual" => BinaryOp::NotEqual,
+                "LessThan" => BinaryOp::LessThan,
+                "LessOrEqual" => BinaryOp::LessOrEqual,
+                "GreaterThan" => BinaryOp::GreaterThan,
+                "GreaterOrEqual" => BinaryOp::GreaterOrEqual,
+                _ => panic!(),
+            },
+            _ => panic!(),
+        }
+    }
+}
+
+fn parse_egglog_block(
+    egraph: &EGraph,
+    value: Value,
+) -> (
+    HashMap<EcoString, HashMap<usize, EcoString>>,
+    Vec<Instruction>,
+) {
+    let (termdag, term) = egraph.extract_value(value);
+
+    let v = match &term {
+        Term::App(head, args) => match head.as_str() {
+            "vec-of" => args.as_slice(),
+            _ => &[],
+        },
+        _ => panic!(),
+    };
+
+    let mut index = 0;
+
+    todo!()
 }
 
 #[test]
