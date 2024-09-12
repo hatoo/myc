@@ -42,6 +42,8 @@ impl ToEgglogExpr for BinaryOp {
             BinaryOp::LessOrEqual => Expr::call("LessOrEqual", None),
             BinaryOp::GreaterThan => Expr::call("GreaterThan", None),
             BinaryOp::GreaterOrEqual => Expr::call("GreaterOrEqual", None),
+            BinaryOp::BitAnd => Expr::call("BitAnd", None),
+            BinaryOp::BitOr => Expr::call("BitOr", None),
         }
     }
 }

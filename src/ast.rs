@@ -615,11 +615,15 @@ pub enum BinaryOp {
     LessOrEqual,
     GreaterThan,
     GreaterOrEqual,
+    BitAnd,
+    BitOr,
 }
 
 impl BinaryOp {
     fn precedence(&self) -> usize {
         match self {
+            Self::BitAnd => 2,
+            Self::BitOr => 4,
             Self::Or => 5,
             Self::And => 10,
             Self::Equal | Self::NotEqual => 30,
@@ -648,6 +652,8 @@ impl TryFrom<&Token> for BinaryOp {
             Token::LessThanEquals => Ok(Self::LessOrEqual),
             Token::GreaterThan => Ok(Self::GreaterThan),
             Token::GreaterThanEquals => Ok(Self::GreaterOrEqual),
+            Token::Ampersand => Ok(Self::BitAnd),
+            Token::Pipe => Ok(Self::BitOr),
             _ => Err(()),
         }
     }
@@ -1819,7 +1825,7 @@ impl<'a> Parser<'a> {
                     ty: VarType::Void,
                 })
             }
-            Token::Ampersands => {
+            Token::Ampersand => {
                 self.advance();
                 let exp = self.parse_cast_exp()?;
                 Ok(Expression::AddrOf {

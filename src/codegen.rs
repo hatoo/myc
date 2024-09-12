@@ -699,6 +699,8 @@ impl<'a> CodeGen<'a> {
                         tacky::BinaryOp::Add => Binary::Simple(BinaryOp::Add),
                         tacky::BinaryOp::Subtract => Binary::Simple(BinaryOp::Sub),
                         tacky::BinaryOp::Multiply => Binary::Simple(BinaryOp::Mult),
+                        tacky::BinaryOp::BitAnd => Binary::Simple(BinaryOp::And),
+                        tacky::BinaryOp::BitOr => Binary::Simple(BinaryOp::Or),
                         tacky::BinaryOp::Divide => Binary::Divide,
                         tacky::BinaryOp::Remainder => Binary::Remainder,
                         tacky::BinaryOp::Equal => Binary::Compare(CondCode::E),
