@@ -1,17 +1,15 @@
-use std::{
-    collections::{BTreeMap, HashMap},
-    f32::consts::E,
-};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use ecow::EcoString;
 use egglog::{
     ast::{Expr, Literal, Symbol},
-    EGraph, Term, TermDag, TermId, Value,
+    EGraph, Term, TermDag, Value,
 };
 use ordered_float::OrderedFloat;
 
 use crate::{
     ast::Const,
+    control_flow::NodeId,
     ssa::Ssa,
     tacky::{BinaryOp, Instruction, UnaryOp, Val},
 };
@@ -246,7 +244,7 @@ fn node_egglog<'a>(ssa: &Ssa<'a, Instruction>, id: usize) -> Expr {
         Expr::call(
             "Phi",
             vec![
-                Expr::call("Var", Some(Expr::lit(Symbol::from(name.as_str())))),
+                Expr::lit(Symbol::from(name.as_str())),
                 Expr::call("vec-of", table),
             ],
         )
@@ -264,7 +262,7 @@ fn node_egglog<'a>(ssa: &Ssa<'a, Instruction>, id: usize) -> Expr {
     Expr::call("Block", vec![Expr::call("vec-of", exprs)])
 }
 
-pub fn do_egglog<'a>(ssa: &Ssa<'a, Instruction>) {
+pub fn do_egglog<'a>(ssa: &Ssa<'a, Instruction>) -> Vec<Instruction> {
     const PRELUDE: &str = include_str!("./prelude.egg");
 
     let mut egraph = egglog::EGraph::default();
@@ -282,21 +280,19 @@ pub fn do_egglog<'a>(ssa: &Ssa<'a, Instruction>) {
 
     egraph.parse_and_run_program("(run 1000)").unwrap();
 
-    dbg!(&ssa.cfg.entry);
-
-    for (id, value) in values {
-        println!("{}:\n {}", id, egraph.extract_value_to_string(value));
-    }
-
-    /*
-    let program = ssa.to_egglog_expr();
-
-    let (_, v) = egraph.eval_expr(&program).unwrap();
-
-    egraph.parse_and_run_program("(run 1000)").unwrap();
-
-    println!("{}", egraph.extract_value_to_string(v));
-    */
+    let label_map = ssa
+        .cfg
+        .label_map
+        .iter()
+        .filter_map(|(l, id)| {
+            if let NodeId::Block(id) = id {
+                Some((l.clone(), *id))
+            } else {
+                None
+            }
+        })
+        .collect();
+    reconstruct(&label_map, &egraph, &values)
 }
 
 trait FromEgglog {
@@ -548,6 +544,56 @@ struct Phi {
     table: HashMap<usize, EcoString>,
 }
 
+impl FromEgglog for Phi {
+    fn from_egglog(termdag: &TermDag, term: &Term) -> Self {
+        if let Term::App(head, args) = term {
+            match head.as_str() {
+                "Phi" => {
+                    let name = EcoString::from_egglog(termdag, &termdag.get(args[0]));
+
+                    let table = if let Term::App(head, args) = &termdag.get(args[1]) {
+                        match head.as_str() {
+                            "vec-of" => args
+                                .iter()
+                                .map(|arg| {
+                                    if let Term::App(head, args) = &termdag.get(*arg) {
+                                        match head.as_str() {
+                                            "P" => {
+                                                let val = EcoString::from_egglog(
+                                                    termdag,
+                                                    &termdag.get(args[0]),
+                                                );
+                                                let pred = i64::from_egglog(
+                                                    termdag,
+                                                    &termdag.get(args[1]),
+                                                )
+                                                    as usize;
+
+                                                (pred, val)
+                                            }
+                                            _ => panic!(),
+                                        }
+                                    } else {
+                                        panic!();
+                                    }
+                                })
+                                .collect::<HashMap<_, _>>(),
+                            _ => panic!(),
+                        }
+                    } else {
+                        panic!();
+                    };
+
+                    Self { name, table }
+                }
+                _ => panic!(),
+            }
+        } else {
+            panic!();
+        }
+    }
+}
+
 fn parse_egglog_block(
     egraph: &EGraph,
     value: Value,
@@ -565,9 +611,113 @@ fn parse_egglog_block(
         _ => panic!(),
     };
 
+    let mut insts = Vec::new();
     let mut index = 0;
 
-    todo!()
+    if index < v.len() {
+        if let Term::App(head, _) = termdag.get(v[index]) {
+            match head.as_str() {
+                "Label" => {
+                    insts.push(Instruction::from_egglog(&termdag, &termdag.get(v[index])));
+                    index += 1;
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let mut phis = HashMap::new();
+    while index < v.len() {
+        if let Term::App(head, _) = termdag.get(v[index]) {
+            match head.as_str() {
+                "Phi" => {
+                    let phi = Phi::from_egglog(&termdag, &termdag.get(v[index]));
+                    phis.insert(phi.name, phi.table);
+                    index += 1;
+                }
+                _ => {
+                    break;
+                }
+            }
+        }
+    }
+
+    for i in &v[index..] {
+        insts.push(Instruction::from_egglog(&termdag, &termdag.get(*i)));
+    }
+
+    (phis, insts)
+}
+
+fn reconstruct(
+    label_map: &HashMap<EcoString, usize>,
+    egraph: &EGraph,
+    map: &BTreeMap<usize, Value>,
+) -> Vec<Instruction> {
+    let mut phis = HashMap::new();
+    let mut insts_map = BTreeMap::new();
+
+    for (id, value) in map {
+        let (p, insts) = parse_egglog_block(egraph, value.clone());
+        phis.insert(*id, p);
+        insts_map.insert(*id, insts);
+    }
+
+    let mut succs = HashMap::new();
+
+    for (&id, insts) in &insts_map {
+        match insts.last() {
+            Some(Instruction::Jump(l)) => {
+                let to = label_map[l];
+                succs.entry(id).or_insert_with(HashSet::new).insert(to);
+            }
+            Some(Instruction::JumpIfZero { dst, .. }) => {
+                let to = label_map[dst];
+                succs.entry(id).or_insert_with(HashSet::new).insert(to);
+
+                if let Some(next) = insts_map.keys().skip_while(|i| **i <= id).next() {
+                    succs.entry(id).or_insert_with(HashSet::new).insert(*next);
+                }
+            }
+            Some(Instruction::JumpIfNotZero { dst, .. }) => {
+                let to = label_map[dst];
+                succs.entry(id).or_insert_with(HashSet::new).insert(to);
+                if let Some(next) = insts_map.keys().skip_while(|i| **i <= id).next() {
+                    succs.entry(id).or_insert_with(HashSet::new).insert(*next);
+                }
+            }
+            _ => {
+                if let Some(next) = insts_map.keys().skip_while(|i| **i <= id).next() {
+                    succs.entry(id).or_insert_with(HashSet::new).insert(*next);
+                }
+            }
+        }
+    }
+
+    for (&id, insts) in &mut insts_map {
+        if let Some(succs) = succs.get(&id) {
+            for succ in succs {
+                let phi = phis.get(succ).unwrap();
+
+                for (name, table) in phi {
+                    let incoming = &table[&id];
+
+                    insts.push(Instruction::Copy {
+                        src: Val::Var(incoming.clone()),
+                        dst: Val::Var(name.clone()),
+                    });
+                }
+            }
+        }
+    }
+
+    let mut insts = Vec::new();
+
+    for (_, mut i) in insts_map {
+        insts.append(&mut i);
+    }
+
+    insts
 }
 
 #[test]

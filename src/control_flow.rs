@@ -69,7 +69,7 @@ pub struct Cfg<I> {
     pub entry: Entry,
     exit: Exit,
     pub nodes: BTreeMap<usize, Node<I>>,
-    label_map: HashMap<EcoString, NodeId>,
+    pub label_map: HashMap<EcoString, NodeId>,
 }
 
 impl<I> Cfg<I>

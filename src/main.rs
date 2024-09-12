@@ -169,10 +169,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let cfg = Cfg::new(&f.body);
                 let ssa = Ssa::new(cfg, &mut type_checker.sym_table);
 
-                do_egglog(&ssa);
+                f.body = do_egglog(&ssa);
             }
         }
 
+        print_tacky(&tacky);
         return Ok(());
     }
 

@@ -74,7 +74,7 @@
         Val i64 Val
     )
 
-    (Phi Val PVec)
+    (Phi String PVec)
 )
 
 (sort VecInstructionSort (Vec Instruction))
