@@ -541,7 +541,7 @@ impl FromEgglog for Instruction {
 
 struct Phi {
     name: EcoString,
-    table: HashMap<usize, EcoString>,
+    table: HashMap<usize, Val>,
 }
 
 impl FromEgglog for Phi {
@@ -559,7 +559,7 @@ impl FromEgglog for Phi {
                                     if let Term::App(head, args) = &termdag.get(*arg) {
                                         match head.as_str() {
                                             "P" => {
-                                                let val = EcoString::from_egglog(
+                                                let val = Val::from_egglog(
                                                     termdag,
                                                     &termdag.get(args[0]),
                                                 );
@@ -597,11 +597,17 @@ impl FromEgglog for Phi {
 fn parse_egglog_block(
     egraph: &EGraph,
     value: Value,
-) -> (
-    HashMap<EcoString, HashMap<usize, EcoString>>,
-    Vec<Instruction>,
-) {
+) -> (HashMap<EcoString, HashMap<usize, Val>>, Vec<Instruction>) {
     let (termdag, term) = egraph.extract_value(value);
+
+    let term = if let Term::App(head, args) = &term {
+        if head.as_str() != "Block" {
+            panic!();
+        }
+        termdag.get(args[0])
+    } else {
+        panic!();
+    };
 
     let v = match &term {
         Term::App(head, args) => match head.as_str() {
@@ -703,7 +709,7 @@ fn reconstruct(
                     let incoming = &table[&id];
 
                     insts.push(Instruction::Copy {
-                        src: Val::Var(incoming.clone()),
+                        src: incoming.clone(),
                         dst: Val::Var(name.clone()),
                     });
                 }
