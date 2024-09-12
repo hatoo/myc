@@ -14,7 +14,7 @@ use myc::{
     codegen::CodeGen,
     control_flow::Cfg,
     lexer::{lexer, TokenSpannedError},
-    optimize_tacky::egglog::do_egglog,
+    optimize_tacky::{egglog::do_egglog, optimize, OptimizeOption},
     semantics::{LoopLabel, TypeChecker, VarResolver},
     span::SpannedError,
     ssa::Ssa,
@@ -173,6 +173,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
+        optimize(
+            &mut tacky,
+            &type_checker.sym_table,
+            &[OptimizeOption::DeadCodeElimination],
+        );
         print_tacky(&tacky);
         return Ok(());
     }
