@@ -394,6 +394,160 @@ impl FromEgglog for BinaryOp {
     }
 }
 
+impl FromEgglog for Instruction {
+    fn from_egglog(termdag: &TermDag, term: &Term) -> Self {
+        if let Term::App(head, args) = term {
+            match head.as_str() {
+                "Nop" => Instruction::Nop,
+                "Return" => {
+                    if let Term::App(head, args) = &termdag.get(args[0]) {
+                        match head.as_str() {
+                            "Some" => Instruction::Return(Some(Val::from_egglog(
+                                termdag,
+                                &termdag.get(args[0]),
+                            ))),
+                            "None" => Instruction::Return(None),
+                            _ => panic!(),
+                        }
+                    } else {
+                        panic!();
+                    }
+                }
+                "Cast" => Instruction::Cast {
+                    src: Val::from_egglog(termdag, &termdag.get(args[0])),
+                    dst: Val::from_egglog(termdag, &termdag.get(args[1])),
+                },
+                "Unary" => {
+                    let op = UnaryOp::from_egglog(termdag, &termdag.get(args[0]));
+                    let src = Val::from_egglog(termdag, &termdag.get(args[1]));
+                    let dst = Val::from_egglog(termdag, &termdag.get(args[2]));
+
+                    Instruction::Unary { op, src, dst }
+                }
+                "Binary" => {
+                    let op = BinaryOp::from_egglog(termdag, &termdag.get(args[0]));
+                    let lhs = Val::from_egglog(termdag, &termdag.get(args[1]));
+                    let rhs = Val::from_egglog(termdag, &termdag.get(args[2]));
+                    let dst = Val::from_egglog(termdag, &termdag.get(args[3]));
+
+                    Instruction::Binary { op, lhs, rhs, dst }
+                }
+                "Copy" => {
+                    let src = Val::from_egglog(termdag, &termdag.get(args[0]));
+                    let dst = Val::from_egglog(termdag, &termdag.get(args[1]));
+
+                    Instruction::Copy { src, dst }
+                }
+                "GetAddress" => {
+                    let src = Val::from_egglog(termdag, &termdag.get(args[0]));
+                    let dst = Val::from_egglog(termdag, &termdag.get(args[1]));
+
+                    Instruction::GetAddress { src, dst }
+                }
+                "Load" => {
+                    let src = Val::from_egglog(termdag, &termdag.get(args[0]));
+                    let dst = Val::from_egglog(termdag, &termdag.get(args[1]));
+
+                    Instruction::Load { src, dst }
+                }
+                "Store" => {
+                    let src = Val::from_egglog(termdag, &termdag.get(args[0]));
+                    let dst = Val::from_egglog(termdag, &termdag.get(args[1]));
+
+                    Instruction::Store { src, dst }
+                }
+                "Jump" => {
+                    let l = EcoString::from_egglog(termdag, &termdag.get(args[0]));
+
+                    Instruction::Jump(l)
+                }
+                "JumpIfZero" => {
+                    let src = Val::from_egglog(termdag, &termdag.get(args[0]));
+                    let dst = EcoString::from_egglog(termdag, &termdag.get(args[1]));
+
+                    Instruction::JumpIfZero { src, dst }
+                }
+                "JumpIfNotZero" => {
+                    let src = Val::from_egglog(termdag, &termdag.get(args[0]));
+                    let dst = EcoString::from_egglog(termdag, &termdag.get(args[1]));
+
+                    Instruction::JumpIfNotZero { src, dst }
+                }
+                "Label" => {
+                    let l = EcoString::from_egglog(termdag, &termdag.get(args[0]));
+
+                    Instruction::Label(l)
+                }
+                "FunCall" => {
+                    let callee = Val::from_egglog(termdag, &termdag.get(args[0]));
+                    let fargs = if let Term::App(head, args) = &termdag.get(args[1]) {
+                        match head.as_str() {
+                            "vec-of" => args
+                                .iter()
+                                .map(|arg| Val::from_egglog(termdag, &termdag.get(*arg)))
+                                .collect::<Vec<_>>(),
+                            _ => panic!(),
+                        }
+                    } else {
+                        panic!();
+                    };
+
+                    let dst = if let Term::App(head, args) = &termdag.get(args[2]) {
+                        match head.as_str() {
+                            "Some" => Some(Val::from_egglog(termdag, &termdag.get(args[0]))),
+                            "None" => None,
+                            _ => panic!(),
+                        }
+                    } else {
+                        panic!();
+                    };
+
+                    Instruction::FunCall {
+                        callee,
+                        args: fargs,
+                        dst,
+                    }
+                }
+                "AddPtr" => {
+                    let ptr = Val::from_egglog(termdag, &termdag.get(args[0]));
+                    let index = Val::from_egglog(termdag, &termdag.get(args[1]));
+                    let scale = i64::from_egglog(termdag, &termdag.get(args[2])) as usize;
+                    let dst = Val::from_egglog(termdag, &termdag.get(args[3]));
+
+                    Instruction::AddPtr {
+                        ptr,
+                        index,
+                        scale,
+                        dst,
+                    }
+                }
+                "CopyToOffset" => {
+                    let src = Val::from_egglog(termdag, &termdag.get(args[0]));
+                    let dst = Val::from_egglog(termdag, &termdag.get(args[1]));
+                    let offset = i64::from_egglog(termdag, &termdag.get(args[2])) as usize;
+
+                    Instruction::CopyToOffset { src, dst, offset }
+                }
+                "CopyFromOffset" => {
+                    let src = Val::from_egglog(termdag, &termdag.get(args[0]));
+                    let offset = i64::from_egglog(termdag, &termdag.get(args[1])) as usize;
+                    let dst = Val::from_egglog(termdag, &termdag.get(args[2]));
+
+                    Instruction::CopyFromOffset { src, offset, dst }
+                }
+                _ => panic!(),
+            }
+        } else {
+            panic!();
+        }
+    }
+}
+
+struct Phi {
+    name: EcoString,
+    table: HashMap<usize, EcoString>,
+}
+
 fn parse_egglog_block(
     egraph: &EGraph,
     value: Value,
