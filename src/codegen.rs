@@ -160,8 +160,24 @@ pub enum BinaryOp {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Pseudo {
     // Must be placed in read only section
-    Double { value: f64, alignment: usize },
-    Mem { name: EcoString, offset: usize },
+    Double {
+        value: f64,
+        alignment: usize,
+    },
+    Mem {
+        name: EcoString,
+        offset: usize,
+    },
+    // Replaced with reg if register relocation is failed
+    FallBackReg {
+        name: EcoString,
+        reg: Register,
+    },
+    FallBackRegMem {
+        name: EcoString,
+        offset: usize,
+        reg: Register,
+    },
 }
 
 impl Pseudo {
@@ -349,11 +365,11 @@ fn divide_into_assembly_sizes(size: usize) -> impl Iterator<Item = (AssemblyType
 pub struct CodeGen<'a> {
     const_table: ConstTable,
     label_counter: usize,
-    symbol_table: &'a SymbolTable,
+    symbol_table: &'a mut SymbolTable,
 }
 
 impl<'a> CodeGen<'a> {
-    pub fn new(symbol_table: &'a SymbolTable) -> Self {
+    pub fn new(symbol_table: &'a mut SymbolTable) -> Self {
         Self {
             const_table: ConstTable::default(),
             label_counter: 0,
@@ -1389,16 +1405,27 @@ impl<'a> CodeGen<'a> {
                 }
                 tacky::Instruction::Load { src, dst } => {
                     let size = self.symbol_table.size(&dst.ty(self.symbol_table));
+                    let src_name = self.gen_label("Load");
+                    let src_attr = self.symbol_table[src.var()].clone();
+                    self.symbol_table.insert(src_name.clone(), src_attr);
+
                     let Val::Var(dst) = dst else { unreachable!() };
                     body.push(Instruction::Mov {
                         ty: AssemblyType::QuadWord,
                         src: src.into(),
-                        dst: Operand::Reg(Register::Ax),
+                        dst: Operand::Pseudo(Pseudo::FallBackReg {
+                            name: src_name.clone(),
+                            reg: Register::R10,
+                        }),
                     });
                     for (asm, offset) in divide_into_assembly_sizes(size) {
                         body.push(Instruction::Mov {
                             ty: asm,
-                            src: Operand::Memory(Register::Ax, offset as i32),
+                            src: Operand::Pseudo(Pseudo::FallBackRegMem {
+                                name: src_name.clone(),
+                                offset,
+                                reg: Register::R10,
+                            }),
                             dst: Operand::Pseudo(Pseudo::Mem {
                                 name: dst.clone(),
                                 offset,
@@ -1886,6 +1913,12 @@ fn pseudo_to_stack(
                     alignment,
                 } => {
                     *operand = Operand::Data(const_table.label(*d, *alignment), 0);
+                }
+                Pseudo::FallBackReg { reg, .. } => {
+                    *operand = Operand::Reg(*reg);
+                }
+                Pseudo::FallBackRegMem { offset, reg, .. } => {
+                    *operand = Operand::Memory(*reg, *offset as i32);
                 }
                 Pseudo::Mem { name, offset } => match &symbol_table[name] {
                     semantics::type_check::Attr::Static { .. } => {

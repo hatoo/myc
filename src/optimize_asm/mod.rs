@@ -65,12 +65,18 @@ pub fn register_allocation(
     graph.color_graph();
     let (register_map, callee_saved) = graph.create_register_map();
 
-    let replace = |op: &mut Operand| {
-        if let Operand::Pseudo(Pseudo::Mem { name, offset: _ }) = op {
+    let replace = |op: &mut Operand| match op {
+        Operand::Pseudo(Pseudo::Mem { name, offset: _ } | Pseudo::FallBackReg { name, .. }) => {
             if let Some(reg) = register_map.get(name) {
                 *op = Operand::Reg(*reg);
             }
         }
+        Operand::Pseudo(Pseudo::FallBackRegMem { name, offset, .. }) => {
+            if let Some(reg) = register_map.get(name) {
+                *op = Operand::Memory(*reg, *offset as i32);
+            }
+        }
+        _ => {}
     };
 
     for inst in program {
@@ -150,6 +156,7 @@ enum NodeId {
     Pseudo(EcoString),
 }
 
+/*
 impl From<NodeId> for Operand {
     fn from(val: NodeId) -> Self {
         match val {
@@ -158,11 +165,15 @@ impl From<NodeId> for Operand {
         }
     }
 }
+*/
 
 fn node_ids(op: &Operand) -> Vec<NodeId> {
     match op {
         Operand::Reg(reg) => vec![NodeId::Register(*reg)],
         Operand::Pseudo(Pseudo::Mem { name, offset: 0 }) => vec![NodeId::Pseudo(name.clone())],
+        Operand::Pseudo(Pseudo::FallBackReg { name, .. } | Pseudo::FallBackRegMem { name, .. }) => {
+            vec![NodeId::Pseudo(name.clone())]
+        }
         // Operand::Data(name, _) => vec![NodeId::Pseudo(name.clone())],
         // Operand::Memory(r, _) => vec![NodeId::Register(*r)],
         Operand::Indexed { base, index, .. } => {
@@ -518,12 +529,24 @@ impl<'a> ColoringGraph<'a> {
             }
         }
 
-        let mut replace = |op: &mut Operand| {
-            if let Operand::Pseudo(Pseudo::Mem { name, offset: 0 }) = op {
+        let mut replace = |op: &mut Operand| match op {
+            Operand::Pseudo(Pseudo::Mem { name, offset: 0 } | Pseudo::FallBackReg { name, .. }) => {
                 if let Some(reg) = dsu.find(&NodeId::Pseudo(name.clone())).into() {
-                    *op = reg.into();
+                    match reg {
+                        NodeId::Pseudo(new_name) => *name = new_name,
+                        NodeId::Register(reg) => *op = Operand::Reg(reg),
+                    }
                 }
             }
+            Operand::Pseudo(Pseudo::FallBackRegMem { name, offset, .. }) => {
+                if let Some(reg) = dsu.find(&NodeId::Pseudo(name.clone())).into() {
+                    match reg {
+                        NodeId::Pseudo(new_name) => *name = new_name,
+                        NodeId::Register(reg) => *op = Operand::Memory(reg, *offset as i32),
+                    }
+                }
+            }
+            _ => {}
         };
         for inst in insts {
             match inst {

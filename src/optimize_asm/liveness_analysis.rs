@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    codegen::{Instruction, Operand, Register},
+    codegen::{Instruction, Operand, Pseudo, Register},
     control_flow::{self, Cfg},
     semantics::type_check::SymbolTable,
 };
@@ -69,8 +69,14 @@ impl<'a> Annotation<'a> {
             }
 
             for op in used.iter().chain(updated.iter()) {
-                if let Operand::Memory(r, _) = op {
-                    current_live_variables.insert(NodeId::Register(*r));
+                match op {
+                    Operand::Memory(r, ..) => {
+                        current_live_variables.insert(NodeId::Register(*r));
+                    }
+                    Operand::Pseudo(Pseudo::FallBackRegMem { name, .. }) => {
+                        current_live_variables.insert(NodeId::Pseudo(name.clone()));
+                    }
+                    _ => {}
                 }
             }
         }
