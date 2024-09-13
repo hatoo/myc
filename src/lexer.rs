@@ -478,8 +478,7 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
                         data: Token::TwoPlus,
                         span: index - 2..index,
                     });
-                }
-                if index < src.len() && src[index] == b'=' {
+                } else if index < src.len() && src[index] == b'=' {
                     index += 1;
                     tokens.push(Spanned {
                         data: Token::PlusEqual,

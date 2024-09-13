@@ -1866,6 +1866,40 @@ impl<'a> Parser<'a> {
                     }))
                 }
             }
+            Token::TwoPlus => {
+                self.advance();
+                let exp = self.parse_cast_exp()?;
+
+                Ok(Expression::Assignment {
+                    lhs: Box::new(exp.clone()),
+                    rhs: Box::new(Expression::Binary {
+                        op: BinaryOp::Add,
+                        lhs: Box::new(exp),
+                        rhs: Box::new(Expression::Constant(TokenSpanned {
+                            data: Const::Int(1),
+                            span: 0..0,
+                        })),
+                        ty: VarType::Void,
+                    }),
+                })
+            }
+            Token::TwoHyphens => {
+                self.advance();
+                let exp = self.parse_cast_exp()?;
+
+                Ok(Expression::Assignment {
+                    lhs: Box::new(exp.clone()),
+                    rhs: Box::new(Expression::Binary {
+                        op: BinaryOp::Subtract,
+                        lhs: Box::new(exp),
+                        rhs: Box::new(Expression::Constant(TokenSpanned {
+                            data: Const::Int(1),
+                            span: 0..0,
+                        })),
+                        ty: VarType::Void,
+                    }),
+                })
+            }
             _ => self.parse_postfix_exp(),
         }
     }
