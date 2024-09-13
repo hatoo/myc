@@ -1982,6 +1982,9 @@ impl<'a> Parser<'a> {
                 Token::Question => Op::Condition,
                 Token::PlusEqual => Op::BinaryAssign(BinaryOp::Add),
                 Token::MinusEqual => Op::BinaryAssign(BinaryOp::Subtract),
+                Token::AsteriskEqual => Op::BinaryAssign(BinaryOp::Multiply),
+                Token::SlashEqual => Op::BinaryAssign(BinaryOp::Divide),
+                Token::PercentEqual => Op::BinaryAssign(BinaryOp::Remainder),
                 _ if BinaryOp::try_from(token.data).is_ok() => {
                     Op::Binary(BinaryOp::try_from(token.data).unwrap())
                 }

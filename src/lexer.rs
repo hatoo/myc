@@ -161,6 +161,9 @@ pub enum Token {
     Caret,
     PlusEqual,
     MinusEqual,
+    AsteriskEqual,
+    SlashEqual,
+    PercentEqual,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -402,7 +405,13 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
             }
             b'/' => {
                 index += 1;
-                if index < src.len() && src[index] == b'/' {
+                if index < src.len() && src[index] == b'=' {
+                    index += 1;
+                    tokens.push(Spanned {
+                        data: Token::SlashEqual,
+                        span: index - 2..index,
+                    });
+                } else if index < src.len() && src[index] == b'/' {
                     while index < src.len() && src[index] != b'\n' {
                         index += 1;
                     }
@@ -479,18 +488,34 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
                 }
             }
             b'*' => {
-                tokens.push(Spanned {
-                    data: Token::Asterisk,
-                    span: index..index + 1,
-                });
                 index += 1;
+                if index < src.len() && src[index] == b'=' {
+                    index += 1;
+                    tokens.push(Spanned {
+                        data: Token::AsteriskEqual,
+                        span: index - 2..index,
+                    });
+                } else {
+                    tokens.push(Spanned {
+                        data: Token::Asterisk,
+                        span: index - 1..index,
+                    });
+                }
             }
             b'%' => {
-                tokens.push(Spanned {
-                    data: Token::Percent,
-                    span: index..index + 1,
-                });
                 index += 1;
+                if index < src.len() && src[index] == b'=' {
+                    index += 1;
+                    tokens.push(Spanned {
+                        data: Token::PercentEqual,
+                        span: index - 2..index,
+                    });
+                } else {
+                    tokens.push(Spanned {
+                        data: Token::Percent,
+                        span: index - 1..index,
+                    });
+                }
             }
             b'!' => {
                 index += 1;
