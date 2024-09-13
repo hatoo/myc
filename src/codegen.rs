@@ -224,6 +224,13 @@ impl Operand {
             ),
         }
     }
+
+    pub fn is_indirect(&self) -> bool {
+        matches!(
+            self,
+            Operand::Memory(_, _) | Operand::Pseudo(Pseudo::FallBackRegMem { .. })
+        )
+    }
 }
 
 impl From<tacky::Val> for Operand {
@@ -1415,7 +1422,7 @@ impl<'a> CodeGen<'a> {
                         src: src.into(),
                         dst: Operand::Pseudo(Pseudo::FallBackReg {
                             name: src_name.clone(),
-                            reg: Register::R10,
+                            reg: Register::R11,
                         }),
                     });
                     for (asm, offset) in divide_into_assembly_sizes(size) {
@@ -1424,7 +1431,7 @@ impl<'a> CodeGen<'a> {
                             src: Operand::Pseudo(Pseudo::FallBackRegMem {
                                 name: src_name.clone(),
                                 offset,
-                                reg: Register::R10,
+                                reg: Register::R11,
                             }),
                             dst: Operand::Pseudo(Pseudo::Mem {
                                 name: dst.clone(),
