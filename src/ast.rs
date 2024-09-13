@@ -1145,7 +1145,12 @@ impl<'a> Parser<'a> {
             } => {
                 self.advance();
                 let expr = self.atomic(|s| s.parse_expression(0));
-                self.expect(Token::SemiColon)?;
+                let res = self.expect(Token::SemiColon);
+                if let Err(err) = res {
+                    expr?;
+                    return Err(err);
+                }
+
                 Ok(Statement::Return(expr.ok()))
             }
             TokenSpanned {
