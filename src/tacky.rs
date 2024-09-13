@@ -936,6 +936,58 @@ impl<'a> InstructionGenerator<'a> {
 
                 ExpResult::DereferencedPointer(dst_ptr)
             }
+            Expression::Increment { exp, postfix } => {
+                let val = self.add_expression_and_convert(exp);
+
+                if *postfix {
+                    let dst = self.make_tmp_local(val.ty(self.symbol_table).clone());
+                    self.instructions.push(Instruction::Copy {
+                        src: val.clone(),
+                        dst: dst.clone(),
+                    });
+                    self.instructions.push(Instruction::Binary {
+                        op: BinaryOp::Add,
+                        lhs: val.clone(),
+                        rhs: Val::Constant(ast::Const::Int(1)),
+                        dst: val.clone(),
+                    });
+                    ExpResult::PlainOperand(dst)
+                } else {
+                    self.instructions.push(Instruction::Binary {
+                        op: BinaryOp::Add,
+                        lhs: val.clone(),
+                        rhs: Val::Constant(ast::Const::Int(1)),
+                        dst: val.clone(),
+                    });
+                    ExpResult::PlainOperand(val)
+                }
+            }
+            Expression::Decrement { exp, postfix } => {
+                let val = self.add_expression_and_convert(exp);
+
+                if *postfix {
+                    let dst = self.make_tmp_local(val.ty(self.symbol_table).clone());
+                    self.instructions.push(Instruction::Copy {
+                        src: val.clone(),
+                        dst: dst.clone(),
+                    });
+                    self.instructions.push(Instruction::Binary {
+                        op: BinaryOp::Subtract,
+                        lhs: val.clone(),
+                        rhs: Val::Constant(ast::Const::Int(1)),
+                        dst: val.clone(),
+                    });
+                    ExpResult::PlainOperand(dst)
+                } else {
+                    self.instructions.push(Instruction::Binary {
+                        op: BinaryOp::Subtract,
+                        lhs: val.clone(),
+                        rhs: Val::Constant(ast::Const::Int(1)),
+                        dst: val.clone(),
+                    });
+                    ExpResult::PlainOperand(val)
+                }
+            }
         }
     }
 

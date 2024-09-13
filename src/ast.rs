@@ -353,6 +353,14 @@ pub enum Expression {
         member: TokenSpanned<EcoString>,
         ty: VarType,
     },
+    Increment {
+        exp: Box<Expression>,
+        postfix: bool,
+    },
+    Decrement {
+        exp: Box<Expression>,
+        postfix: bool,
+    },
 }
 
 impl Expression {
@@ -390,6 +398,7 @@ impl Expression {
             Self::SizeofType(_) => &VarType::Base(BaseType::Ulong),
             Self::Dot { ty, .. } => ty,
             Self::Arrow { ty, .. } => ty,
+            Self::Increment { exp, .. } | Self::Decrement { exp, .. } => exp.ty(),
         }
     }
 
@@ -455,6 +464,7 @@ impl HasTokenSpan for Expression {
             Self::Arrow {
                 pointer, member, ..
             } => pointer.token_span().start..member.span.end,
+            Self::Increment { exp, .. } | Self::Decrement { exp, .. } => exp.token_span(),
         }
     }
 }
@@ -1766,6 +1776,18 @@ impl<'a> Parser<'a> {
                         ty: VarType::Void,
                     };
                 }
+                PostfixOp::Increment => {
+                    exp = Expression::Increment {
+                        exp: Box::new(exp),
+                        postfix: true,
+                    };
+                }
+                PostfixOp::Decrement => {
+                    exp = Expression::Decrement {
+                        exp: Box::new(exp),
+                        postfix: true,
+                    };
+                }
             }
         }
 
@@ -1803,6 +1825,14 @@ impl<'a> Parser<'a> {
                     self.expect(Token::CloseParen)?;
                 }
                 Ok(PostfixOp::Call(args))
+            }
+            Token::TwoPlus => {
+                self.advance();
+                Ok(PostfixOp::Increment)
+            }
+            Token::TwoHyphens => {
+                self.advance();
+                Ok(PostfixOp::Decrement)
             }
 
             _ => Err(()),
@@ -1870,34 +1900,18 @@ impl<'a> Parser<'a> {
                 self.advance();
                 let exp = self.parse_cast_exp()?;
 
-                Ok(Expression::Assignment {
-                    lhs: Box::new(exp.clone()),
-                    rhs: Box::new(Expression::Binary {
-                        op: BinaryOp::Add,
-                        lhs: Box::new(exp),
-                        rhs: Box::new(Expression::Constant(TokenSpanned {
-                            data: Const::Int(1),
-                            span: 0..0,
-                        })),
-                        ty: VarType::Void,
-                    }),
+                Ok(Expression::Increment {
+                    exp: Box::new(exp),
+                    postfix: false,
                 })
             }
             Token::TwoHyphens => {
                 self.advance();
                 let exp = self.parse_cast_exp()?;
 
-                Ok(Expression::Assignment {
-                    lhs: Box::new(exp.clone()),
-                    rhs: Box::new(Expression::Binary {
-                        op: BinaryOp::Subtract,
-                        lhs: Box::new(exp),
-                        rhs: Box::new(Expression::Constant(TokenSpanned {
-                            data: Const::Int(1),
-                            span: 0..0,
-                        })),
-                        ty: VarType::Void,
-                    }),
+                Ok(Expression::Decrement {
+                    exp: Box::new(exp),
+                    postfix: false,
                 })
             }
             _ => self.parse_postfix_exp(),
@@ -2120,4 +2134,6 @@ enum PostfixOp {
     Dot(TokenSpanned<EcoString>),
     Arrow(TokenSpanned<EcoString>),
     Call(Vec<Expression>),
+    Increment,
+    Decrement,
 }

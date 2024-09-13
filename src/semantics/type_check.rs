@@ -1273,6 +1273,17 @@ impl TypeChecker {
                     Err(Error::IncompatibleTypes(exp.token_span()))
                 }
             }
+            ast::Expression::Increment { exp, .. } | ast::Expression::Decrement { exp, .. } => {
+                let ty = self.check_expression_and_convert(exp)?;
+                if !ty.is_scalar() {
+                    return Err(Error::IncompatibleTypes(exp.token_span()));
+                }
+                if !exp.is_lvalue() {
+                    return Err(Error::IncompatibleTypes(exp.token_span()));
+                }
+
+                Ok(ty)
+            }
         }
     }
 

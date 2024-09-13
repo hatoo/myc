@@ -400,6 +400,14 @@ impl VarResolver {
                 self.resolve_expression(pointer)?;
                 Ok(())
             }
+            ast::Expression::Increment { exp, .. } => {
+                self.resolve_expression(exp)?;
+                Ok(())
+            }
+            ast::Expression::Decrement { exp, .. } => {
+                self.resolve_expression(exp)?;
+                Ok(())
+            }
         }
     }
 
