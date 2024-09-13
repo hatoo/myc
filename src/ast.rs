@@ -1985,6 +1985,11 @@ impl<'a> Parser<'a> {
                 Token::AsteriskEqual => Op::BinaryAssign(BinaryOp::Multiply),
                 Token::SlashEqual => Op::BinaryAssign(BinaryOp::Divide),
                 Token::PercentEqual => Op::BinaryAssign(BinaryOp::Remainder),
+                Token::AmpersandEqual => Op::BinaryAssign(BinaryOp::BitAnd),
+                Token::PipeEqual => Op::BinaryAssign(BinaryOp::BitOr),
+                Token::CaretEqual => Op::BinaryAssign(BinaryOp::Xor),
+                Token::TwoLessThanEqual => Op::BinaryAssign(BinaryOp::ShiftLeft),
+                Token::TwoGreaterThanEqual => Op::BinaryAssign(BinaryOp::ShiftRight),
                 _ if BinaryOp::try_from(token.data).is_ok() => {
                     Op::Binary(BinaryOp::try_from(token.data).unwrap())
                 }

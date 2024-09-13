@@ -164,6 +164,11 @@ pub enum Token {
     AsteriskEqual,
     SlashEqual,
     PercentEqual,
+    AmpersandEqual,
+    PipeEqual,
+    CaretEqual,
+    TwoLessThanEqual,
+    TwoGreaterThanEqual,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -540,6 +545,12 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
                         data: Token::TwoAmpersands,
                         span: index - 2..index,
                     });
+                } else if index < src.len() && src[index] == b'=' {
+                    index += 1;
+                    tokens.push(Spanned {
+                        data: Token::AmpersandEqual,
+                        span: index - 2..index,
+                    });
                 } else {
                     tokens.push(Spanned {
                         data: Token::Ampersand,
@@ -553,6 +564,12 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
                     index += 1;
                     tokens.push(Spanned {
                         data: Token::TwoPipes,
+                        span: index - 2..index,
+                    });
+                } else if index < src.len() && src[index] == b'=' {
+                    index += 1;
+                    tokens.push(Spanned {
+                        data: Token::PipeEqual,
                         span: index - 2..index,
                     });
                 } else {
@@ -587,10 +604,18 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
                     });
                 } else if index < src.len() && src[index] == b'<' {
                     index += 1;
-                    tokens.push(Spanned {
-                        data: Token::TwoLessThan,
-                        span: index - 2..index,
-                    });
+                    if index < src.len() && src[index] == b'=' {
+                        index += 1;
+                        tokens.push(Spanned {
+                            data: Token::TwoLessThanEqual,
+                            span: index - 3..index,
+                        });
+                    } else {
+                        tokens.push(Spanned {
+                            data: Token::TwoLessThan,
+                            span: index - 2..index,
+                        });
+                    }
                 } else {
                     tokens.push(Spanned {
                         data: Token::LessThan,
@@ -608,10 +633,18 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
                     });
                 } else if index < src.len() && src[index] == b'>' {
                     index += 1;
-                    tokens.push(Spanned {
-                        data: Token::TwoGreaterThan,
-                        span: index - 2..index,
-                    });
+                    if index < src.len() && src[index] == b'=' {
+                        index += 1;
+                        tokens.push(Spanned {
+                            data: Token::TwoGreaterThanEqual,
+                            span: index - 3..index,
+                        });
+                    } else {
+                        tokens.push(Spanned {
+                            data: Token::TwoGreaterThan,
+                            span: index - 2..index,
+                        });
+                    }
                 } else {
                     tokens.push(Spanned {
                         data: Token::GreaterThan,
@@ -723,11 +756,19 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
                 }
             }
             b'^' => {
-                tokens.push(Spanned {
-                    data: Token::Caret,
-                    span: index..index + 1,
-                });
                 index += 1;
+                if index < src.len() && src[index] == b'=' {
+                    index += 1;
+                    tokens.push(Spanned {
+                        data: Token::CaretEqual,
+                        span: index - 2..index,
+                    });
+                } else {
+                    tokens.push(Spanned {
+                        data: Token::Caret,
+                        span: index - 1..index,
+                    });
+                }
             }
 
             // TODO
