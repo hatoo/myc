@@ -1962,6 +1962,7 @@ impl<'a> Parser<'a> {
 
             enum Op {
                 Binary(BinaryOp),
+                BinaryAssign(BinaryOp),
                 Assign,
                 Condition,
             }
@@ -1970,7 +1971,7 @@ impl<'a> Parser<'a> {
                 fn precedence(&self) -> usize {
                     match self {
                         Self::Binary(op) => op.precedence(),
-                        Self::Assign => 1,
+                        Self::Assign | Self::BinaryAssign(_) => 1,
                         Self::Condition => 3,
                     }
                 }
@@ -1979,6 +1980,8 @@ impl<'a> Parser<'a> {
             let op = match token.data {
                 Token::Equal => Op::Assign,
                 Token::Question => Op::Condition,
+                Token::PlusEqual => Op::BinaryAssign(BinaryOp::Add),
+                Token::MinusEqual => Op::BinaryAssign(BinaryOp::Subtract),
                 _ if BinaryOp::try_from(token.data).is_ok() => {
                     Op::Binary(BinaryOp::try_from(token.data).unwrap())
                 }
@@ -1994,6 +1997,18 @@ impl<'a> Parser<'a> {
                             lhs: Box::new(left),
                             rhs: Box::new(right),
                         };
+                    }
+                    Op::BinaryAssign(bin_op) => {
+                        let right = self.parse_expression(op.precedence())?;
+                        left = Expression::Assignment {
+                            lhs: Box::new(left.clone()),
+                            rhs: Box::new(Expression::Binary {
+                                op: bin_op,
+                                lhs: Box::new(left),
+                                rhs: Box::new(right),
+                                ty: VarType::Void,
+                            }),
+                        }
                     }
                     Op::Condition => {
                         let then_branch = self.parse_expression(0)?;

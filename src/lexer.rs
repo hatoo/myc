@@ -159,6 +159,8 @@ pub enum Token {
     Dot,
     Arrow,
     Caret,
+    PlusEqual,
+    MinusEqual,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -435,6 +437,12 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
                         data: Token::TwoHyphens,
                         span: index - 2..index,
                     });
+                } else if index < src.len() && src[index] == b'=' {
+                    index += 1;
+                    tokens.push(Spanned {
+                        data: Token::MinusEqual,
+                        span: index - 2..index,
+                    });
                 } else if index < src.len() && src[index] == b'>' {
                     index += 1;
                     tokens.push(Spanned {
@@ -454,6 +462,13 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
                     index += 1;
                     tokens.push(Spanned {
                         data: Token::TwoPlus,
+                        span: index - 2..index,
+                    });
+                }
+                if index < src.len() && src[index] == b'=' {
+                    index += 1;
+                    tokens.push(Spanned {
+                        data: Token::PlusEqual,
                         span: index - 2..index,
                     });
                 } else {
