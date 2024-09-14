@@ -1412,6 +1412,7 @@ impl TypeChecker {
                 Ok(())
             }
             crate::ast::Statement::Null => Ok(()),
+            crate::ast::Statement::Goto(_) | crate::ast::Statement::Label(_) => Ok(()),
         }
     }
 

@@ -468,6 +468,14 @@ impl<'a> InstructionGenerator<'a> {
                 self.instructions
                     .push(Instruction::Label(format!("break_{}", label).into()));
             }
+            ast::Statement::Goto(label) => {
+                self.instructions
+                    .push(Instruction::Jump(label.data.clone()));
+            }
+            ast::Statement::Label(label) => {
+                self.instructions
+                    .push(Instruction::Label(label.data.clone()));
+            }
         }
     }
 

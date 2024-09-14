@@ -182,6 +182,7 @@ impl VarResolver {
                 self.pop();
                 Ok(())
             }
+            ast::Statement::Goto(_) | ast::Statement::Label(_) => Ok(()),
         }
     }
 
