@@ -195,14 +195,14 @@ impl<'a> Ssa<'a, Instruction> {
             let mut one_step = HashSet::new();
 
             for d in dom {
-                for next in &self.cfg.nodes[&d].successors {
+                for next in &self.cfg.nodes[d].successors {
                     if let NodeId::Block(next) = next {
                         one_step.insert(*next);
                     }
                 }
             }
 
-            let domf = one_step.difference(&dom).cloned().collect();
+            let domf = one_step.difference(dom).cloned().collect();
             self.dominate_frontiers.insert(*n, domf);
         }
     }
@@ -254,7 +254,7 @@ impl<'a> Ssa<'a, Instruction> {
             for p in &self.cfg.nodes[block].predecessors {
                 if let NodeId::Block(p) = p {
                     for (v, map) in phi.iter_mut() {
-                        map.insert(p.clone(), v.clone());
+                        map.insert(*p, v.clone());
                     }
                 }
             }
@@ -300,17 +300,13 @@ impl<'a> Ssa<'a, Instruction> {
             .iter_mut()
         {
             inst.map_args(|arg| {
-                let new_name = stack
-                    .entry(arg.clone())
-                    .or_default()
-                    .last()
-                    .unwrap_or_else(|| arg);
+                let new_name = stack.entry(arg.clone()).or_default().last().unwrap_or(arg);
                 *arg = new_name.clone();
             });
             if let Some(dst) = inst.dst() {
                 if let Attr::Local(_) = &self.symbol_table[dst] {
                     let new_name = new_name(dst);
-                    copy_attr(&mut self.symbol_table, &dst, &new_name);
+                    copy_attr(self.symbol_table, dst, &new_name);
                     stack.entry(dst.clone()).or_default().push(new_name.clone());
                     pushed.push(dst.clone());
                     *dst = new_name;
@@ -336,7 +332,7 @@ impl<'a> Ssa<'a, Instruction> {
                     .entry(old_name.clone())
                     .or_default()
                     .last()
-                    .unwrap_or_else(|| &old_name)
+                    .unwrap_or(&old_name)
                     .clone();
 
                 map.insert(block, new_name);
@@ -394,10 +390,10 @@ impl<'a> Ssa<'a, Instruction> {
                 Some(GeneralizedInstruction::Jump(_) | GeneralizedInstruction::MayJump(_))
             ) {
                 let j = instructions.pop().unwrap();
-                instructions.extend(phi_insts.drain(..));
-                instructions.push(j.into());
+                instructions.append(&mut phi_insts);
+                instructions.push(j);
             } else {
-                instructions.extend(phi_insts.drain(..));
+                instructions.append(&mut phi_insts);
             }
         }
 

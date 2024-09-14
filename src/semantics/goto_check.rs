@@ -70,9 +70,8 @@ fn check_statement(statement: &Statement, known_labels: &HashSet<EcoString>) -> 
         }
         Statement::Compound(block) => {
             for item in &block.0 {
-                match item {
-                    BlockItem::Statement(stmt) => check_statement(stmt, known_labels)?,
-                    _ => {}
+                if let BlockItem::Statement(stmt) = item {
+                    check_statement(stmt, known_labels)?
                 }
             }
         }
@@ -91,11 +90,8 @@ fn check_block(block: &Block) -> Result<(), Error> {
     let known_labels = collect_labels(block)?;
 
     for item in &block.0 {
-        match item {
-            BlockItem::Statement(stmt) => {
-                check_statement(stmt, &known_labels)?;
-            }
-            _ => {}
+        if let BlockItem::Statement(stmt) = item {
+            check_statement(stmt, &known_labels)?;
         }
     }
 
@@ -150,9 +146,8 @@ fn collect_labels(block: &Block) -> Result<HashSet<EcoString>, Error> {
     let mut set = HashSet::new();
 
     for item in &block.0 {
-        match item {
-            BlockItem::Statement(stmt) => collect_statement(stmt, &mut set)?,
-            _ => {}
+        if let BlockItem::Statement(stmt) = item {
+            collect_statement(stmt, &mut set)?
         }
     }
 

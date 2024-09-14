@@ -229,7 +229,7 @@ impl<'a> ToEgglogExpr for Ssa<'a, Instruction> {
     }
 }
 
-fn node_egglog<'a>(ssa: &Ssa<'a, Instruction>, id: usize) -> Expr {
+fn node_egglog(ssa: &Ssa<'_, Instruction>, id: usize) -> Expr {
     let mut exprs = vec![];
     let node = &ssa.cfg.nodes[&id];
     let phis = ssa.phi[&id].iter().map(|(name, table)| {
@@ -267,7 +267,7 @@ fn node_egglog<'a>(ssa: &Ssa<'a, Instruction>, id: usize) -> Expr {
     Expr::call("Block", vec![Expr::call("vec-of", exprs)])
 }
 
-pub fn do_egglog<'a>(ssa: &Ssa<'a, Instruction>) -> Vec<Instruction> {
+pub fn do_egglog(ssa: &Ssa<'_, Instruction>) -> Vec<Instruction> {
     const PRELUDE: &str = include_str!("./prelude.egg");
 
     let mut egraph = egglog::EGraph::default();
@@ -276,8 +276,8 @@ pub fn do_egglog<'a>(ssa: &Ssa<'a, Instruction>) -> Vec<Instruction> {
     let values = ssa
         .cfg
         .nodes
-        .iter()
-        .map(|(id, _)| {
+        .keys()
+        .map(|id| {
             let (_, v) = egraph.eval_expr(&node_egglog(ssa, *id)).unwrap();
             (*id, v)
         })
@@ -627,12 +627,9 @@ fn parse_egglog_block(
 
     if index < v.len() {
         if let Term::App(head, _) = termdag.get(v[index]) {
-            match head.as_str() {
-                "Label" => {
-                    insts.push(Instruction::from_egglog(&termdag, &termdag.get(v[index])));
-                    index += 1;
-                }
-                _ => {}
+            if head.as_str() == "Label" {
+                insts.push(Instruction::from_egglog(&termdag, &termdag.get(v[index])));
+                index += 1;
             }
         }
     }
@@ -669,7 +666,7 @@ fn reconstruct(
     let mut insts_map = BTreeMap::new();
 
     for (id, value) in map {
-        let (p, insts) = parse_egglog_block(egraph, value.clone());
+        let (p, insts) = parse_egglog_block(egraph, *value);
         phis.insert(*id, p);
         insts_map.insert(*id, insts);
     }

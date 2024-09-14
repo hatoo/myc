@@ -297,7 +297,7 @@ fn print_ssa(ssa: &Ssa<Instruction>) {
             print!("{} = φ(", var);
             let incoming = incoming
                 .iter()
-                .map(|(k, v)| (k.clone(), v.clone()))
+                .map(|(k, v)| (*k, v.clone()))
                 .collect::<BTreeMap<_, _>>();
             for (pred, val) in incoming {
                 print!("{}: {}, ", pred, val);
