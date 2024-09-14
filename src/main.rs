@@ -15,7 +15,7 @@ use myc::{
     control_flow::Cfg,
     lexer::{lexer, TokenSpannedError},
     optimize_tacky::{egglog::do_egglog, optimize, OptimizeOption},
-    semantics::{LoopLabel, TypeChecker, VarResolver},
+    semantics::{goto_check::check_goto, LoopLabel, TypeChecker, VarResolver},
     span::SpannedError,
     ssa::Ssa,
     tacky::Instruction,
@@ -108,6 +108,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         dbg!(program);
         return Ok(());
     }
+
+    check_goto(&program).map_err(|e| TokenSpannedError {
+        error: e,
+        src: src.clone(),
+        tokens: tokens.clone(),
+    })?;
 
     VarResolver::default()
         .resolve_program(&mut program)

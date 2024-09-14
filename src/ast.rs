@@ -5,7 +5,7 @@ use ecow::EcoString;
 use crate::{
     lexer::{Constant, HasTokenSpan, MayHasTokenSpan, Suffix, Token, TokenSpanned},
     semantics::type_check::StaticInit,
-    span::{self, Span},
+    span::{self},
 };
 
 #[derive(Debug)]
@@ -157,7 +157,10 @@ pub enum Statement {
     },
     Null,
     Goto(TokenSpanned<EcoString>),
-    Label(TokenSpanned<EcoString>),
+    Label {
+        label: TokenSpanned<EcoString>,
+        statement: Box<Statement>,
+    },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1284,16 +1287,22 @@ impl<'a> Parser<'a> {
             TokenSpanned {
                 data: Token::Goto, ..
             } => {
+                self.advance();
                 let label = self.expect_ident()?;
+                self.expect(Token::SemiColon)?;
                 Ok(Statement::Goto(label))
             }
             _ => {
-                if let Ok(label) = self.atomic(|s| {
-                    let ident = s.expect_ident()?;
+                if let Ok(stmt) = self.atomic(|s| {
+                    let label = s.expect_ident()?;
                     s.expect(Token::Colon)?;
-                    Ok::<_, Error>(ident)
+                    let stmt = s.parse_statement()?;
+                    Ok::<_, Error>(Statement::Label {
+                        label,
+                        statement: Box::new(stmt),
+                    })
                 }) {
-                    Ok(Statement::Label(label))
+                    Ok(stmt)
                 } else {
                     let exp = self.parse_expression(0)?;
                     self.expect(Token::SemiColon)?;

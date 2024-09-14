@@ -472,9 +472,10 @@ impl<'a> InstructionGenerator<'a> {
                 self.instructions
                     .push(Instruction::Jump(label.data.clone()));
             }
-            ast::Statement::Label(label) => {
+            ast::Statement::Label { label, statement } => {
                 self.instructions
                     .push(Instruction::Label(label.data.clone()));
+                self.add_statement(statement);
             }
         }
     }

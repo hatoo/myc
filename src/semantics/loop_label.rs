@@ -114,7 +114,11 @@ impl LoopLabel {
                 Ok(())
             }
             ast::Statement::Null => Ok(()),
-            ast::Statement::Goto(_) | ast::Statement::Label(_) => Ok(()),
+            ast::Statement::Goto(_) => Ok(()),
+            ast::Statement::Label {
+                label: _,
+                statement: stmt,
+            } => self.label_statement(current_label, stmt),
         }
     }
 

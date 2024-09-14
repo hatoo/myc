@@ -1412,7 +1412,10 @@ impl TypeChecker {
                 Ok(())
             }
             crate::ast::Statement::Null => Ok(()),
-            crate::ast::Statement::Goto(_) | crate::ast::Statement::Label(_) => Ok(()),
+            crate::ast::Statement::Goto(_) => Ok(()),
+            crate::ast::Statement::Label {
+                statement: stmt, ..
+            } => self.check_statement(stmt, ret_type),
         }
     }
 
