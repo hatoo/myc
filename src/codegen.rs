@@ -2563,7 +2563,7 @@ impl Display for Function {
         writeln!(f, "pushq %rbp")?;
         writeln!(f, "movq %rsp, %rbp")?;
         if self.stack_size != 0 {
-            writeln!(
+            write!(
                 f,
                 "{}",
                 Instruction::Binary {
