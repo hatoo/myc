@@ -683,19 +683,19 @@ fn reconstruct(
                 let to = label_map[dst];
                 succs.entry(id).or_insert_with(HashSet::new).insert(to);
 
-                if let Some(next) = insts_map.keys().skip_while(|i| **i <= id).next() {
+                if let Some(next) = insts_map.keys().find(|i| **i > id) {
                     succs.entry(id).or_insert_with(HashSet::new).insert(*next);
                 }
             }
             Some(Instruction::JumpIfNotZero { dst, .. }) => {
                 let to = label_map[dst];
                 succs.entry(id).or_insert_with(HashSet::new).insert(to);
-                if let Some(next) = insts_map.keys().skip_while(|i| **i <= id).next() {
+                if let Some(next) = insts_map.keys().find(|i| **i > id) {
                     succs.entry(id).or_insert_with(HashSet::new).insert(*next);
                 }
             }
             _ => {
-                if let Some(next) = insts_map.keys().skip_while(|i| **i <= id).next() {
+                if let Some(next) = insts_map.keys().find(|i| **i > id) {
                     succs.entry(id).or_insert_with(HashSet::new).insert(*next);
                 }
             }
