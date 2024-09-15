@@ -174,6 +174,8 @@ pub enum Statement {
         exp: Expression,
         statement: Box<Statement>,
         label: EcoString,
+        cases: Vec<(Expression, EcoString)>,
+        default: Option<EcoString>,
     },
 }
 
@@ -1344,6 +1346,8 @@ impl<'a> Parser<'a> {
                     exp,
                     statement,
                     label: "!!!dummy_switch_label!!!".into(),
+                    cases: Vec::new(),
+                    default: None,
                 })
             }
             _ => {
