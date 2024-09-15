@@ -1,4 +1,4 @@
-use std::hash::Hash;
+use std::{collections::BTreeMap, hash::Hash};
 
 use ecow::EcoString;
 
@@ -182,7 +182,7 @@ pub enum Statement {
 
 #[derive(Debug, Default)]
 pub struct SwitchLabels {
-    pub cases: Vec<(Expression, EcoString)>,
+    pub cases: BTreeMap<u64, EcoString>,
     pub default: Option<EcoString>,
 }
 

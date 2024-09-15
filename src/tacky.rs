@@ -499,12 +499,11 @@ impl<'a> InstructionGenerator<'a> {
 
                 let break_label: EcoString = format!("break_{}", label).into();
                 for (case, label) in labels.cases.iter() {
-                    let case = self.add_expression_and_convert(case);
                     let cond = self.make_tmp_local(VarType::Base(BaseType::Int));
                     self.instructions.push(Instruction::Binary {
                         op: BinaryOp::Equal,
                         lhs: exp.clone(),
-                        rhs: case,
+                        rhs: Val::Constant(ast::Const::Int(*case as _)),
                         dst: cond.clone(),
                     });
                     self.instructions.push(Instruction::JumpIfNotZero {

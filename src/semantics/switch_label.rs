@@ -1,5 +1,5 @@
 use crate::{
-    ast::{self, BlockItem, Statement, SwitchLabels},
+    ast::{self, BlockItem, Expression, Statement, SwitchLabels},
     lexer::HasTokenSpan,
 };
 
@@ -9,6 +9,8 @@ pub enum Error {
     CaseNotInSwitch(std::ops::Range<usize>),
     #[error("Default label not in switch")]
     DefaultNotInSwitch(std::ops::Range<usize>),
+    #[error("Duplicated case label")]
+    DuplicatedCaseLabel(std::ops::Range<usize>),
     #[error("Duplicated default label")]
     DuplicatedDefaultLabel(std::ops::Range<usize>),
 }
@@ -18,6 +20,7 @@ impl HasTokenSpan for Error {
         match self {
             Error::CaseNotInSwitch(span) => span.clone(),
             Error::DefaultNotInSwitch(span) => span.clone(),
+            Error::DuplicatedCaseLabel(span) => span.clone(),
             Error::DuplicatedDefaultLabel(span) => span.clone(),
         }
     }
@@ -57,7 +60,14 @@ pub fn collect_switch_labels_statement(
             span,
         } => {
             if let Some(labels) = labels {
-                labels.cases.push((exp.clone(), label.clone()));
+                let Expression::Constant(c) = exp else {
+                    unreachable!()
+                };
+                let value = c.data.get_ulong();
+
+                if labels.cases.insert(value, label.clone()).is_some() {
+                    return Err(Error::DuplicatedCaseLabel(span.clone()));
+                }
             } else {
                 return Err(Error::CaseNotInSwitch(span.clone()));
             }

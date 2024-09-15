@@ -80,6 +80,15 @@ fn check_statement(statement: &Statement, known_labels: &HashSet<EcoString>) -> 
                 return Err(Error::GotoUndefined(label.clone()));
             }
         }
+        Statement::Default { statement, .. } => {
+            check_statement(statement, known_labels)?;
+        }
+        Statement::Case { statement, .. } => {
+            check_statement(statement, known_labels)?;
+        }
+        Statement::Switch { statement, .. } => {
+            check_statement(statement, known_labels)?;
+        }
         _ => {}
     }
 
@@ -87,7 +96,8 @@ fn check_statement(statement: &Statement, known_labels: &HashSet<EcoString>) -> 
 }
 
 fn check_block(block: &Block) -> Result<(), Error> {
-    let known_labels = collect_labels(block)?;
+    let mut known_labels = HashSet::new();
+    collect_labels(block, &mut known_labels)?;
 
     for item in &block.0 {
         if let BlockItem::Statement(stmt) = item {
@@ -133,8 +143,16 @@ fn collect_statement(
             collect_statement(body, known_labels)?;
         }
         Statement::Compound(block) => {
-            let new_labels = collect_labels(block)?;
-            known_labels.extend(new_labels);
+            collect_labels(block, known_labels)?;
+        }
+        Statement::Default { statement, .. } => {
+            collect_statement(statement, known_labels)?;
+        }
+        Statement::Case { statement, .. } => {
+            collect_statement(statement, known_labels)?;
+        }
+        Statement::Switch { statement, .. } => {
+            collect_statement(statement, known_labels)?;
         }
         _ => {}
     }
@@ -142,14 +160,12 @@ fn collect_statement(
     Ok(())
 }
 
-fn collect_labels(block: &Block) -> Result<HashSet<EcoString>, Error> {
-    let mut set = HashSet::new();
-
+fn collect_labels(block: &Block, known_labels: &mut HashSet<EcoString>) -> Result<(), Error> {
     for item in &block.0 {
         if let BlockItem::Statement(stmt) = item {
-            collect_statement(stmt, &mut set)?
+            collect_statement(stmt, known_labels)?
         }
     }
 
-    Ok(set)
+    Ok(())
 }
