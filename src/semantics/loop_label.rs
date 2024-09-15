@@ -37,7 +37,7 @@ impl LoopLabel {
                 ast::Declaration::StructDecl(_) => {}
                 ast::Declaration::FunDecl(fun_decl) => {
                     if let Some(body) = &mut fun_decl.body {
-                        self.label_block(None, body)?;
+                        self.label_block(None, None, body)?;
                     }
                 }
             }
@@ -47,7 +47,8 @@ impl LoopLabel {
 
     fn label_statement(
         &mut self,
-        current_label: Option<EcoString>,
+        continue_label: Option<EcoString>,
+        break_label: Option<EcoString>,
         stmt: &mut ast::Statement,
     ) -> Result<(), Error> {
         match stmt {
@@ -58,23 +59,23 @@ impl LoopLabel {
                 then_branch,
                 else_branch,
             } => {
-                self.label_statement(current_label.clone(), then_branch)?;
+                self.label_statement(continue_label.clone(), break_label.clone(), then_branch)?;
                 if let Some(else_branch) = else_branch {
-                    self.label_statement(current_label, else_branch)?;
+                    self.label_statement(continue_label, break_label, else_branch)?;
                 }
                 Ok(())
             }
-            ast::Statement::Compound(block) => self.label_block(current_label, block),
+            ast::Statement::Compound(block) => self.label_block(continue_label, break_label, block),
             ast::Statement::Break { label, span } => {
-                if let Some(current_label) = current_label {
-                    *label = current_label;
+                if let Some(break_label) = break_label {
+                    *label = break_label;
                 } else {
                     return Err(Error::BreakNotInLoop(span.clone()));
                 }
                 Ok(())
             }
             ast::Statement::Continue { label, span } => {
-                if let Some(current_label) = current_label {
+                if let Some(current_label) = continue_label {
                     *label = current_label;
                 } else {
                     return Err(Error::ContinueNotInLoop(span.clone()));
@@ -88,7 +89,7 @@ impl LoopLabel {
             } => {
                 let new_label = self.new_label();
                 *label = new_label.clone();
-                self.label_statement(Some(new_label.clone()), body)?;
+                self.label_statement(Some(new_label.clone()), Some(new_label.clone()), body)?;
                 Ok(())
             }
             ast::Statement::DoWhile {
@@ -98,7 +99,7 @@ impl LoopLabel {
             } => {
                 let new_label = self.new_label();
                 *label = new_label.clone();
-                self.label_statement(Some(new_label.clone()), body)?;
+                self.label_statement(Some(new_label.clone()), Some(new_label.clone()), body)?;
                 Ok(())
             }
             ast::Statement::For {
@@ -110,7 +111,7 @@ impl LoopLabel {
             } => {
                 let new_label = self.new_label();
                 *label = new_label.clone();
-                self.label_statement(Some(new_label.clone()), body)?;
+                self.label_statement(Some(new_label.clone()), Some(new_label.clone()), body)?;
                 Ok(())
             }
             ast::Statement::Null => Ok(()),
@@ -118,20 +119,38 @@ impl LoopLabel {
             ast::Statement::Label {
                 label: _,
                 statement: stmt,
-            } => self.label_statement(current_label, stmt),
+            } => self.label_statement(continue_label, break_label, stmt),
+            ast::Statement::Case {
+                statement, label, ..
+            } => {
+                *label = self.new_label();
+                self.label_statement(continue_label, break_label, statement)
+            }
+            ast::Statement::Default { statement, label } => {
+                *label = self.new_label();
+                self.label_statement(continue_label, break_label, statement)
+            }
+            ast::Statement::Switch {
+                statement, label, ..
+            } => {
+                *label = self.new_label();
+                self.label_statement(continue_label, Some(label.clone()), statement)?;
+                Ok(())
+            }
         }
     }
 
     fn label_block(
         &mut self,
         current_label: Option<EcoString>,
+        break_label: Option<EcoString>,
         block: &mut ast::Block,
     ) -> Result<(), Error> {
         for block_item in &mut block.0 {
             match block_item {
                 ast::BlockItem::Declaration(_) => {}
                 ast::BlockItem::Statement(stmt) => {
-                    self.label_statement(current_label.clone(), stmt)?;
+                    self.label_statement(current_label.clone(), break_label.clone(), stmt)?;
                 }
             }
         }
