@@ -477,6 +477,50 @@ impl<'a> InstructionGenerator<'a> {
                     .push(Instruction::Label(label.data.clone()));
                 self.add_statement(statement);
             }
+            ast::Statement::Case {
+                statement, label, ..
+            } => {
+                self.instructions.push(Instruction::Label(label.clone()));
+                self.add_statement(statement);
+            }
+            ast::Statement::Default {
+                statement, label, ..
+            } => {
+                self.instructions.push(Instruction::Label(label.clone()));
+                self.add_statement(statement);
+            }
+            ast::Statement::Switch {
+                exp,
+                statement,
+                label,
+                labels,
+            } => {
+                let exp = self.add_expression_and_convert(exp);
+
+                let break_label: EcoString = format!("break_{}", label).into();
+                for (case, label) in labels.cases.iter() {
+                    let case = self.add_expression_and_convert(case);
+                    let cond = self.make_tmp_local(VarType::Base(BaseType::Int));
+                    self.instructions.push(Instruction::Binary {
+                        op: BinaryOp::Equal,
+                        lhs: exp.clone(),
+                        rhs: case,
+                        dst: cond.clone(),
+                    });
+                    self.instructions.push(Instruction::JumpIfNotZero {
+                        src: cond,
+                        dst: label.clone(),
+                    });
+                }
+                if let Some(default) = &labels.default {
+                    self.instructions.push(Instruction::Jump(default.clone()));
+                } else {
+                    self.instructions
+                        .push(Instruction::Jump(break_label.clone()));
+                }
+                self.add_statement(statement);
+                self.instructions.push(Instruction::Label(break_label));
+            }
         }
     }
 

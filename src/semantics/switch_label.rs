@@ -1,4 +1,7 @@
-use crate::ast::{self, BlockItem, Statement, SwitchLabels};
+use crate::{
+    ast::{self, BlockItem, Statement, SwitchLabels},
+    lexer::HasTokenSpan,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -8,6 +11,16 @@ pub enum Error {
     DefaultNotInSwitch(std::ops::Range<usize>),
     #[error("Duplicated default label")]
     DuplicatedDefaultLabel(std::ops::Range<usize>),
+}
+
+impl HasTokenSpan for Error {
+    fn token_span(&self) -> std::ops::Range<usize> {
+        match self {
+            Error::CaseNotInSwitch(span) => span.clone(),
+            Error::DefaultNotInSwitch(span) => span.clone(),
+            Error::DuplicatedDefaultLabel(span) => span.clone(),
+        }
+    }
 }
 
 pub fn collect_switch_labels(program: &mut ast::Program) -> Result<(), Error> {

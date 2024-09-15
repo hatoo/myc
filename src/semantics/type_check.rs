@@ -259,6 +259,8 @@ pub enum Error {
     BlockScopeFunWithBody(TokenSpanned<EcoString>),
     #[error("For loop init must not has storage class")]
     BadForInit(TokenSpanned<EcoString>),
+    #[error("Case expression is not constant")]
+    CaseExpIsNotConstant(std::ops::Range<usize>),
 }
 
 impl HasTokenSpan for Error {
@@ -271,6 +273,7 @@ impl HasTokenSpan for Error {
             Error::IncompatibleLinkage(ident) => ident.span.clone(),
             Error::BlockScopeFunWithBody(ident) => ident.span.clone(),
             Error::BadForInit(ident) => ident.span.clone(),
+            Error::CaseExpIsNotConstant(span) => span.clone(),
         }
     }
 }
@@ -1418,6 +1421,11 @@ impl TypeChecker {
             } => self.check_statement(stmt, ret_type),
             crate::ast::Statement::Case { exp, statement, .. } => {
                 self.check_expression_and_convert(exp)?;
+
+                if !matches!(exp, Expression::Constant(_)) {
+                    return Err(Error::IncompatibleTypes(exp.token_span()));
+                }
+
                 self.check_statement(statement, ret_type)?;
                 Ok(())
             }
