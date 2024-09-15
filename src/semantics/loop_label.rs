@@ -126,7 +126,9 @@ impl LoopLabel {
                 *label = self.new_label();
                 self.label_statement(continue_label, break_label, statement)
             }
-            ast::Statement::Default { statement, label } => {
+            ast::Statement::Default {
+                statement, label, ..
+            } => {
                 *label = self.new_label();
                 self.label_statement(continue_label, break_label, statement)
             }

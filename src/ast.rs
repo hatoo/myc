@@ -164,19 +164,26 @@ pub enum Statement {
     Default {
         statement: Box<Statement>,
         label: EcoString,
+        span: std::ops::Range<usize>,
     },
     Case {
         exp: Expression,
         statement: Box<Statement>,
         label: EcoString,
+        span: std::ops::Range<usize>,
     },
     Switch {
         exp: Expression,
         statement: Box<Statement>,
         label: EcoString,
-        cases: Vec<(Expression, EcoString)>,
-        default: Option<EcoString>,
+        labels: SwitchLabels,
     },
+}
+
+#[derive(Debug, Default)]
+pub struct SwitchLabels {
+    pub cases: Vec<(Expression, EcoString)>,
+    pub default: Option<EcoString>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1310,7 +1317,7 @@ impl<'a> Parser<'a> {
             }
             TokenSpanned {
                 data: Token::Default,
-                ..
+                span,
             } => {
                 self.advance();
                 self.expect(Token::Colon)?;
@@ -1318,10 +1325,12 @@ impl<'a> Parser<'a> {
                 Ok(Statement::Default {
                     statement,
                     label: "!!!dummy_default_label!!!".into(),
+                    span,
                 })
             }
             TokenSpanned {
-                data: Token::Case, ..
+                data: Token::Case,
+                span,
             } => {
                 self.advance();
                 let exp = self.parse_expression(0)?;
@@ -1331,6 +1340,7 @@ impl<'a> Parser<'a> {
                     exp,
                     statement,
                     label: "!!!dummy_case_label!!!".into(),
+                    span,
                 })
             }
             TokenSpanned {
@@ -1346,8 +1356,7 @@ impl<'a> Parser<'a> {
                     exp,
                     statement,
                     label: "!!!dummy_switch_label!!!".into(),
-                    cases: Vec::new(),
-                    default: None,
+                    labels: Default::default(),
                 })
             }
             _ => {

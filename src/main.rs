@@ -15,7 +15,10 @@ use myc::{
     control_flow::Cfg,
     lexer::{lexer, TokenSpannedError},
     optimize_tacky::{egglog::do_egglog, optimize, OptimizeOption},
-    semantics::{goto_check::check_goto, LoopLabel, TypeChecker, VarResolver},
+    semantics::{
+        goto_check::check_goto, switch_label::collect_switch_labels, LoopLabel, TypeChecker,
+        VarResolver,
+    },
     span::SpannedError,
     ssa::Ssa,
     tacky::Instruction,
@@ -130,6 +133,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             src: src.clone(),
             tokens: tokens.clone(),
         })?;
+
+    collect_switch_labels(&mut program).map_err(|e| TokenSpannedError {
+        error: e,
+        src: src.clone(),
+        tokens: tokens.clone(),
+    })?;
 
     let mut type_checker = TypeChecker::default();
     type_checker
