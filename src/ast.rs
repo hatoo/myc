@@ -161,6 +161,22 @@ pub enum Statement {
         label: TokenSpanned<EcoString>,
         statement: Box<Statement>,
     },
+    Switch {
+        condition: Expression,
+        cases: Vec<SwitchCase>,
+    },
+}
+
+#[derive(Debug)]
+pub enum SwitchCaseTag {
+    Case(Expression),
+    Default,
+}
+
+#[derive(Debug)]
+pub struct SwitchCase {
+    case: SwitchCaseTag,
+    body: Block,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1068,6 +1084,36 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn parse_block_item(&mut self) -> Result<BlockItem, Error> {
+        let index = self.index;
+
+        let err_decl = match self.parse_declaration() {
+            Ok(decl) => {
+                return Ok(BlockItem::Declaration(decl));
+            }
+            Err(err) => err,
+        };
+
+        let index_decl = self.index;
+
+        self.index = index;
+
+        let err_stmt = match self.parse_statement() {
+            Ok(stmt) => {
+                return Ok(BlockItem::Statement(stmt));
+            }
+            Err(err) => err,
+        };
+
+        let index_stmt = self.index;
+
+        if index_decl > index_stmt {
+            return Err(err_decl);
+        } else {
+            return Err(err_stmt);
+        }
+    }
+
     fn expect_block(&mut self) -> Result<Block, Error> {
         self.expect(Token::OpenBrace)?;
         let mut body = Vec::new();
@@ -1078,35 +1124,7 @@ impl<'a> Parser<'a> {
                 ..
             })
         ) {
-            let index = self.index;
-
-            let err_decl = match self.parse_declaration() {
-                Ok(decl) => {
-                    body.push(BlockItem::Declaration(decl));
-                    continue;
-                }
-                Err(err) => err,
-            };
-
-            let index_decl = self.index;
-
-            self.index = index;
-
-            let err_stmt = match self.parse_statement() {
-                Ok(stmt) => {
-                    body.push(BlockItem::Statement(stmt));
-                    continue;
-                }
-                Err(err) => err,
-            };
-
-            let index_stmt = self.index;
-
-            if index_decl > index_stmt {
-                return Err(err_decl);
-            } else {
-                return Err(err_stmt);
-            }
+            body.push(self.parse_block_item()?);
         }
         self.expect(Token::CloseBrace)?;
 
@@ -1150,6 +1168,38 @@ impl<'a> Parser<'a> {
             decls.push(self.parse_declaration()?);
         }
         Ok(Program { decls })
+    }
+
+    fn parse_switch_case(&mut self) -> Result<SwitchCase, Error> {
+        let case = if self.expect(Token::Case).is_ok() {
+            let exp = self.parse_expression(0)?;
+            self.expect(Token::Colon)?;
+            SwitchCaseTag::Case(exp)
+        } else if self.expect(Token::Default).is_ok() {
+            self.expect(Token::Colon)?;
+            SwitchCaseTag::Default
+        } else {
+            return Err(Error::Unexpected(
+                self.peek()?.map(Clone::clone),
+                ExpectedToken::Token(Token::Case),
+            ));
+        };
+
+        let mut body = Vec::new();
+        while !matches!(
+            self.peek(),
+            Ok(TokenSpanned {
+                data: Token::CloseBrace | Token::Case | Token::Default,
+                ..
+            })
+        ) {
+            body.push(self.parse_block_item()?);
+        }
+
+        Ok(SwitchCase {
+            case,
+            body: Block(body),
+        })
     }
 
     fn parse_statement(&mut self) -> Result<Statement, Error> {
@@ -1291,6 +1341,29 @@ impl<'a> Parser<'a> {
                 let label = self.expect_ident()?;
                 self.expect(Token::SemiColon)?;
                 Ok(Statement::Goto(label))
+            }
+            TokenSpanned {
+                data: Token::Switch,
+                ..
+            } => {
+                self.advance();
+                self.expect(Token::OpenParen)?;
+                let exp = self.parse_expression(0)?;
+                self.expect(Token::CloseParen)?;
+                self.expect(Token::OpenBrace)?;
+                let mut cases = Vec::new();
+                loop {
+                    if let Ok(case) = self.atomic(|s| s.parse_switch_case()) {
+                        cases.push(case);
+                    } else {
+                        break;
+                    }
+                }
+                self.expect(Token::CloseBrace)?;
+                Ok(Statement::Switch {
+                    condition: exp,
+                    cases,
+                })
             }
             _ => {
                 if let Ok(stmt) = self.atomic(|s| {
