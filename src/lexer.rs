@@ -170,6 +170,9 @@ pub enum Token {
     TwoLessThanEqual,
     TwoGreaterThanEqual,
     Goto,
+    Switch,
+    Case,
+    Default,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -354,6 +357,9 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
                     "sizeof" => Token::Sizeof,
                     "struct" => Token::Struct,
                     "goto" => Token::Goto,
+                    "switch" => Token::Switch,
+                    "case" => Token::Case,
+                    "default" => Token::Default,
                     _ => Token::Ident(EcoString::from(ident)),
                 };
                 tokens.push(Spanned {
