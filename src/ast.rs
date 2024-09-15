@@ -163,14 +163,17 @@ pub enum Statement {
     },
     Default {
         statement: Box<Statement>,
+        label: EcoString,
     },
     Case {
         exp: Expression,
         statement: Box<Statement>,
+        label: EcoString,
     },
     Switch {
         exp: Expression,
         statement: Box<Statement>,
+        label: EcoString,
     },
 }
 
@@ -1310,7 +1313,10 @@ impl<'a> Parser<'a> {
                 self.advance();
                 self.expect(Token::Colon)?;
                 let statement = Box::new(self.parse_statement()?);
-                Ok(Statement::Default { statement })
+                Ok(Statement::Default {
+                    statement,
+                    label: "!!!dummy_default_label!!!".into(),
+                })
             }
             TokenSpanned {
                 data: Token::Case, ..
@@ -1319,7 +1325,11 @@ impl<'a> Parser<'a> {
                 let exp = self.parse_expression(0)?;
                 self.expect(Token::Colon)?;
                 let statement = Box::new(self.parse_statement()?);
-                Ok(Statement::Case { exp, statement })
+                Ok(Statement::Case {
+                    exp,
+                    statement,
+                    label: "!!!dummy_case_label!!!".into(),
+                })
             }
             TokenSpanned {
                 data: Token::Switch,
@@ -1330,7 +1340,11 @@ impl<'a> Parser<'a> {
                 let exp = self.parse_expression(0)?;
                 self.expect(Token::CloseParen)?;
                 let statement = Box::new(self.parse_statement()?);
-                Ok(Statement::Switch { exp, statement })
+                Ok(Statement::Switch {
+                    exp,
+                    statement,
+                    label: "!!!dummy_switch_label!!!".into(),
+                })
             }
             _ => {
                 if let Ok(stmt) = self.atomic(|s| {

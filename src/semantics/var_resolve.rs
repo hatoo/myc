@@ -186,6 +186,20 @@ impl VarResolver {
             ast::Statement::Label {
                 statement: stmt, ..
             } => self.resolve_statement(stmt),
+            ast::Statement::Case { exp, statement, .. } => {
+                self.resolve_expression(exp)?;
+                self.resolve_statement(statement)?;
+                Ok(())
+            }
+            ast::Statement::Default { statement, .. } => {
+                self.resolve_statement(statement)?;
+                Ok(())
+            }
+            ast::Statement::Switch { exp, statement, .. } => {
+                self.resolve_expression(exp)?;
+                self.resolve_statement(statement)?;
+                Ok(())
+            }
         }
     }
 

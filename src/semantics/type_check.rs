@@ -1416,6 +1416,23 @@ impl TypeChecker {
             crate::ast::Statement::Label {
                 statement: stmt, ..
             } => self.check_statement(stmt, ret_type),
+            crate::ast::Statement::Case { exp, statement, .. } => {
+                self.check_expression_and_convert(exp)?;
+                self.check_statement(statement, ret_type)?;
+                Ok(())
+            }
+            crate::ast::Statement::Default { statement, .. } => {
+                self.check_statement(statement, ret_type)?;
+                Ok(())
+            }
+            crate::ast::Statement::Switch { exp, statement, .. } => {
+                let ty = self.check_expression_and_convert(exp)?;
+                if !ty.is_integer() {
+                    return Err(Error::IncompatibleTypes(exp.token_span()));
+                }
+                self.check_statement(statement, ret_type)?;
+                Ok(())
+            }
         }
     }
 
