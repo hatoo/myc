@@ -161,6 +161,17 @@ pub enum Statement {
         label: TokenSpanned<EcoString>,
         statement: Box<Statement>,
     },
+    Default {
+        statement: Box<Statement>,
+    },
+    Case {
+        exp: Expression,
+        statement: Box<Statement>,
+    },
+    Switch {
+        exp: Expression,
+        statement: Box<Statement>,
+    },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1291,6 +1302,35 @@ impl<'a> Parser<'a> {
                 let label = self.expect_ident()?;
                 self.expect(Token::SemiColon)?;
                 Ok(Statement::Goto(label))
+            }
+            TokenSpanned {
+                data: Token::Default,
+                ..
+            } => {
+                self.advance();
+                self.expect(Token::Colon)?;
+                let statement = Box::new(self.parse_statement()?);
+                Ok(Statement::Default { statement })
+            }
+            TokenSpanned {
+                data: Token::Case, ..
+            } => {
+                self.advance();
+                let exp = self.parse_expression(0)?;
+                self.expect(Token::Colon)?;
+                let statement = Box::new(self.parse_statement()?);
+                Ok(Statement::Case { exp, statement })
+            }
+            TokenSpanned {
+                data: Token::Switch,
+                ..
+            } => {
+                self.advance();
+                self.expect(Token::OpenParen)?;
+                let exp = self.parse_expression(0)?;
+                self.expect(Token::CloseParen)?;
+                let statement = Box::new(self.parse_statement()?);
+                Ok(Statement::Switch { exp, statement })
             }
             _ => {
                 if let Ok(stmt) = self.atomic(|s| {
