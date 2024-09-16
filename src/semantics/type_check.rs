@@ -951,6 +951,16 @@ impl TypeChecker {
                             return Err(Error::IncompatibleTypes(exp.token_span()));
                         }
                     }
+                    ast::BinaryOp::ShiftLeft
+                    | ast::BinaryOp::ShiftRight
+                    | ast::BinaryOp::BitAnd
+                    | ast::BinaryOp::BitOr
+                    | ast::BinaryOp::Xor => {
+                        if !tyl.is_integer() || !tyr.is_integer() {
+                            return Err(Error::IncompatibleTypes(exp.token_span()));
+                        }
+                        *ty = tyl.clone();
+                    }
                     _ => match op {
                         ast::BinaryOp::Multiply | ast::BinaryOp::Divide => {
                             if let (ast::VarType::Base(tyl), ast::VarType::Base(tyr)) = (tyl, tyr) {
@@ -1420,9 +1430,9 @@ impl TypeChecker {
                 statement: stmt, ..
             } => self.check_statement(stmt, ret_type),
             crate::ast::Statement::Case { exp, statement, .. } => {
-                self.check_expression_and_convert(exp)?;
+                let ty = self.check_expression_and_convert(exp)?;
 
-                if !matches!(exp, Expression::Constant(_)) {
+                if !ty.is_integer() || !matches!(exp, Expression::Constant(_)) {
                     return Err(Error::IncompatibleTypes(exp.token_span()));
                 }
 
