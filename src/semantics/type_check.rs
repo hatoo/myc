@@ -1,6 +1,6 @@
 use core::panic;
 use std::{
-    collections::{hash_map::Entry, HashMap, HashSet},
+    collections::{hash_map::Entry, BTreeMap, HashMap, HashSet},
     fmt::Display,
     ops::DerefMut,
 };
@@ -1453,11 +1453,29 @@ impl TypeChecker {
                 self.check_statement(statement, ret_type)?;
                 Ok(())
             }
-            crate::ast::Statement::Switch { exp, statement, .. } => {
+            crate::ast::Statement::Switch {
+                exp,
+                statement,
+                labels,
+                ..
+            } => {
                 let ty = self.check_expression_and_convert(exp)?;
                 if !ty.is_integer() {
                     return Err(Error::IncompatibleTypes(exp.token_span()));
                 }
+                let bits = 8 * self.sym_table.size(&ty);
+                let new_cases = labels
+                    .cases
+                    .iter()
+                    .map(|(k, v)| (*k << (64 - bits) >> (64 - bits), v.clone()))
+                    .collect::<BTreeMap<u64, EcoString>>();
+
+                if new_cases.len() != labels.cases.len() {
+                    return Err(Error::IncompatibleTypes(exp.token_span()));
+                }
+
+                labels.cases = new_cases;
+
                 self.check_statement(statement, ret_type)?;
                 Ok(())
             }
