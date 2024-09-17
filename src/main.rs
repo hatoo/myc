@@ -16,8 +16,7 @@ use myc::{
     lexer::{lexer, TokenSpannedError},
     optimize_tacky::{egglog::do_egglog, optimize, OptimizeOption},
     semantics::{
-        goto_check::check_goto, switch_label::collect_switch_labels, LoopLabel, TypeChecker,
-        VarResolver,
+        switch_label::collect_switch_labels, GotoCheck, LoopLabel, TypeChecker, VarResolver,
     },
     span::SpannedError,
     ssa::Ssa,
@@ -112,11 +111,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    check_goto(&program).map_err(|e| TokenSpannedError {
-        error: e,
-        src: src.clone(),
-        tokens: tokens.clone(),
-    })?;
+    GotoCheck::default()
+        .check_goto(&mut program)
+        .map_err(|e| TokenSpannedError {
+            error: e,
+            src: src.clone(),
+            tokens: tokens.clone(),
+        })?;
 
     VarResolver::default()
         .resolve_program(&mut program)
@@ -219,6 +220,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if opts.tacky {
         print_tacky(&tacky);
+        println!("symbol table:");
+        for (k, v) in type_checker.sym_table.0.iter().collect::<BTreeMap<_, _>>() {
+            println!("{}: {:?}", k, v);
+        }
         return Ok(());
     }
 

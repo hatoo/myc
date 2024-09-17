@@ -1,7 +1,7 @@
 use ecow::EcoString;
 
 use crate::{
-    ast::{self, BaseType, Block, Expression, Initializer, Ty, VarType},
+    ast::{self, BaseType, Block, Const, Expression, Initializer, Ty, VarType},
     lexer::TokenSpanned,
     semantics::{
         self,
@@ -500,10 +500,24 @@ impl<'a> InstructionGenerator<'a> {
                 let break_label: EcoString = format!("break_{}", label).into();
                 for (case, label) in labels.cases.iter() {
                     let cond = self.make_tmp_local(VarType::Base(BaseType::Int));
+
+                    let case = match exp.ty(self.symbol_table) {
+                        VarType::Base(base) => match base {
+                            BaseType::Char | BaseType::SChar => ast::Const::Char(*case as _),
+                            BaseType::UChar => ast::Const::UChar(*case as _),
+                            BaseType::Int => ast::Const::Int(*case as _),
+                            BaseType::Uint => ast::Const::Uint(*case as _),
+                            BaseType::Long => ast::Const::Long(*case as _),
+                            BaseType::Ulong => ast::Const::Ulong(*case as _),
+                            BaseType::Double => unreachable!(),
+                        },
+                        _ => unreachable!(),
+                    };
+
                     self.instructions.push(Instruction::Binary {
                         op: BinaryOp::Equal,
                         lhs: exp.clone(),
-                        rhs: Val::Constant(ast::Const::Int(*case as _)),
+                        rhs: Val::Constant(case),
                         dst: cond.clone(),
                     });
                     self.instructions.push(Instruction::JumpIfNotZero {
@@ -990,6 +1004,7 @@ impl<'a> InstructionGenerator<'a> {
             }
             Expression::Increment { exp, postfix } => {
                 let val = self.add_expression_and_convert(exp);
+                let one = one_value(exp.ty(), self.symbol_table);
 
                 if *postfix {
                     let dst = self.make_tmp_local(val.ty(self.symbol_table).clone());
@@ -1000,7 +1015,7 @@ impl<'a> InstructionGenerator<'a> {
                     self.instructions.push(Instruction::Binary {
                         op: BinaryOp::Add,
                         lhs: val.clone(),
-                        rhs: Val::Constant(ast::Const::Int(1)),
+                        rhs: Val::Constant(one),
                         dst: val.clone(),
                     });
                     ExpResult::PlainOperand(dst)
@@ -1008,7 +1023,7 @@ impl<'a> InstructionGenerator<'a> {
                     self.instructions.push(Instruction::Binary {
                         op: BinaryOp::Add,
                         lhs: val.clone(),
-                        rhs: Val::Constant(ast::Const::Int(1)),
+                        rhs: Val::Constant(one),
                         dst: val.clone(),
                     });
                     ExpResult::PlainOperand(val)
@@ -1016,6 +1031,7 @@ impl<'a> InstructionGenerator<'a> {
             }
             Expression::Decrement { exp, postfix } => {
                 let val = self.add_expression_and_convert(exp);
+                let one = one_value(exp.ty(), self.symbol_table);
 
                 if *postfix {
                     let dst = self.make_tmp_local(val.ty(self.symbol_table).clone());
@@ -1026,7 +1042,7 @@ impl<'a> InstructionGenerator<'a> {
                     self.instructions.push(Instruction::Binary {
                         op: BinaryOp::Subtract,
                         lhs: val.clone(),
-                        rhs: Val::Constant(ast::Const::Int(1)),
+                        rhs: Val::Constant(one),
                         dst: val.clone(),
                     });
                     ExpResult::PlainOperand(dst)
@@ -1034,7 +1050,7 @@ impl<'a> InstructionGenerator<'a> {
                     self.instructions.push(Instruction::Binary {
                         op: BinaryOp::Subtract,
                         lhs: val.clone(),
-                        rhs: Val::Constant(ast::Const::Int(1)),
+                        rhs: Val::Constant(one),
                         dst: val.clone(),
                     });
                     ExpResult::PlainOperand(val)
@@ -1064,6 +1080,28 @@ impl<'a> InstructionGenerator<'a> {
                 dst
             }
         }
+    }
+}
+
+fn one_value(ty: &VarType, symbol_table: &SymbolTable) -> Const {
+    match ty {
+        VarType::Base(base) => match base {
+            BaseType::Char | BaseType::SChar => ast::Const::Char(1),
+            BaseType::UChar => ast::Const::UChar(1),
+            BaseType::Int => ast::Const::Int(1),
+            BaseType::Uint => ast::Const::Uint(1),
+            BaseType::Long => ast::Const::Long(1),
+            BaseType::Ulong => ast::Const::Ulong(1),
+            BaseType::Double => ast::Const::Double(1.0),
+        },
+        VarType::Pointer(ty) => {
+            let size = match ty.as_ref() {
+                Ty::Var(ty) => symbol_table.size(ty),
+                Ty::Fun(_) => 1,
+            };
+            ast::Const::Ulong(size as _)
+        }
+        _ => unreachable!(),
     }
 }
 

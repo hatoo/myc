@@ -1,6 +1,6 @@
 use core::panic;
 use std::{
-    collections::{hash_map::Entry, HashMap, HashSet},
+    collections::{hash_map::Entry, BTreeMap, HashMap, HashSet},
     fmt::Display,
     ops::DerefMut,
 };
@@ -895,7 +895,6 @@ impl TypeChecker {
                         if !tyl.is_scalar() || !tyr.is_scalar() {
                             return Err(Error::IncompatibleTypes(exp.token_span()));
                         }
-                        *ty = ast::BaseType::Int.into();
                     }
                     ast::BinaryOp::Equal | ast::BinaryOp::NotEqual => {
                         let cty = if tyl.is_pointer() || tyr.is_pointer() {
@@ -947,6 +946,25 @@ impl TypeChecker {
                             && tyl == tyr
                         {
                             *ty = ast::BaseType::Long.into();
+                        } else {
+                            return Err(Error::IncompatibleTypes(exp.token_span()));
+                        }
+                    }
+                    ast::BinaryOp::ShiftLeft | ast::BinaryOp::ShiftRight => {
+                        if !tyl.is_integer() || !tyr.is_integer() {
+                            return Err(Error::IncompatibleTypes(exp.token_span()));
+                        }
+                        *ty = tyl.clone();
+                    }
+                    ast::BinaryOp::BitAnd | ast::BinaryOp::BitOr | ast::BinaryOp::Xor => {
+                        if let (ast::VarType::Base(tyl), ast::VarType::Base(tyr)) = (tyl, tyr) {
+                            if tyl == BaseType::Double || tyr == BaseType::Double {
+                                return Err(Error::IncompatibleTypes(exp.token_span()));
+                            }
+                            let cty = common_base_type(tyl, tyr).into();
+                            convert_to(lhs, &cty);
+                            convert_to(rhs, &cty);
+                            *ty = cty;
                         } else {
                             return Err(Error::IncompatibleTypes(exp.token_span()));
                         }
@@ -1277,6 +1295,12 @@ impl TypeChecker {
                 }
             }
             ast::Expression::Increment { exp, .. } | ast::Expression::Decrement { exp, .. } => {
+                if let Expression::Var(name, _) = exp.as_ref() {
+                    if let Some(Attr::Fun { .. }) = self.sym_table.get(&name.data) {
+                        return Err(Error::IncompatibleTypes(exp.token_span()));
+                    }
+                }
+
                 let ty = self.check_expression_and_convert(exp)?;
                 if !ty.is_scalar() {
                     return Err(Error::IncompatibleTypes(exp.token_span()));
@@ -1420,9 +1444,9 @@ impl TypeChecker {
                 statement: stmt, ..
             } => self.check_statement(stmt, ret_type),
             crate::ast::Statement::Case { exp, statement, .. } => {
-                self.check_expression_and_convert(exp)?;
+                let ty = self.check_expression_and_convert(exp)?;
 
-                if !matches!(exp, Expression::Constant(_)) {
+                if !ty.is_integer() || !matches!(exp, Expression::Constant(_)) {
                     return Err(Error::IncompatibleTypes(exp.token_span()));
                 }
 
@@ -1433,11 +1457,29 @@ impl TypeChecker {
                 self.check_statement(statement, ret_type)?;
                 Ok(())
             }
-            crate::ast::Statement::Switch { exp, statement, .. } => {
+            crate::ast::Statement::Switch {
+                exp,
+                statement,
+                labels,
+                ..
+            } => {
                 let ty = self.check_expression_and_convert(exp)?;
                 if !ty.is_integer() {
                     return Err(Error::IncompatibleTypes(exp.token_span()));
                 }
+                let bits = 8 * self.sym_table.size(&ty);
+                let new_cases = labels
+                    .cases
+                    .iter()
+                    .map(|(k, v)| (*k << (64 - bits) >> (64 - bits), v.clone()))
+                    .collect::<BTreeMap<u64, EcoString>>();
+
+                if new_cases.len() != labels.cases.len() {
+                    return Err(Error::IncompatibleTypes(exp.token_span()));
+                }
+
+                labels.cases = new_cases;
+
                 self.check_statement(statement, ret_type)?;
                 Ok(())
             }

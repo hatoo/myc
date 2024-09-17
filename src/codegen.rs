@@ -300,7 +300,7 @@ pub enum RegisterSize<'a> {
     Qword(&'a Register),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Copy)]
 pub enum CondCode {
     E,
     Ne,
@@ -312,6 +312,7 @@ pub enum CondCode {
     Ae,
     B,
     Be,
+    P,
 }
 
 /*
@@ -883,7 +884,23 @@ impl<'a> CodeGen<'a> {
                                 src: Operand::Imm(0),
                                 dst: dst.into(),
                             });
-                            body.push(Instruction::SetCc(cond, dst.into()));
+                            if ty == VarType::Base(BaseType::Double) {
+                                // TODO: Emit better code
+                                let unordered = self.gen_label("unordered");
+                                let cmp_end = self.gen_label("cmp_end");
+                                body.push(Instruction::JmpCc(CondCode::P, unordered.clone()));
+                                body.push(Instruction::SetCc(cond, dst.into()));
+                                body.push(Instruction::Jmp(cmp_end.clone()));
+                                body.push(Instruction::Label(unordered));
+                                body.push(Instruction::Mov {
+                                    ty: AssemblyType::Byte,
+                                    src: Operand::Imm(if cond == CondCode::Ne { 1 } else { 0 }),
+                                    dst: dst.into(),
+                                });
+                                body.push(Instruction::Label(cmp_end));
+                            } else {
+                                body.push(Instruction::SetCc(cond, dst.into()));
+                            }
                         }
                         Binary::Shl | Binary::Shr => {
                             let op = match op {
@@ -2916,6 +2933,7 @@ impl Display for CondCode {
             CondCode::Ae => write!(f, "ae")?,
             CondCode::B => write!(f, "b")?,
             CondCode::Be => write!(f, "be")?,
+            CondCode::P => write!(f, "p")?,
         }
         Ok(())
     }

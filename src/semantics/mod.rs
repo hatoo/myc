@@ -1,3 +1,4 @@
+pub use goto_check::GotoCheck;
 pub use loop_label::LoopLabel;
 pub use type_check::TypeChecker;
 pub use var_resolve::VarResolver;
