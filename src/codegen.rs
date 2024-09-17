@@ -386,7 +386,7 @@ impl<'a> CodeGen<'a> {
         }
     }
 
-    fn gen_label(&mut self, prefix: &str) -> EcoString {
+    fn gen_symbol(&mut self, prefix: &str) -> EcoString {
         let label = format!("codegen.{}.{}", prefix, self.label_counter);
         self.label_counter += 1;
         EcoString::from(label)
@@ -868,7 +868,7 @@ impl<'a> CodeGen<'a> {
                                 dst: dst.into(),
                             });
                             if ty == VarType::Base(BaseType::Double) {
-                                let tmp_var = self.gen_label("tmp");
+                                let tmp_var = self.gen_symbol("tmp");
                                 self.symbol_table.insert(
                                     tmp_var.clone(),
                                     Attr::Local(VarType::Base(BaseType::Int)),
@@ -1225,8 +1225,8 @@ impl<'a> CodeGen<'a> {
                                     alignment: 8,
                                 });
 
-                                let ae_upper = self.gen_label("ae_upper");
-                                let end = self.gen_label("end");
+                                let ae_upper = self.gen_symbol("ae_upper");
+                                let end = self.gen_symbol("end");
 
                                 body.push(Instruction::Cmp(
                                     AssemblyType::Double,
@@ -1328,8 +1328,8 @@ impl<'a> CodeGen<'a> {
                                 });
                             }
                             ast::VarType::Base(BaseType::Ulong) => {
-                                let l1 = self.gen_label("l1");
-                                let end = self.gen_label("end");
+                                let l1 = self.gen_symbol("l1");
+                                let end = self.gen_symbol("end");
                                 body.push(Instruction::Cmp(
                                     AssemblyType::QuadWord,
                                     Operand::Imm(0),
@@ -1423,7 +1423,7 @@ impl<'a> CodeGen<'a> {
                 }
                 tacky::Instruction::Load { src, dst } => {
                     let size = self.symbol_table.size(&dst.ty(self.symbol_table));
-                    let src_name = self.gen_label("Load");
+                    let src_name = self.gen_symbol("Load");
                     let src_attr = self.symbol_table[src.var()].clone();
                     self.symbol_table.insert(src_name.clone(), src_attr);
 
