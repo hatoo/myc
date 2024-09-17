@@ -786,24 +786,6 @@ impl<'a> CodeGen<'a> {
                                     lhs: rhs.into(),
                                     rhs: dst.into(),
                                 });
-                                /*
-                                body.push(Instruction::Mov {
-                                    ty: AssemblyType::Double,
-                                    src: rhs.into(),
-                                    dst: Operand::Reg(Register::Xmm(14)),
-                                });
-                                body.push(Instruction::Binary {
-                                    op: BinaryOp::DivDouble,
-                                    ty: AssemblyType::Double,
-                                    lhs: lhs.into(),
-                                    rhs: Operand::Reg(Register::Xmm(14)),
-                                });
-                                body.push(Instruction::Mov {
-                                    ty: AssemblyType::Double,
-                                    src: Operand::Reg(Register::Xmm(14)),
-                                    dst: dst.into(),
-                                });
-                                */
                             } else if ty.is_signed() {
                                 let ty = asm_type(&ty, self.symbol_table);
                                 body.push(Instruction::Mov {
@@ -1676,18 +1658,6 @@ impl<'a> CodeGen<'a> {
         let total_stack_size = stack_size + 8 * callee_saved.len();
         let adjusted_stack_size = round_up(total_stack_size, 16);
         let stack_size = adjusted_stack_size - 8 * callee_saved.len();
-
-        /*
-        body.insert(
-            0,
-            Instruction::Binary {
-                op: BinaryOp::Sub,
-                ty: AssemblyType::QuadWord,
-                lhs: Operand::Imm(stack_size as _),
-                rhs: Operand::Reg(Register::SP),
-            },
-        );
-        */
 
         body = avoid_mov_mem_mem(body);
 
