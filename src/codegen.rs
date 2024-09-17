@@ -313,6 +313,7 @@ pub enum CondCode {
     B,
     Be,
     P,
+    Np,
 }
 
 /*
@@ -885,19 +886,30 @@ impl<'a> CodeGen<'a> {
                                 dst: dst.into(),
                             });
                             if ty == VarType::Base(BaseType::Double) {
-                                // TODO: Emit better code
-                                let unordered = self.gen_label("unordered");
-                                let cmp_end = self.gen_label("cmp_end");
-                                body.push(Instruction::JmpCc(CondCode::P, unordered.clone()));
+                                let tmp_var = self.gen_label("tmp");
+                                self.symbol_table.insert(
+                                    tmp_var.clone(),
+                                    Attr::Local(VarType::Base(BaseType::Int)),
+                                );
                                 body.push(Instruction::SetCc(cond, dst.into()));
-                                body.push(Instruction::Jmp(cmp_end.clone()));
-                                body.push(Instruction::Label(unordered));
-                                body.push(Instruction::Mov {
+                                body.push(Instruction::SetCc(
+                                    if cond == CondCode::Ne {
+                                        CondCode::P
+                                    } else {
+                                        CondCode::Np
+                                    },
+                                    Operand::Pseudo(Pseudo::var(tmp_var.clone())),
+                                ));
+                                body.push(Instruction::Binary {
+                                    op: if cond == CondCode::Ne {
+                                        BinaryOp::Or
+                                    } else {
+                                        BinaryOp::And
+                                    },
                                     ty: AssemblyType::Byte,
-                                    src: Operand::Imm(if cond == CondCode::Ne { 1 } else { 0 }),
-                                    dst: dst.into(),
+                                    lhs: Operand::Pseudo(Pseudo::var(tmp_var)),
+                                    rhs: dst.into(),
                                 });
-                                body.push(Instruction::Label(cmp_end));
                             } else {
                                 body.push(Instruction::SetCc(cond, dst.into()));
                             }
@@ -2934,6 +2946,7 @@ impl Display for CondCode {
             CondCode::B => write!(f, "b")?,
             CondCode::Be => write!(f, "be")?,
             CondCode::P => write!(f, "p")?,
+            CondCode::Np => write!(f, "np")?,
         }
         Ok(())
     }
