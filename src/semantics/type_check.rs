@@ -895,8 +895,6 @@ impl TypeChecker {
                         if !tyl.is_scalar() || !tyr.is_scalar() {
                             return Err(Error::IncompatibleTypes(exp.token_span()));
                         }
-                        convert_to(lhs, &ast::VarType::Base(ast::BaseType::Int));
-                        convert_to(rhs, &ast::VarType::Base(ast::BaseType::Int));
                     }
                     ast::BinaryOp::Equal | ast::BinaryOp::NotEqual => {
                         let cty = if tyl.is_pointer() || tyr.is_pointer() {
@@ -952,15 +950,24 @@ impl TypeChecker {
                             return Err(Error::IncompatibleTypes(exp.token_span()));
                         }
                     }
-                    ast::BinaryOp::ShiftLeft
-                    | ast::BinaryOp::ShiftRight
-                    | ast::BinaryOp::BitAnd
-                    | ast::BinaryOp::BitOr
-                    | ast::BinaryOp::Xor => {
+                    ast::BinaryOp::ShiftLeft | ast::BinaryOp::ShiftRight => {
                         if !tyl.is_integer() || !tyr.is_integer() {
                             return Err(Error::IncompatibleTypes(exp.token_span()));
                         }
                         *ty = tyl.clone();
+                    }
+                    ast::BinaryOp::BitAnd | ast::BinaryOp::BitOr | ast::BinaryOp::Xor => {
+                        if let (ast::VarType::Base(tyl), ast::VarType::Base(tyr)) = (tyl, tyr) {
+                            if tyl == BaseType::Double || tyr == BaseType::Double {
+                                return Err(Error::IncompatibleTypes(exp.token_span()));
+                            }
+                            let cty = common_base_type(tyl, tyr).into();
+                            convert_to(lhs, &cty);
+                            convert_to(rhs, &cty);
+                            *ty = cty;
+                        } else {
+                            return Err(Error::IncompatibleTypes(exp.token_span()));
+                        }
                     }
                     _ => match op {
                         ast::BinaryOp::Multiply | ast::BinaryOp::Divide => {
@@ -1029,7 +1036,6 @@ impl TypeChecker {
                 if !cond_ty.is_scalar() {
                     return Err(Error::IncompatibleTypes(condition.token_span()));
                 }
-                convert_to(condition, &VarType::Base(ast::BaseType::Int));
                 let tyl = self.check_expression_and_convert(then_branch)?;
                 let tyr = self.check_expression_and_convert(else_branch)?;
 
@@ -1363,8 +1369,6 @@ impl TypeChecker {
                 if !cond_ty.is_scalar() {
                     return Err(Error::IncompatibleTypes(condition.token_span()));
                 }
-
-                convert_to(condition, &VarType::Base(BaseType::Int));
 
                 self.check_statement(then_branch, ret_type)?;
                 if let Some(else_branch) = else_branch {

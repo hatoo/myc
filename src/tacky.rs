@@ -500,10 +500,24 @@ impl<'a> InstructionGenerator<'a> {
                 let break_label: EcoString = format!("break_{}", label).into();
                 for (case, label) in labels.cases.iter() {
                     let cond = self.make_tmp_local(VarType::Base(BaseType::Int));
+
+                    let case = match exp.ty(self.symbol_table) {
+                        VarType::Base(base) => match base {
+                            BaseType::Char | BaseType::SChar => ast::Const::Char(*case as _),
+                            BaseType::UChar => ast::Const::UChar(*case as _),
+                            BaseType::Int => ast::Const::Int(*case as _),
+                            BaseType::Uint => ast::Const::Uint(*case as _),
+                            BaseType::Long => ast::Const::Long(*case as _),
+                            BaseType::Ulong => ast::Const::Ulong(*case as _),
+                            BaseType::Double => unreachable!(),
+                        },
+                        _ => unreachable!(),
+                    };
+
                     self.instructions.push(Instruction::Binary {
                         op: BinaryOp::Equal,
                         lhs: exp.clone(),
-                        rhs: Val::Constant(ast::Const::Int(*case as _)),
+                        rhs: Val::Constant(case),
                         dst: cond.clone(),
                     });
                     self.instructions.push(Instruction::JumpIfNotZero {

@@ -220,7 +220,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if opts.tacky {
         print_tacky(&tacky);
-        dbg!(type_checker.sym_table);
+        println!("symbol table:");
+        for (k, v) in type_checker.sym_table.0.iter().collect::<BTreeMap<_, _>>() {
+            println!("{}: {:?}", k, v);
+        }
         return Ok(());
     }
 
