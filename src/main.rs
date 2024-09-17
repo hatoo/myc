@@ -220,6 +220,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if opts.tacky {
         print_tacky(&tacky);
+        dbg!(type_checker.sym_table);
         return Ok(());
     }
 

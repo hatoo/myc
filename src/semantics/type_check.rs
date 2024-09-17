@@ -895,7 +895,8 @@ impl TypeChecker {
                         if !tyl.is_scalar() || !tyr.is_scalar() {
                             return Err(Error::IncompatibleTypes(exp.token_span()));
                         }
-                        *ty = ast::BaseType::Int.into();
+                        convert_to(lhs, &ast::VarType::Base(ast::BaseType::Int));
+                        convert_to(rhs, &ast::VarType::Base(ast::BaseType::Int));
                     }
                     ast::BinaryOp::Equal | ast::BinaryOp::NotEqual => {
                         let cty = if tyl.is_pointer() || tyr.is_pointer() {
@@ -1028,6 +1029,7 @@ impl TypeChecker {
                 if !cond_ty.is_scalar() {
                     return Err(Error::IncompatibleTypes(condition.token_span()));
                 }
+                convert_to(condition, &VarType::Base(ast::BaseType::Int));
                 let tyl = self.check_expression_and_convert(then_branch)?;
                 let tyr = self.check_expression_and_convert(else_branch)?;
 
@@ -1287,6 +1289,12 @@ impl TypeChecker {
                 }
             }
             ast::Expression::Increment { exp, .. } | ast::Expression::Decrement { exp, .. } => {
+                if let Expression::Var(name, _) = exp.as_ref() {
+                    if let Some(Attr::Fun { .. }) = self.sym_table.get(&name.data) {
+                        return Err(Error::IncompatibleTypes(exp.token_span()));
+                    }
+                }
+
                 let ty = self.check_expression_and_convert(exp)?;
                 if !ty.is_scalar() {
                     return Err(Error::IncompatibleTypes(exp.token_span()));
@@ -1355,6 +1363,8 @@ impl TypeChecker {
                 if !cond_ty.is_scalar() {
                     return Err(Error::IncompatibleTypes(condition.token_span()));
                 }
+
+                convert_to(condition, &VarType::Base(BaseType::Int));
 
                 self.check_statement(then_branch, ret_type)?;
                 if let Some(else_branch) = else_branch {
