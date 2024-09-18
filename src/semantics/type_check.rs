@@ -177,6 +177,7 @@ pub enum Attr {
     },
     Local(ast::VarType),
     Struct(StructDef),
+    Union(UnionDef),
 }
 
 #[derive(Debug, Clone)]
@@ -186,11 +187,24 @@ pub struct StructDef {
     pub members: Vec<StructMember>,
 }
 
+#[derive(Debug, Clone)]
+pub struct UnionDef {
+    pub alignment: usize,
+    pub size: usize,
+    pub members: Vec<UnionMember>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StructMember {
     pub name: EcoString,
     pub ty: ast::VarType,
     pub offset: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnionMember {
+    pub name: EcoString,
+    pub ty: ast::VarType,
 }
 
 #[derive(Debug, Clone)]
@@ -387,6 +401,7 @@ impl TypeChecker {
                 crate::ast::Declaration::VarDecl(decl) => self.check_var_decl_file(decl)?,
                 crate::ast::Declaration::FunDecl(decl) => self.check_fun_decl(decl)?,
                 crate::ast::Declaration::StructDecl(decl) => self.check_struct_decl(decl)?,
+                crate::ast::Declaration::UnionDecl(decl) => self.check_union_decl(decl)?,
             }
         }
 
@@ -621,6 +636,7 @@ impl TypeChecker {
                 self.check_fun_decl(decl)
             }
             crate::ast::Declaration::StructDecl(decl) => self.check_struct_decl(decl),
+            crate::ast::Declaration::UnionDecl(decl) => self.check_union_decl(decl),
         }
     }
 
@@ -652,7 +668,7 @@ impl TypeChecker {
         let mut global = storage_class != &Some(crate::ast::StorageClass::Static);
 
         match self.sym_table.get(&ident.data) {
-            Some(Attr::Fun { .. } | Attr::Struct { .. }) => {
+            Some(Attr::Fun { .. } | Attr::Struct { .. } | Attr::Union(..)) => {
                 return Err(Error::IncompatibleTypes(ident.span.clone()));
             }
             Some(Attr::Static {
@@ -719,7 +735,7 @@ impl TypeChecker {
                 }
                 match self.sym_table.entry(ident.data.clone()) {
                     Entry::Occupied(o) => match o.get() {
-                        Attr::Fun { .. } | Attr::Struct(_) => {
+                        Attr::Fun { .. } | Attr::Struct(_) | Attr::Union(_) => {
                             return Err(Error::IncompatibleTypes(ident.span.clone()));
                         }
                         Attr::Local(ty0) | Attr::Static { ty: ty0, .. } => {
@@ -848,7 +864,7 @@ impl TypeChecker {
                     *ty = target.clone();
                     Ok(target.clone())
                 }
-                Some(Attr::Constant { .. } | Attr::Struct { .. }) => {
+                Some(Attr::Constant { .. } | Attr::Struct { .. } | Attr::Union(_)) => {
                     unreachable!()
                 }
                 None => Err(Error::IncompatibleTypes(name.span.clone())),
@@ -1489,7 +1505,69 @@ impl TypeChecker {
         Ok(())
     }
 
+    fn check_union_decl(&mut self, decl: &ast::UnionDecl) -> Result<(), Error> {
+        if decl.member_decls.is_empty() {
+            return Ok(());
+        }
+
+        if self.sym_table.contains_key(&decl.tag.data) {
+            return Err(Error::Redefined(decl.tag.clone()));
+        }
+
+        let mut members = Vec::new();
+
+        let mut union_size = 0;
+        let mut union_align = 0;
+
+        for member in &decl.member_decls {
+            let size = self.sym_table.size(&member.ty);
+            let align = if let VarType::Array { element, .. } = &member.ty {
+                // HACK
+                // TODO: Read SystemV ABI
+                self.sym_table.alignment(element)
+            } else {
+                self.sym_table.alignment(&member.ty)
+            };
+
+            members.push(UnionMember {
+                name: member.name.clone(),
+                ty: member.ty.clone(),
+            });
+
+            union_size = std::cmp::max(union_size, size);
+            union_align = std::cmp::max(union_align, align);
+        }
+        union_size = round_up(union_size, union_align);
+
+        self.sym_table.insert(
+            decl.tag.data.clone(),
+            Attr::Union(UnionDef {
+                members,
+                size: union_size,
+                alignment: union_align,
+            }),
+        );
+        self.validate_union_definition(decl)?;
+        Ok(())
+    }
+
     fn validate_struct_definition(&self, decl: &ast::StructDecl) -> Result<(), Error> {
+        let mut member_names = HashSet::new();
+
+        for member in &decl.member_decls {
+            if !member_names.insert(member.name.clone()) {
+                todo!()
+            }
+
+            if self.validate_var_type(&member.ty, false).is_err() {
+                todo!()
+            }
+        }
+
+        Ok(())
+    }
+
+    fn validate_union_definition(&self, decl: &ast::UnionDecl) -> Result<(), Error> {
         let mut member_names = HashSet::new();
 
         for member in &decl.member_decls {
