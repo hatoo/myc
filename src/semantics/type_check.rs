@@ -151,6 +151,9 @@ impl SymbolTable {
             ast::VarType::Struct(tag) => {
                 matches!(self.get(tag), Some(Attr::Struct(_)))
             }
+            ast::VarType::Union(tag) => {
+                matches!(self.get(tag), Some(Attr::Union(_)))
+            }
             _ => true,
         }
     }
@@ -1111,7 +1114,7 @@ impl TypeChecker {
                     } else {
                         return Err(Error::IncompatibleTypes(exp.token_span()));
                     }
-                } else if tyl.is_struct() || tyr.is_struct() {
+                } else if tyl.is_struct() || tyl.is_union() || tyr.is_struct() || tyr.is_union() {
                     if tyl == tyr {
                         tyl.clone()
                     } else {
@@ -1375,6 +1378,13 @@ impl TypeChecker {
             VarType::Struct(s) => {
                 if self.sym_table.is_complete(&VarType::Struct(s.clone())) {
                     Ok(VarType::Struct(s))
+                } else {
+                    Err(Error::IncompatibleTypes(exp.token_span()))
+                }
+            }
+            VarType::Union(u) => {
+                if self.sym_table.is_complete(&VarType::Union(u.clone())) {
+                    Ok(VarType::Union(u))
                 } else {
                     Err(Error::IncompatibleTypes(exp.token_span()))
                 }

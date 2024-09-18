@@ -482,6 +482,17 @@ impl VarResolver {
                     }))
                 }
             }
+            ast::VarType::Union(name) => {
+                if let Some((_, new_name)) = self.lookup_union(name) {
+                    *name = new_name.clone();
+                    Ok(())
+                } else {
+                    Err(Error::StructNotDeclared(TokenSpanned {
+                        data: name.clone(),
+                        span,
+                    }))
+                }
+            }
             ast::VarType::Pointer(inner) => match inner.as_mut() {
                 ast::Ty::Fun(ty) => self.resolve_fun_type(ty, span),
                 ast::Ty::Var(ty) => self.resolve_var_type(ty, span),

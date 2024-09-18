@@ -619,6 +619,9 @@ impl VarType {
     pub fn is_struct(&self) -> bool {
         matches!(self, Self::Struct(_))
     }
+    pub fn is_union(&self) -> bool {
+        matches!(self, Self::Union(_))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -743,6 +746,7 @@ enum TypeSpecifier {
     Signed,
     Double,
     Struct(EcoString),
+    Union(EcoString),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -830,6 +834,14 @@ fn solve_type_specifier(ty: &[TokenSpanned<TypeSpecifier>]) -> Result<VarType, E
         return Ok(VarType::Struct(tag.clone()));
     }
 
+    if let [TokenSpanned {
+        data: TypeSpecifier::Union(tag),
+        ..
+    }] = ty
+    {
+        return Ok(VarType::Union(tag.clone()));
+    }
+
     for s in ty {
         match s.data {
             TypeSpecifier::Void => {
@@ -868,7 +880,7 @@ fn solve_type_specifier(ty: &[TokenSpanned<TypeSpecifier>]) -> Result<VarType, E
             TypeSpecifier::Double => {
                 return Err(Error::BadTypeSpecifier(s.span.clone()));
             }
-            TypeSpecifier::Struct(_) => {
+            TypeSpecifier::Struct(_) | TypeSpecifier::Union(_) => {
                 return Err(Error::BadTypeSpecifier(s.span.clone()));
             }
         }
@@ -1569,6 +1581,15 @@ impl<'a> Parser<'a> {
                     end = tag.span.end;
                     ty.push(TokenSpanned {
                         data: TypeSpecifier::Struct(tag.data.clone()),
+                        span: tag.span,
+                    });
+                }
+                Token::Union => {
+                    self.advance();
+                    let tag = self.expect_ident()?;
+                    end = tag.span.end;
+                    ty.push(TokenSpanned {
+                        data: TypeSpecifier::Union(tag.data.clone()),
                         span: tag.span,
                     });
                 }
