@@ -752,10 +752,10 @@ impl<'a> InstructionGenerator<'a> {
                 match &lhs {
                     ExpResult::PlainOperand(dst) => {
                         self.instructions.push(Instruction::Copy {
-                            src: rhs,
+                            src: rhs.clone(),
                             dst: dst.clone(),
                         });
-                        lhs
+                        ExpResult::PlainOperand(rhs)
                     }
                     ExpResult::DereferencedPointer(ptr) => {
                         self.instructions.push(Instruction::Store {

@@ -1255,7 +1255,7 @@ impl TypeChecker {
                 let index_ty = self.check_expression_and_convert(index)?;
 
                 if array_ty.is_pointer() && index_ty.is_integer() {
-                    convert_to(index, &ast::VarType::Base(ast::BaseType::Ulong));
+                    convert_to(index, &ast::VarType::Base(ast::BaseType::Long));
                     *ty = match array_ty {
                         ast::VarType::Pointer(ty) => {
                             if let ast::Ty::Var(ty) = ty.as_ref() {
@@ -1270,7 +1270,7 @@ impl TypeChecker {
                         _ => unreachable!(),
                     };
                 } else if array_ty.is_integer() && index_ty.is_pointer() {
-                    convert_to(array, &ast::BaseType::Ulong.into());
+                    convert_to(array, &ast::BaseType::Long.into());
                     *ty = match index_ty {
                         ast::VarType::Pointer(ty) => {
                             if let ast::Ty::Var(ty) = ty.as_ref() {
