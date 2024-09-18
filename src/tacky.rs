@@ -651,7 +651,6 @@ impl<'a> InstructionGenerator<'a> {
                 let lhs_ty = lhs.ty();
                 let lhs_before_convert = self.add_expression(lhs);
                 let lhs = self.convert(&lhs_before_convert, lhs.ty());
-                let lhs = self.manual_cast(&lhs, ty);
                 let dst = self.make_tmp_local(ty.clone());
                 let and_false = self.new_label("and_false");
                 self.instructions.push(Instruction::JumpIfZero {
@@ -692,7 +691,6 @@ impl<'a> InstructionGenerator<'a> {
                 let lhs_ty = lhs.ty();
                 let lhs_before_convert = self.add_expression(lhs);
                 let lhs = self.convert(&lhs_before_convert, lhs.ty());
-                let lhs = self.manual_cast(&lhs, ty);
                 let dst = self.make_tmp_local(ty.clone());
                 let or_true = self.new_label("or_true");
                 self.instructions.push(Instruction::JumpIfNotZero {
