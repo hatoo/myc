@@ -576,8 +576,11 @@ impl<'a> InstructionGenerator<'a> {
                 lhs,
                 rhs,
                 ty,
+                assign,
             } => {
-                let lhs = self.add_expression_and_convert(lhs);
+                // TODO: fix duplicated codes
+                let lhs_before_convert = self.add_expression(lhs);
+                let lhs = self.convert(&lhs_before_convert, lhs.ty());
                 let dst = self.make_tmp_local(ty.clone());
                 let and_false = self.new_label("and_false");
                 self.instructions.push(Instruction::JumpIfZero {
@@ -602,6 +605,30 @@ impl<'a> InstructionGenerator<'a> {
                     dst: dst.clone(),
                 });
                 self.instructions.push(Instruction::Label(end));
+
+                if *assign {
+                    match lhs_before_convert {
+                        ExpResult::PlainOperand(dst) => {
+                            self.instructions.push(Instruction::Copy {
+                                src: dst.clone(),
+                                dst: lhs.clone(),
+                            });
+                        }
+                        ExpResult::DereferencedPointer(ptr) => {
+                            self.instructions.push(Instruction::Store {
+                                src: dst.clone(),
+                                dst: ptr.clone(),
+                            });
+                        }
+                        ExpResult::SubObject { base, offset } => {
+                            self.instructions.push(Instruction::CopyToOffset {
+                                src: dst.clone(),
+                                dst: Val::Var(base),
+                                offset,
+                            });
+                        }
+                    }
+                }
                 ExpResult::PlainOperand(dst)
             }
             ast::Expression::Binary {
@@ -609,8 +636,10 @@ impl<'a> InstructionGenerator<'a> {
                 lhs,
                 rhs,
                 ty,
+                assign,
             } => {
-                let lhs = self.add_expression_and_convert(lhs);
+                let lhs_before_convert = self.add_expression(lhs);
+                let lhs = self.convert(&lhs_before_convert, lhs.ty());
                 let dst = self.make_tmp_local(ty.clone());
                 let or_true = self.new_label("or_true");
                 self.instructions.push(Instruction::JumpIfNotZero {
@@ -634,10 +663,42 @@ impl<'a> InstructionGenerator<'a> {
                     dst: dst.clone(),
                 });
                 self.instructions.push(Instruction::Label(end));
+
+                if *assign {
+                    match lhs_before_convert {
+                        ExpResult::PlainOperand(dst) => {
+                            self.instructions.push(Instruction::Copy {
+                                src: dst.clone(),
+                                dst: lhs.clone(),
+                            });
+                        }
+                        ExpResult::DereferencedPointer(ptr) => {
+                            self.instructions.push(Instruction::Store {
+                                src: dst.clone(),
+                                dst: ptr.clone(),
+                            });
+                        }
+                        ExpResult::SubObject { base, offset } => {
+                            self.instructions.push(Instruction::CopyToOffset {
+                                src: dst.clone(),
+                                dst: Val::Var(base),
+                                offset,
+                            });
+                        }
+                    }
+                }
+
                 ExpResult::PlainOperand(dst)
             }
-            ast::Expression::Binary { op, lhs, rhs, ty } => {
-                let lhs = self.add_expression_and_convert(lhs);
+            ast::Expression::Binary {
+                op,
+                lhs,
+                rhs,
+                ty,
+                assign,
+            } => {
+                let lhs_before_convert = self.add_expression(lhs);
+                let lhs = self.convert(&lhs_before_convert, lhs.ty());
                 let rhs = self.add_expression_and_convert(rhs);
                 let dst = self.make_tmp_local(ty.clone());
 
@@ -653,11 +714,34 @@ impl<'a> InstructionGenerator<'a> {
                                 (rhs, lhs)
                             };
                             self.instructions.push(Instruction::AddPtr {
-                                ptr: lhs,
+                                ptr: lhs.clone(),
                                 index: rhs,
                                 scale: self.symbol_table.size(elem),
                                 dst: dst.clone(),
                             });
+                            if *assign {
+                                match lhs_before_convert {
+                                    ExpResult::PlainOperand(dst) => {
+                                        self.instructions.push(Instruction::Copy {
+                                            src: dst.clone(),
+                                            dst: lhs.clone(),
+                                        });
+                                    }
+                                    ExpResult::DereferencedPointer(ptr) => {
+                                        self.instructions.push(Instruction::Store {
+                                            src: dst.clone(),
+                                            dst: ptr.clone(),
+                                        });
+                                    }
+                                    ExpResult::SubObject { base, offset } => {
+                                        self.instructions.push(Instruction::CopyToOffset {
+                                            src: dst.clone(),
+                                            dst: Val::Var(base),
+                                            offset,
+                                        });
+                                    }
+                                }
+                            }
                             return ExpResult::PlainOperand(dst);
                         }
                         ast::BinaryOp::Subtract => {
@@ -670,11 +754,34 @@ impl<'a> InstructionGenerator<'a> {
                                 dst: neg.clone(),
                             });
                             self.instructions.push(Instruction::AddPtr {
-                                ptr: lhs,
+                                ptr: lhs.clone(),
                                 index: neg,
                                 scale: self.symbol_table.size(elem),
                                 dst: dst.clone(),
                             });
+                            if *assign {
+                                match lhs_before_convert {
+                                    ExpResult::PlainOperand(dst) => {
+                                        self.instructions.push(Instruction::Copy {
+                                            src: dst.clone(),
+                                            dst: lhs.clone(),
+                                        });
+                                    }
+                                    ExpResult::DereferencedPointer(ptr) => {
+                                        self.instructions.push(Instruction::Store {
+                                            src: dst.clone(),
+                                            dst: ptr.clone(),
+                                        });
+                                    }
+                                    ExpResult::SubObject { base, offset } => {
+                                        self.instructions.push(Instruction::CopyToOffset {
+                                            src: dst.clone(),
+                                            dst: Val::Var(base),
+                                            offset,
+                                        });
+                                    }
+                                }
+                            }
                             return ExpResult::PlainOperand(dst);
                         }
                         _ => unreachable!(),
@@ -703,6 +810,29 @@ impl<'a> InstructionGenerator<'a> {
                         rhs: Val::Constant(ast::Const::Long(elem_size as _)),
                         dst: dst.clone(),
                     });
+                    if *assign {
+                        match lhs_before_convert {
+                            ExpResult::PlainOperand(dst) => {
+                                self.instructions.push(Instruction::Copy {
+                                    src: dst.clone(),
+                                    dst: lhs.clone(),
+                                });
+                            }
+                            ExpResult::DereferencedPointer(ptr) => {
+                                self.instructions.push(Instruction::Store {
+                                    src: dst.clone(),
+                                    dst: ptr.clone(),
+                                });
+                            }
+                            ExpResult::SubObject { base, offset } => {
+                                self.instructions.push(Instruction::CopyToOffset {
+                                    src: dst.clone(),
+                                    dst: Val::Var(base),
+                                    offset,
+                                });
+                            }
+                        }
+                    }
                     return ExpResult::PlainOperand(dst);
                 }
 
@@ -726,10 +856,33 @@ impl<'a> InstructionGenerator<'a> {
                         ast::BinaryOp::ShiftLeft => BinaryOp::ShiftLeft,
                         ast::BinaryOp::ShiftRight => BinaryOp::ShiftRight,
                     },
-                    lhs,
+                    lhs: lhs.clone(),
                     rhs,
                     dst: dst.clone(),
                 });
+                if *assign {
+                    match lhs_before_convert {
+                        ExpResult::PlainOperand(dst) => {
+                            self.instructions.push(Instruction::Copy {
+                                src: dst.clone(),
+                                dst: lhs.clone(),
+                            });
+                        }
+                        ExpResult::DereferencedPointer(ptr) => {
+                            self.instructions.push(Instruction::Store {
+                                src: dst.clone(),
+                                dst: ptr.clone(),
+                            });
+                        }
+                        ExpResult::SubObject { base, offset } => {
+                            self.instructions.push(Instruction::CopyToOffset {
+                                src: dst.clone(),
+                                dst: Val::Var(base),
+                                offset,
+                            });
+                        }
+                    }
+                }
                 ExpResult::PlainOperand(dst)
             }
             ast::Expression::Var(TokenSpanned { data: var, .. }, _) => {
@@ -1194,6 +1347,29 @@ impl<'a> InstructionGenerator<'a> {
                 self.instructions.push(Instruction::CopyFromOffset {
                     src: Val::Var(base),
                     offset,
+                    dst: dst.clone(),
+                });
+                dst
+            }
+        }
+    }
+
+    fn convert(&mut self, exp_res: &ExpResult, ty: &VarType) -> Val {
+        match exp_res {
+            ExpResult::PlainOperand(val) => val.clone(),
+            ExpResult::DereferencedPointer(ptr) => {
+                let dst = self.make_tmp_local(ty.clone());
+                self.instructions.push(Instruction::Load {
+                    src: ptr.clone(),
+                    dst: dst.clone(),
+                });
+                dst
+            }
+            ExpResult::SubObject { base, offset } => {
+                let dst = self.make_tmp_local(ty.clone());
+                self.instructions.push(Instruction::CopyFromOffset {
+                    src: Val::Var(base.clone()),
+                    offset: *offset,
                     dst: dst.clone(),
                 });
                 dst

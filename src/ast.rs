@@ -351,6 +351,7 @@ pub enum Expression {
         lhs: Box<Expression>,
         rhs: Box<Expression>,
         ty: VarType,
+        assign: bool,
     },
     Assignment {
         lhs: Box<Expression>,
@@ -2177,15 +2178,13 @@ impl<'a> Parser<'a> {
                     }
                     Op::BinaryAssign(bin_op) => {
                         let right = self.parse_expression(op.precedence())?;
-                        left = Expression::Assignment {
-                            lhs: Box::new(left.clone()),
-                            rhs: Box::new(Expression::Binary {
-                                op: bin_op,
-                                lhs: Box::new(left),
-                                rhs: Box::new(right),
-                                ty: VarType::Void,
-                            }),
-                        }
+                        left = Expression::Binary {
+                            op: bin_op,
+                            lhs: Box::new(left),
+                            rhs: Box::new(right),
+                            ty: VarType::Void,
+                            assign: true,
+                        };
                     }
                     Op::Condition => {
                         let then_branch = self.parse_expression(0)?;
@@ -2204,6 +2203,7 @@ impl<'a> Parser<'a> {
                             lhs: Box::new(left),
                             rhs: Box::new(right),
                             ty: BaseType::Int.into(),
+                            assign: false,
                         };
                     }
                 }

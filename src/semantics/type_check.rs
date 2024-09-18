@@ -985,9 +985,19 @@ impl TypeChecker {
                 }
                 Ok(ty.clone())
             }
-            crate::ast::Expression::Binary { op, lhs, rhs, ty } => {
+            crate::ast::Expression::Binary {
+                op,
+                lhs,
+                rhs,
+                ty,
+                assign,
+            } => {
                 let tyl = self.check_expression_and_convert(lhs)?;
                 let tyr = self.check_expression_and_convert(rhs)?;
+
+                if *assign && !lhs.is_lvalue() {
+                    return Err(Error::IncompatibleTypes(lhs.token_span()));
+                }
 
                 match op {
                     ast::BinaryOp::And | ast::BinaryOp::Or => {
@@ -1017,7 +1027,11 @@ impl TypeChecker {
                     }
                     ast::BinaryOp::Add => {
                         if let (ast::VarType::Base(tyl), ast::VarType::Base(tyr)) = (&tyl, &tyr) {
-                            let cty = common_base_type(*tyl, *tyr).into();
+                            let cty = if *assign {
+                                VarType::Base(*tyl)
+                            } else {
+                                common_base_type(*tyl, *tyr).into()
+                            };
                             convert_to(lhs, &cty);
                             convert_to(rhs, &cty);
                             *ty = cty;
@@ -1033,7 +1047,11 @@ impl TypeChecker {
                     }
                     ast::BinaryOp::Subtract => {
                         if let (ast::VarType::Base(tyl), ast::VarType::Base(tyr)) = (&tyl, &tyr) {
-                            let cty = common_base_type(*tyl, *tyr).into();
+                            let cty = if *assign {
+                                VarType::Base(*tyl)
+                            } else {
+                                common_base_type(*tyl, *tyr).into()
+                            };
                             convert_to(lhs, &cty);
                             convert_to(rhs, &cty);
                             *ty = cty;
