@@ -319,6 +319,16 @@ impl<'a> InstructionGenerator<'a> {
                     }
                     *offset = offset_start + struct_def.size;
                 }
+                VarType::Union(union_name) => {
+                    let union_def = self.symbol_table.union_def(union_name).clone();
+                    self.copy_initializers(
+                        &inits[0],
+                        name,
+                        &union_def.members[0].ty,
+                        offset,
+                        depth + 1,
+                    )
+                }
                 _ => unreachable!(),
             },
         }

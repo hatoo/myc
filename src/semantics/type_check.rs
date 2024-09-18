@@ -904,6 +904,16 @@ impl TypeChecker {
 
                 Ok(())
             }
+            (ast::VarType::Union(tag), ast::Initializer::CompoundInit(list)) => {
+                let UnionDef { members, .. } = self.sym_table.union_def(tag);
+
+                if list.len() > 1 {
+                    return Err(Error::IncompatibleTypes(span.unwrap()));
+                }
+
+                let ty = members[0].ty.clone();
+                self.check_init(&ty, &mut list[0])
+            }
 
             _ => Err(Error::IncompatibleTypes(span.unwrap())),
         }
