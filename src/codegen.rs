@@ -2988,7 +2988,7 @@ pub fn classify_struct(
     }
 }
 
-pub fn classify_union(structure: &type_check::UnionDef, _symbol_table: &SymbolTable) -> Vec<Class> {
+pub fn classify_union(structure: &type_check::UnionDef, symbol_table: &SymbolTable) -> Vec<Class> {
     if structure.size > 16 {
         let mut ret = Vec::new();
         let mut size = structure.size;
@@ -3005,15 +3005,17 @@ pub fn classify_union(structure: &type_check::UnionDef, _symbol_table: &SymbolTa
         let classes: Vec<_> = structure
             .members
             .iter()
-            .map(|m| classify(&m.ty, _symbol_table).0)
+            .map(|m| classify(&m.ty, symbol_table).0)
             .collect();
 
         let first_class = classes.iter().map(|c| c[0]).min().unwrap();
 
         if structure.size > 8 {
-            let last_class = *classes
+            let last_class = structure
+                .members
                 .iter()
-                .filter_map(|c| if c.len() > 1 { c.last() } else { None })
+                .filter(|m| symbol_table.size(&m.ty) > 8)
+                .filter_map(|m| classify(&m.ty, symbol_table).0.last().cloned())
                 .min()
                 .unwrap();
             vec![first_class, last_class]
