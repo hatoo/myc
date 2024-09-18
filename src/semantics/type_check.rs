@@ -1050,10 +1050,15 @@ impl TypeChecker {
                         }
                     }
                     ast::BinaryOp::ShiftLeft | ast::BinaryOp::ShiftRight => {
-                        if !tyl.is_integer() || !tyr.is_integer() {
-                            return Err(Error::IncompatibleTypes(exp.token_span()));
+                        if let (ast::VarType::Base(tyl), ast::VarType::Base(tyr)) = (&tyl, &tyr) {
+                            let cty = common_base_type(*tyl, *tyr).into();
+                            if cty == ast::VarType::Base(ast::BaseType::Double) {
+                                return Err(Error::IncompatibleTypes(exp.token_span()));
+                            }
+                            convert_to(lhs, &cty);
+                            convert_to(rhs, &cty);
+                            *ty = cty;
                         }
-                        *ty = tyl.clone();
                     }
                     ast::BinaryOp::BitAnd | ast::BinaryOp::BitOr | ast::BinaryOp::Xor => {
                         if let (ast::VarType::Base(tyl), ast::VarType::Base(tyr)) = (tyl, tyr) {
