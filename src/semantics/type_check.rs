@@ -540,14 +540,22 @@ impl TypeChecker {
                     Ok(res)
                 }
                 ast::VarType::Union(tag) => {
-                    let UnionDef { members, .. } = self.sym_table.union_def(tag);
+                    let UnionDef { members, size, .. } = self.sym_table.union_def(tag);
+                    let size = *size;
 
                     if inits.len() > 1 {
                         return Err(Error::IncompatibleTypes(0..0));
                     }
 
                     let ty = members[0].ty.clone();
-                    self.static_init_from_initializer(&ty, &inits[0])
+                    let mut res = self.static_init_from_initializer(&ty, &inits[0])?;
+                    let ty_size = self.sym_table.size(&ty);
+                    if size > ty_size {
+                        res.push(StaticInit::Zero(size - ty_size));
+                        Ok(res)
+                    } else {
+                        Ok(res)
+                    }
                 }
 
                 _ => Err(Error::IncompatibleTypes(0..0)),
