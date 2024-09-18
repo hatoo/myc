@@ -1725,6 +1725,13 @@ impl TypeChecker {
                     return Err(());
                 }
             }
+            VarType::Union(tag) => {
+                if !allow_incomplete_struct
+                    && !matches!(self.sym_table.get(tag), Some(Attr::Union { .. }))
+                {
+                    return Err(());
+                }
+            }
             _ => {}
         }
 
