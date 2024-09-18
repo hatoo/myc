@@ -1,6 +1,6 @@
 use core::panic;
 use std::{
-    collections::{hash_map::Entry, BTreeMap, HashMap, HashSet},
+    collections::{btree_set::Union, hash_map::Entry, BTreeMap, HashMap, HashSet},
     fmt::Display,
     ops::DerefMut,
 };
@@ -1279,16 +1279,26 @@ impl TypeChecker {
                 ty,
             } => {
                 let structure_ty = self.check_expression_and_convert(structure)?;
-                if let ast::VarType::Struct(s) = structure_ty {
-                    let StructDef { members, .. } = self.sym_table.struct_def(&s);
-                    if let Some(member) = members.iter().find(|name| name.name == member.data) {
-                        *ty = member.ty.clone();
-                        Ok(ty.clone())
-                    } else {
-                        Err(Error::IncompatibleTypes(exp.token_span()))
+                match structure_ty {
+                    ast::VarType::Struct(s) => {
+                        let StructDef { members, .. } = self.sym_table.struct_def(&s);
+                        if let Some(member) = members.iter().find(|name| name.name == member.data) {
+                            *ty = member.ty.clone();
+                            Ok(ty.clone())
+                        } else {
+                            Err(Error::IncompatibleTypes(exp.token_span()))
+                        }
                     }
-                } else {
-                    Err(Error::IncompatibleTypes(exp.token_span()))
+                    ast::VarType::Union(u) => {
+                        let UnionDef { members, .. } = self.sym_table.union_def(&u);
+                        if let Some(member) = members.iter().find(|name| name.name == member.data) {
+                            *ty = member.ty.clone();
+                            Ok(ty.clone())
+                        } else {
+                            Err(Error::IncompatibleTypes(exp.token_span()))
+                        }
+                    }
+                    _ => Err(Error::IncompatibleTypes(exp.token_span())),
                 }
             }
             ast::Expression::Arrow {
@@ -1302,12 +1312,28 @@ impl TypeChecker {
                     } else {
                         return Err(Error::IncompatibleTypes(exp.token_span()));
                     };
-                    let StructDef { members, .. } = self.sym_table.struct_def(s);
-                    if let Some(member) = members.iter().find(|name| name.name == member.data) {
-                        *ty = member.ty.clone();
-                        Ok(ty.clone())
-                    } else {
-                        Err(Error::IncompatibleTypes(exp.token_span()))
+                    match &self.sym_table[s] {
+                        Attr::Struct(StructDef { members, .. }) => {
+                            if let Some(member) =
+                                members.iter().find(|name| name.name == member.data)
+                            {
+                                *ty = member.ty.clone();
+                                Ok(ty.clone())
+                            } else {
+                                Err(Error::IncompatibleTypes(exp.token_span()))
+                            }
+                        }
+                        Attr::Union(UnionDef { members, .. }) => {
+                            if let Some(member) =
+                                members.iter().find(|name| name.name == member.data)
+                            {
+                                *ty = member.ty.clone();
+                                Ok(ty.clone())
+                            } else {
+                                Err(Error::IncompatibleTypes(exp.token_span()))
+                            }
+                        }
+                        _ => Err(Error::IncompatibleTypes(exp.token_span())),
                     }
                 } else {
                     Err(Error::IncompatibleTypes(exp.token_span()))
