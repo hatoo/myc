@@ -979,7 +979,15 @@ impl<'a> InstructionGenerator<'a> {
                         }
                     }
                 }
-                ast::VarType::Union(_) => self.add_expression(structure),
+                ast::VarType::Union(_) => {
+                    let dst = self.make_tmp_local(ty.clone());
+                    let exp = self.add_expression_and_convert(structure);
+                    self.instructions.push(Instruction::Copy {
+                        src: exp,
+                        dst: dst.clone(),
+                    });
+                    ExpResult::PlainOperand(dst)
+                }
                 _ => unreachable!(),
             },
             ast::Expression::Arrow {
