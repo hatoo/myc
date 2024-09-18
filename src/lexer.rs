@@ -173,6 +173,7 @@ pub enum Token {
     Switch,
     Case,
     Default,
+    Union,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -360,6 +361,7 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
                     "switch" => Token::Switch,
                     "case" => Token::Case,
                     "default" => Token::Default,
+                    "union" => Token::Union,
                     _ => Token::Ident(EcoString::from(ident)),
                 };
                 tokens.push(Spanned {
