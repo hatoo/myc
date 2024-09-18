@@ -979,15 +979,30 @@ impl<'a> InstructionGenerator<'a> {
                         }
                     }
                 }
-                ast::VarType::Union(_) => {
-                    let dst = self.make_tmp_local(ty.clone());
-                    let exp = self.add_expression_and_convert(structure);
-                    self.instructions.push(Instruction::Copy {
-                        src: exp,
-                        dst: dst.clone(),
-                    });
-                    ExpResult::PlainOperand(dst)
-                }
+                ast::VarType::Union(_) => match self.add_expression(structure) {
+                    ExpResult::PlainOperand(Val::Var(v)) => {
+                        ExpResult::SubObject { base: v, offset: 0 }
+                    }
+                    ExpResult::PlainOperand(Val::Constant(_)) => unreachable!(),
+                    ExpResult::SubObject { base, offset } => ExpResult::SubObject {
+                        base,
+                        offset: offset + 0,
+                    },
+                    ExpResult::DereferencedPointer(ptr) => {
+                        let dst_ptr = self.make_tmp_local(ast::VarType::Pointer(Box::new(
+                            ast::Ty::Var(ty.clone()),
+                        )));
+
+                        self.instructions.push(Instruction::AddPtr {
+                            ptr,
+                            index: Val::Constant(ast::Const::Int(0 as _)),
+                            scale: 1,
+                            dst: dst_ptr.clone(),
+                        });
+
+                        ExpResult::DereferencedPointer(dst_ptr)
+                    }
+                },
                 _ => unreachable!(),
             },
             ast::Expression::Arrow {
@@ -1027,7 +1042,20 @@ impl<'a> InstructionGenerator<'a> {
 
                         ExpResult::DereferencedPointer(dst_ptr)
                     }
-                    ast::VarType::Union(_) => self.add_expression(pointer),
+                    ast::VarType::Union(_) => {
+                        let ptr = self.add_expression_and_convert(pointer);
+                        let dst_ptr =
+                            self.make_tmp_local(VarType::Pointer(Box::new(Ty::Var(ty.clone()))));
+
+                        self.instructions.push(Instruction::AddPtr {
+                            ptr,
+                            index: Val::Constant(ast::Const::Int(0)),
+                            scale: 1,
+                            dst: dst_ptr.clone(),
+                        });
+
+                        ExpResult::DereferencedPointer(dst_ptr)
+                    }
                     _ => unreachable!(),
                 }
             }
