@@ -1,6 +1,6 @@
 use core::panic;
 use std::{
-    collections::{btree_set::Union, hash_map::Entry, BTreeMap, HashMap, HashSet},
+    collections::{hash_map::Entry, BTreeMap, HashMap, HashSet},
     fmt::Display,
     ops::DerefMut,
 };

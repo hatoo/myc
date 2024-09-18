@@ -933,32 +933,72 @@ impl<'a> InstructionGenerator<'a> {
                 structure,
                 member,
                 ty,
+            } => match structure.ty() {
+                ast::VarType::Struct(struct_name) => {
+                    let struct_def = self.symbol_table.struct_def(struct_name);
+                    let member_offset = struct_def
+                        .members
+                        .iter()
+                        .find(|m| m.name == member.data)
+                        .unwrap()
+                        .offset;
+
+                    match self.add_expression(structure) {
+                        ExpResult::PlainOperand(Val::Var(v)) => ExpResult::SubObject {
+                            base: v,
+                            offset: member_offset,
+                        },
+                        ExpResult::PlainOperand(Val::Constant(_)) => unreachable!(),
+                        ExpResult::SubObject { base, offset } => ExpResult::SubObject {
+                            base,
+                            offset: offset + member_offset,
+                        },
+                        ExpResult::DereferencedPointer(ptr) => {
+                            let dst_ptr = self.make_tmp_local(ast::VarType::Pointer(Box::new(
+                                ast::Ty::Var(ty.clone()),
+                            )));
+
+                            self.instructions.push(Instruction::AddPtr {
+                                ptr,
+                                index: Val::Constant(ast::Const::Int(member_offset as _)),
+                                scale: 1,
+                                dst: dst_ptr.clone(),
+                            });
+
+                            ExpResult::DereferencedPointer(dst_ptr)
+                        }
+                    }
+                }
+                ast::VarType::Union(_) => self.add_expression(structure),
+                _ => unreachable!(),
+            },
+            ast::Expression::Arrow {
+                pointer,
+                member,
+                ty,
             } => {
-                let ast::VarType::Struct(struct_name) = structure.ty() else {
+                let pointer_ty = if let ast::VarType::Pointer(ty) = pointer.ty() {
+                    let ast::Ty::Var(t) = ty.as_ref() else {
+                        unreachable!()
+                    };
+                    t
+                } else {
                     unreachable!()
                 };
-                let struct_def = self.symbol_table.struct_def(struct_name);
-                let member_offset = struct_def
-                    .members
-                    .iter()
-                    .find(|m| m.name == member.data)
-                    .unwrap()
-                    .offset;
 
-                match self.add_expression(structure) {
-                    ExpResult::PlainOperand(Val::Var(v)) => ExpResult::SubObject {
-                        base: v,
-                        offset: member_offset,
-                    },
-                    ExpResult::PlainOperand(Val::Constant(_)) => unreachable!(),
-                    ExpResult::SubObject { base, offset } => ExpResult::SubObject {
-                        base,
-                        offset: offset + member_offset,
-                    },
-                    ExpResult::DereferencedPointer(ptr) => {
-                        let dst_ptr = self.make_tmp_local(ast::VarType::Pointer(Box::new(
-                            ast::Ty::Var(ty.clone()),
-                        )));
+                match pointer_ty {
+                    ast::VarType::Struct(struct_name) => {
+                        let struct_def = self.symbol_table.struct_def(struct_name);
+                        let member_offset = struct_def
+                            .members
+                            .iter()
+                            .find(|m| m.name == member.data)
+                            .unwrap()
+                            .offset;
+
+                        let ptr = self.add_expression_and_convert(pointer);
+                        let dst_ptr =
+                            self.make_tmp_local(VarType::Pointer(Box::new(Ty::Var(ty.clone()))));
 
                         self.instructions.push(Instruction::AddPtr {
                             ptr,
@@ -969,40 +1009,9 @@ impl<'a> InstructionGenerator<'a> {
 
                         ExpResult::DereferencedPointer(dst_ptr)
                     }
+                    ast::VarType::Union(_) => self.add_expression(pointer),
+                    _ => unreachable!(),
                 }
-            }
-            ast::Expression::Arrow {
-                pointer,
-                member,
-                ty,
-            } => {
-                let struct_name = if let ast::VarType::Pointer(ty) = pointer.ty() {
-                    let ast::Ty::Var(ast::VarType::Struct(struct_name)) = ty.as_ref() else {
-                        unreachable!()
-                    };
-                    struct_name
-                } else {
-                    unreachable!()
-                };
-                let struct_def = self.symbol_table.struct_def(struct_name);
-                let member_offset = struct_def
-                    .members
-                    .iter()
-                    .find(|m| m.name == member.data)
-                    .unwrap()
-                    .offset;
-
-                let ptr = self.add_expression_and_convert(pointer);
-                let dst_ptr = self.make_tmp_local(VarType::Pointer(Box::new(Ty::Var(ty.clone()))));
-
-                self.instructions.push(Instruction::AddPtr {
-                    ptr,
-                    index: Val::Constant(ast::Const::Int(member_offset as _)),
-                    scale: 1,
-                    dst: dst_ptr.clone(),
-                });
-
-                ExpResult::DereferencedPointer(dst_ptr)
             }
             Expression::Increment { exp, postfix } => {
                 let val = self.add_expression_and_convert(exp);
