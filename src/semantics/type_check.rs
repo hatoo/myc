@@ -1051,8 +1051,12 @@ impl TypeChecker {
                     }
                     ast::BinaryOp::ShiftLeft | ast::BinaryOp::ShiftRight => {
                         if let (ast::VarType::Base(tyl), ast::VarType::Base(tyr)) = (&tyl, &tyr) {
-                            let cty = common_base_type(*tyl, *tyr).into();
-                            if cty == ast::VarType::Base(ast::BaseType::Double) {
+                            let cty = ast::VarType::Base(match tyl {
+                                ast::BaseType::Char | ast::BaseType::SChar => ast::BaseType::Int,
+                                ast::BaseType::UChar => ast::BaseType::Uint,
+                                _ => tyl.clone(),
+                            });
+                            if *tyl == ast::BaseType::Double || *tyr == ast::BaseType::Double {
                                 return Err(Error::IncompatibleTypes(exp.token_span()));
                             }
                             convert_to(lhs, &cty);
