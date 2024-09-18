@@ -1310,13 +1310,14 @@ impl TypeChecker {
                 ty,
             } => {
                 if let VarType::Pointer(box_ty) = self.check_expression_and_convert(pointer)? {
-                    let s = if let Ty::Var(VarType::Struct(s)) = box_ty.as_ref() {
+                    let s = if let Ty::Var(s) = box_ty.as_ref() {
                         s
                     } else {
                         return Err(Error::IncompatibleTypes(exp.token_span()));
                     };
-                    match &self.sym_table[s] {
-                        Attr::Struct(StructDef { members, .. }) => {
+                    match s {
+                        ast::VarType::Struct(s) => {
+                            let StructDef { members, .. } = self.sym_table.struct_def(s);
                             if let Some(member) =
                                 members.iter().find(|name| name.name == member.data)
                             {
@@ -1326,7 +1327,9 @@ impl TypeChecker {
                                 Err(Error::IncompatibleTypes(exp.token_span()))
                             }
                         }
-                        Attr::Union(UnionDef { members, .. }) => {
+
+                        ast::VarType::Union(u) => {
+                            let UnionDef { members, .. } = self.sym_table.union_def(u);
                             if let Some(member) =
                                 members.iter().find(|name| name.name == member.data)
                             {
