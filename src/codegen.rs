@@ -2935,6 +2935,10 @@ pub fn is_return_in_memory(ty: &VarType, symbol_table: &SymbolTable) -> bool {
     }
 }
 
+pub fn classify(ty: &VarType, symbol_table: &SymbolTable) -> Vec<Class> {
+    todo!()
+}
+
 pub fn classify_struct(
     structure: &type_check::StructDef,
     symbol_table: &SymbolTable,
@@ -2971,6 +2975,28 @@ pub fn classify_struct(
             }
         } else if scalar_types.first() == Some(&BaseType::Double) {
             vec![Class::Sse]
+        } else {
+            vec![Class::Integer]
+        }
+    }
+}
+
+pub fn classify_union(structure: &type_check::UnionDef, symbol_table: &SymbolTable) -> Vec<Class> {
+    if structure.size > 16 {
+        let mut ret = Vec::new();
+        let mut size = structure.size;
+        while size > 0 {
+            if size >= 8 {
+                size -= 8;
+            } else {
+                size = 0;
+            }
+            ret.push(Class::Memory);
+        }
+        ret
+    } else {
+        if structure.size > 8 {
+            vec![Class::Integer, Class::Integer]
         } else {
             vec![Class::Integer]
         }
