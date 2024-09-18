@@ -1773,12 +1773,7 @@ impl<'a> CodeGen<'a> {
                 let Val::Var(name) = retval else {
                     unreachable!()
                 };
-                let VarType::Struct(struct_name) = &ty else {
-                    unreachable!()
-                };
-                let struct_def = self.symbol_table.struct_def(struct_name);
-                let classes = classify_struct(struct_def, self.symbol_table);
-                let struct_size = struct_def.size;
+                let (classes, size) = classify(&ty, self.symbol_table);
 
                 if classes[0] == Class::Memory {
                     (Vec::new(), Vec::new(), true)
@@ -1797,7 +1792,7 @@ impl<'a> CodeGen<'a> {
                                 double_ret_vals.push(operand);
                             }
                             Class::Integer => {
-                                let eightbyte_type = get_eightbyte_type(offset, struct_size);
+                                let eightbyte_type = get_eightbyte_type(offset, size);
                                 int_retvals.push((eightbyte_type, operand));
                             }
                             Class::Memory => unreachable!(),
@@ -2935,8 +2930,18 @@ pub fn is_return_in_memory(ty: &VarType, symbol_table: &SymbolTable) -> bool {
     }
 }
 
-pub fn classify(ty: &VarType, symbol_table: &SymbolTable) -> Vec<Class> {
-    todo!()
+pub fn classify(ty: &VarType, symbol_table: &SymbolTable) -> (Vec<Class>, usize) {
+    match ty {
+        VarType::Struct(s) => {
+            let struct_def = symbol_table.struct_def(s);
+            (classify_struct(struct_def, symbol_table), struct_def.size)
+        }
+        VarType::Union(u) => {
+            let union_def = symbol_table.union_def(u);
+            (classify_union(union_def, symbol_table), union_def.size)
+        }
+        _ => unreachable!(),
+    }
 }
 
 pub fn classify_struct(
@@ -2981,7 +2986,7 @@ pub fn classify_struct(
     }
 }
 
-pub fn classify_union(structure: &type_check::UnionDef, symbol_table: &SymbolTable) -> Vec<Class> {
+pub fn classify_union(structure: &type_check::UnionDef, _symbol_table: &SymbolTable) -> Vec<Class> {
     if structure.size > 16 {
         let mut ret = Vec::new();
         let mut size = structure.size;
