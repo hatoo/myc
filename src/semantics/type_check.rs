@@ -1,5 +1,6 @@
 use core::panic;
 use std::{
+    cmp::max_by_key,
     collections::{hash_map::Entry, BTreeMap, HashMap, HashSet},
     fmt::Display,
     ops::DerefMut,
@@ -39,6 +40,14 @@ impl SymbolTable {
         }
     }
 
+    pub fn union_def(&self, tag: &EcoString) -> &UnionDef {
+        if let Attr::Union(def) = self.get(tag).unwrap() {
+            def
+        } else {
+            unreachable!("{}", tag)
+        }
+    }
+
     pub fn flatten(&self, ty: &VarType) -> Vec<BaseType> {
         let mut ret = Vec::new();
 
@@ -59,6 +68,24 @@ impl SymbolTable {
 
                 for member in &structure.members {
                     ret.extend(self.flatten(&member.ty));
+                }
+            }
+            VarType::Union(name) => {
+                let union = self.union_def(name);
+
+                let (mem, max_align) = union
+                    .members
+                    .iter()
+                    .map(|m| (m, self.alignment(&m.ty)))
+                    .max_by_key(|(_, a)| *a)
+                    .unwrap();
+
+                let elems = union.size / max_align;
+
+                let flat = self.flatten(&mem.ty);
+
+                for _ in 0..elems {
+                    ret.extend(flat.clone());
                 }
             }
             VarType::Void => unreachable!(),
@@ -84,6 +111,10 @@ impl SymbolTable {
                 let StructDef { size, .. } = self.struct_def(name);
                 *size
             }
+            ast::VarType::Union(name) => {
+                let UnionDef { size, .. } = self.union_def(name);
+                *size
+            }
             ast::VarType::Pointer(_) => 8,
             ast::VarType::Base(base) => base.size(),
             ast::VarType::Void => panic!("Get size of void"),
@@ -101,6 +132,11 @@ impl SymbolTable {
             }
             ast::VarType::Struct(name) => {
                 let StructDef { alignment, .. } = self.struct_def(name);
+
+                *alignment
+            }
+            ast::VarType::Union(name) => {
+                let UnionDef { alignment, .. } = self.union_def(name);
 
                 *alignment
             }
@@ -147,6 +183,19 @@ impl SymbolTable {
                     .iter()
                     .map(|member| self.zero_init(&member.ty))
                     .collect();
+                ast::Initializer::CompoundInit(inits)
+            }
+            VarType::Union(tag) => {
+                let UnionDef { members, .. } = self.union_def(tag);
+                let (mem, max_align) = members
+                    .iter()
+                    .map(|m| (m, self.alignment(&m.ty)))
+                    .max_by_key(|(_, a)| *a)
+                    .unwrap();
+
+                let elems = self.size(ty) / max_align;
+
+                let inits = vec![self.zero_init(&mem.ty); elems];
                 ast::Initializer::CompoundInit(inits)
             }
         }

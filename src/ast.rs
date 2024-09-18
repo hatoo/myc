@@ -328,6 +328,7 @@ impl Const {
             },
             VarType::Array { .. } => None,
             VarType::Struct(_) => None,
+            VarType::Union(_) => None,
         }
     }
 }
@@ -569,6 +570,7 @@ pub enum VarType {
     Pointer(Box<Ty>),
     Array { element: Box<VarType>, size: usize },
     Struct(EcoString),
+    Union(EcoString),
 }
 
 impl From<BaseType> for VarType {
