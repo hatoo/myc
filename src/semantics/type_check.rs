@@ -1027,11 +1027,7 @@ impl TypeChecker {
                     }
                     ast::BinaryOp::Add => {
                         if let (ast::VarType::Base(tyl), ast::VarType::Base(tyr)) = (&tyl, &tyr) {
-                            let cty = if *assign {
-                                VarType::Base(*tyl)
-                            } else {
-                                common_base_type(*tyl, *tyr).into()
-                            };
+                            let cty = common_base_type(*tyl, *tyr).into();
                             convert_to(lhs, &cty);
                             convert_to(rhs, &cty);
                             *ty = cty;
@@ -1047,11 +1043,7 @@ impl TypeChecker {
                     }
                     ast::BinaryOp::Subtract => {
                         if let (ast::VarType::Base(tyl), ast::VarType::Base(tyr)) = (&tyl, &tyr) {
-                            let cty = if *assign {
-                                VarType::Base(*tyl)
-                            } else {
-                                common_base_type(*tyl, *tyr).into()
-                            };
+                            let cty = common_base_type(*tyl, *tyr).into();
                             convert_to(lhs, &cty);
                             convert_to(rhs, &cty);
                             *ty = cty;
