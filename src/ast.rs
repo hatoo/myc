@@ -18,6 +18,7 @@ pub enum Declaration {
     VarDecl(VarDecl),
     FunDecl(FunDecl),
     StructDecl(StructDecl),
+    UnionDecl(UnionDecl),
 }
 
 #[derive(Debug)]
@@ -39,6 +40,12 @@ pub struct FunDecl {
 
 #[derive(Debug)]
 pub struct StructDecl {
+    pub tag: TokenSpanned<EcoString>,
+    pub member_decls: Vec<MemberDecl>,
+}
+
+#[derive(Debug)]
+pub struct UnionDecl {
     pub tag: TokenSpanned<EcoString>,
     pub member_decls: Vec<MemberDecl>,
 }
@@ -321,6 +328,7 @@ impl Const {
             },
             VarType::Array { .. } => None,
             VarType::Struct(_) => None,
+            VarType::Union(_) => None,
         }
     }
 }
@@ -343,6 +351,7 @@ pub enum Expression {
         lhs: Box<Expression>,
         rhs: Box<Expression>,
         ty: VarType,
+        assign: bool,
     },
     Assignment {
         lhs: Box<Expression>,
@@ -406,7 +415,15 @@ impl Expression {
                 Const::UChar(_) => &VarType::Base(BaseType::UChar),
             },
             Self::Unary { ty, .. } => ty,
-            Self::Binary { ty, .. } => ty,
+            Self::Binary {
+                ty, assign, lhs, ..
+            } => {
+                if *assign {
+                    lhs.ty()
+                } else {
+                    ty
+                }
+            }
             Self::Assignment { lhs, .. } => lhs.ty(),
             Self::Conditional { then_branch, .. } => then_branch.ty(),
             Self::FunctionCall { ty, .. } => ty,
@@ -562,6 +579,7 @@ pub enum VarType {
     Pointer(Box<Ty>),
     Array { element: Box<VarType>, size: usize },
     Struct(EcoString),
+    Union(EcoString),
 }
 
 impl From<BaseType> for VarType {
@@ -609,6 +627,9 @@ impl VarType {
 
     pub fn is_struct(&self) -> bool {
         matches!(self, Self::Struct(_))
+    }
+    pub fn is_union(&self) -> bool {
+        matches!(self, Self::Union(_))
     }
 }
 
@@ -734,6 +755,7 @@ enum TypeSpecifier {
     Signed,
     Double,
     Struct(EcoString),
+    Union(EcoString),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -821,6 +843,14 @@ fn solve_type_specifier(ty: &[TokenSpanned<TypeSpecifier>]) -> Result<VarType, E
         return Ok(VarType::Struct(tag.clone()));
     }
 
+    if let [TokenSpanned {
+        data: TypeSpecifier::Union(tag),
+        ..
+    }] = ty
+    {
+        return Ok(VarType::Union(tag.clone()));
+    }
+
     for s in ty {
         match s.data {
             TypeSpecifier::Void => {
@@ -859,7 +889,7 @@ fn solve_type_specifier(ty: &[TokenSpanned<TypeSpecifier>]) -> Result<VarType, E
             TypeSpecifier::Double => {
                 return Err(Error::BadTypeSpecifier(s.span.clone()));
             }
-            TypeSpecifier::Struct(_) => {
+            TypeSpecifier::Struct(_) | TypeSpecifier::Union(_) => {
                 return Err(Error::BadTypeSpecifier(s.span.clone()));
             }
         }
@@ -1563,6 +1593,15 @@ impl<'a> Parser<'a> {
                         span: tag.span,
                     });
                 }
+                Token::Union => {
+                    self.advance();
+                    let tag = self.expect_ident()?;
+                    end = tag.span.end;
+                    ty.push(TokenSpanned {
+                        data: TypeSpecifier::Union(tag.data.clone()),
+                        span: tag.span,
+                    });
+                }
                 Token::Static => {
                     if storage_class.is_some() || !allow_storage_class {
                         return Err(Error::ConflictingSpecifier(s.span.clone()));
@@ -1687,20 +1726,19 @@ impl<'a> Parser<'a> {
                     Err(fun_err) => {
                         let fun_decl_fail = self.index;
                         self.index = index;
-                        match self.parse_struct_decl() {
-                            Ok(decl) => Ok(Declaration::StructDecl(decl)),
-                            Err(struct_err) => {
-                                let struct_decl_fail = self.index;
-                                self.index = index;
-                                if var_decl_fail > fun_decl_fail && var_decl_fail > struct_decl_fail
-                                {
+                        match self.peek()? {
+                            TokenSpanned {
+                                data: Token::Struct,
+                                ..
+                            } => Ok(Declaration::StructDecl(self.parse_struct_decl()?)),
+                            TokenSpanned {
+                                data: Token::Union, ..
+                            } => Ok(Declaration::UnionDecl(self.parse_union_decl()?)),
+                            _ => {
+                                if var_decl_fail > fun_decl_fail {
                                     Err(var_err)
-                                } else if fun_decl_fail > var_decl_fail
-                                    && fun_decl_fail > struct_decl_fail
-                                {
-                                    Err(fun_err)
                                 } else {
-                                    Err(struct_err)
+                                    Err(fun_err)
                                 }
                             }
                         }
@@ -2148,15 +2186,13 @@ impl<'a> Parser<'a> {
                     }
                     Op::BinaryAssign(bin_op) => {
                         let right = self.parse_expression(op.precedence())?;
-                        left = Expression::Assignment {
-                            lhs: Box::new(left.clone()),
-                            rhs: Box::new(Expression::Binary {
-                                op: bin_op,
-                                lhs: Box::new(left),
-                                rhs: Box::new(right),
-                                ty: VarType::Void,
-                            }),
-                        }
+                        left = Expression::Binary {
+                            op: bin_op,
+                            lhs: Box::new(left),
+                            rhs: Box::new(right),
+                            ty: VarType::Void,
+                            assign: true,
+                        };
                     }
                     Op::Condition => {
                         let then_branch = self.parse_expression(0)?;
@@ -2175,6 +2211,7 @@ impl<'a> Parser<'a> {
                             lhs: Box::new(left),
                             rhs: Box::new(right),
                             ty: BaseType::Int.into(),
+                            assign: false,
                         };
                     }
                 }
@@ -2198,6 +2235,24 @@ impl<'a> Parser<'a> {
         self.expect(Token::SemiColon)?;
 
         Ok(StructDecl {
+            tag,
+            member_decls: member_decls.unwrap_or_default(),
+        })
+    }
+
+    fn parse_union_decl(&mut self) -> Result<UnionDecl, Error> {
+        self.expect(Token::Union)?;
+        let tag = self.expect_ident()?;
+
+        let member_decls = self.atomic(|s| {
+            s.expect(Token::OpenBrace)?;
+            let member_decls = s.many1(|s| s.parse_struct_member())?;
+            s.expect(Token::CloseBrace)?;
+            Ok::<_, Error>(member_decls)
+        });
+        self.expect(Token::SemiColon)?;
+
+        Ok(UnionDecl {
             tag,
             member_decls: member_decls.unwrap_or_default(),
         })

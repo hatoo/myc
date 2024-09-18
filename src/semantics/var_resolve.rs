@@ -3,13 +3,26 @@ use std::collections::HashMap;
 use ecow::EcoString;
 
 use crate::{
-    ast::{self, Expression, StructDecl},
+    ast::{self, Expression, StructDecl, UnionDecl},
     lexer::{HasTokenSpan, TokenSpanned},
 };
+
+#[derive(Debug, Clone, Copy)]
+enum TypeKind {
+    Struct,
+    Union,
+}
+
+#[derive(Debug, Default)]
+struct Scope {
+    vars: HashMap<EcoString, VarInfo>,
+    types: HashMap<EcoString, (EcoString, TypeKind)>,
+}
+
 #[derive(Debug, Default)]
 pub struct VarResolver {
     var_counter: usize,
-    scopes: Vec<(HashMap<EcoString, VarInfo>, HashMap<EcoString, EcoString>)>,
+    scopes: Vec<Scope>,
 }
 
 #[derive(Debug, Clone)]
@@ -55,18 +68,18 @@ impl VarResolver {
     }
 
     fn lookup_var(&self, ident: &EcoString) -> Option<&VarInfo> {
-        for (scope_var, _) in self.scopes.iter().rev() {
-            if let Some(var_info) = scope_var.get(ident) {
+        for Scope { vars, .. } in self.scopes.iter().rev() {
+            if let Some(var_info) = vars.get(ident) {
                 return Some(var_info);
             }
         }
         None
     }
 
-    fn lookup_struct(&self, ident: &EcoString) -> Option<(bool, &EcoString)> {
-        for (i, (_, scope_struct)) in self.scopes.iter().rev().enumerate() {
-            if let Some(new_name) = scope_struct.get(ident) {
-                return Some((i == 0, new_name));
+    fn lookup_type(&self, ident: &EcoString) -> Option<(bool, &EcoString, TypeKind)> {
+        for (i, Scope { types, .. }) in self.scopes.iter().rev().enumerate() {
+            if let Some((new_name, kind)) = types.get(ident) {
+                return Some((i == 0, new_name, *kind));
             }
         }
         None
@@ -81,11 +94,11 @@ impl VarResolver {
     }
 
     fn current_scope_var(&mut self) -> &mut HashMap<EcoString, VarInfo> {
-        &mut self.scopes.last_mut().unwrap().0
+        &mut self.scopes.last_mut().unwrap().vars
     }
 
-    fn current_scope_struct(&mut self) -> &mut HashMap<EcoString, EcoString> {
-        &mut self.scopes.last_mut().unwrap().1
+    fn current_scope_type(&mut self) -> &mut HashMap<EcoString, (EcoString, TypeKind)> {
+        &mut self.scopes.last_mut().unwrap().types
     }
 
     pub fn resolve_program(&mut self, program: &mut ast::Program) -> Result<(), Error> {
@@ -95,6 +108,7 @@ impl VarResolver {
                 ast::Declaration::VarDecl(decl) => self.resolve_var_decl_file_scope(decl)?,
                 ast::Declaration::FunDecl(decl) => self.resolve_fun_decl(decl, true)?,
                 ast::Declaration::StructDecl(decl) => self.resolve_structure_declaration(decl)?,
+                ast::Declaration::UnionDecl(decl) => self.resolve_union_declaration(decl)?,
             }
         }
         self.pop();
@@ -208,6 +222,7 @@ impl VarResolver {
             ast::Declaration::VarDecl(decl) => self.resolve_var_decl_local(decl),
             ast::Declaration::FunDecl(decl) => self.resolve_fun_decl(decl, false),
             ast::Declaration::StructDecl(decl) => self.resolve_structure_declaration(decl),
+            ast::Declaration::UnionDecl(decl) => self.resolve_union_declaration(decl),
         }
     }
     fn resolve_fun_decl(&mut self, decl: &mut ast::FunDecl, file_scope: bool) -> Result<(), Error> {
@@ -449,7 +464,18 @@ impl VarResolver {
     ) -> Result<(), Error> {
         match ty {
             ast::VarType::Struct(name) => {
-                if let Some((_, new_name)) = self.lookup_struct(name) {
+                if let Some((_, new_name, TypeKind::Struct)) = self.lookup_type(name) {
+                    *name = new_name.clone();
+                    Ok(())
+                } else {
+                    Err(Error::StructNotDeclared(TokenSpanned {
+                        data: name.clone(),
+                        span,
+                    }))
+                }
+            }
+            ast::VarType::Union(name) => {
+                if let Some((_, new_name, TypeKind::Union)) = self.lookup_type(name) {
                     *name = new_name.clone();
                     Ok(())
                 } else {
@@ -474,15 +500,43 @@ impl VarResolver {
     fn resolve_structure_declaration(&mut self, decl: &mut StructDecl) -> Result<(), Error> {
         let StructDecl { tag, member_decls } = decl;
 
-        match self.lookup_struct(&tag.data) {
-            None | Some((false, _)) => {
+        match self.lookup_type(&tag.data) {
+            None | Some((false, _, _)) => {
                 let new_name = self.new_var(&tag.data);
-                self.current_scope_struct()
-                    .insert(tag.data.clone(), new_name.clone());
+                self.current_scope_type()
+                    .insert(tag.data.clone(), (new_name.clone(), TypeKind::Struct));
                 tag.data = new_name.clone();
             }
-            Some((true, prev)) => {
+            Some((true, prev, TypeKind::Struct)) => {
                 tag.data = prev.clone();
+            }
+            Some((true, _, TypeKind::Union)) => {
+                return Err(Error::StructNotDeclared(tag.clone()));
+            }
+        }
+
+        for member_decl in member_decls {
+            self.resolve_var_type(&mut member_decl.ty, tag.span.clone())?;
+        }
+
+        Ok(())
+    }
+
+    fn resolve_union_declaration(&mut self, decl: &mut UnionDecl) -> Result<(), Error> {
+        let UnionDecl { tag, member_decls } = decl;
+
+        match self.lookup_type(&tag.data) {
+            None | Some((false, _, _)) => {
+                let new_name = self.new_var(&tag.data);
+                self.current_scope_type()
+                    .insert(tag.data.clone(), (new_name.clone(), TypeKind::Union));
+                tag.data = new_name.clone();
+            }
+            Some((true, prev, TypeKind::Union)) => {
+                tag.data = prev.clone();
+            }
+            Some((true, _, TypeKind::Struct)) => {
+                return Err(Error::StructNotDeclared(tag.clone()));
             }
         }
 

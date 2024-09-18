@@ -39,6 +39,14 @@ impl SymbolTable {
         }
     }
 
+    pub fn union_def(&self, tag: &EcoString) -> &UnionDef {
+        if let Attr::Union(def) = self.get(tag).unwrap() {
+            def
+        } else {
+            unreachable!("{}", tag)
+        }
+    }
+
     pub fn flatten(&self, ty: &VarType) -> Vec<BaseType> {
         let mut ret = Vec::new();
 
@@ -59,6 +67,24 @@ impl SymbolTable {
 
                 for member in &structure.members {
                     ret.extend(self.flatten(&member.ty));
+                }
+            }
+            VarType::Union(name) => {
+                let union = self.union_def(name);
+
+                let (mem, max_align) = union
+                    .members
+                    .iter()
+                    .map(|m| (m, self.alignment(&m.ty)))
+                    .max_by_key(|(_, a)| *a)
+                    .unwrap();
+
+                let elems = union.size / max_align;
+
+                let flat = self.flatten(&mem.ty);
+
+                for _ in 0..elems {
+                    ret.extend(flat.clone());
                 }
             }
             VarType::Void => unreachable!(),
@@ -84,6 +110,10 @@ impl SymbolTable {
                 let StructDef { size, .. } = self.struct_def(name);
                 *size
             }
+            ast::VarType::Union(name) => {
+                let UnionDef { size, .. } = self.union_def(name);
+                *size
+            }
             ast::VarType::Pointer(_) => 8,
             ast::VarType::Base(base) => base.size(),
             ast::VarType::Void => panic!("Get size of void"),
@@ -104,6 +134,11 @@ impl SymbolTable {
 
                 *alignment
             }
+            ast::VarType::Union(name) => {
+                let UnionDef { alignment, .. } = self.union_def(name);
+
+                *alignment
+            }
             ast::VarType::Pointer(_) => 8,
             ast::VarType::Base(base) => base.alignment(),
             ast::VarType::Void => panic!("Get alignment of void"),
@@ -115,6 +150,9 @@ impl SymbolTable {
             ast::VarType::Void => false,
             ast::VarType::Struct(tag) => {
                 matches!(self.get(tag), Some(Attr::Struct(_)))
+            }
+            ast::VarType::Union(tag) => {
+                matches!(self.get(tag), Some(Attr::Union(_)))
             }
             _ => true,
         }
@@ -149,6 +187,19 @@ impl SymbolTable {
                     .collect();
                 ast::Initializer::CompoundInit(inits)
             }
+            VarType::Union(tag) => {
+                let UnionDef { members, .. } = self.union_def(tag);
+                let (mem, max_align) = members
+                    .iter()
+                    .map(|m| (m, self.alignment(&m.ty)))
+                    .max_by_key(|(_, a)| *a)
+                    .unwrap();
+
+                let elems = self.size(ty) / max_align;
+
+                let inits = vec![self.zero_init(&mem.ty); elems];
+                ast::Initializer::CompoundInit(inits)
+            }
         }
     }
 }
@@ -177,6 +228,7 @@ pub enum Attr {
     },
     Local(ast::VarType),
     Struct(StructDef),
+    Union(UnionDef),
 }
 
 #[derive(Debug, Clone)]
@@ -186,11 +238,24 @@ pub struct StructDef {
     pub members: Vec<StructMember>,
 }
 
+#[derive(Debug, Clone)]
+pub struct UnionDef {
+    pub alignment: usize,
+    pub size: usize,
+    pub members: Vec<UnionMember>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StructMember {
     pub name: EcoString,
     pub ty: ast::VarType,
     pub offset: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnionMember {
+    pub name: EcoString,
+    pub ty: ast::VarType,
 }
 
 #[derive(Debug, Clone)]
@@ -355,6 +420,10 @@ fn convert_by_assignment(exp: &mut ast::Expression, ty: &ast::VarType) -> Result
         return Err(Error::IncompatibleTypes(exp.token_span()));
     }
 
+    if ety.is_union() || ty.is_union() {
+        return Err(Error::IncompatibleTypes(exp.token_span()));
+    }
+
     if !ety.is_pointer() && !ty.is_pointer() {
         convert_to(exp, ty);
         return Ok(());
@@ -387,6 +456,7 @@ impl TypeChecker {
                 crate::ast::Declaration::VarDecl(decl) => self.check_var_decl_file(decl)?,
                 crate::ast::Declaration::FunDecl(decl) => self.check_fun_decl(decl)?,
                 crate::ast::Declaration::StructDecl(decl) => self.check_struct_decl(decl)?,
+                crate::ast::Declaration::UnionDecl(decl) => self.check_union_decl(decl)?,
             }
         }
 
@@ -472,6 +542,24 @@ impl TypeChecker {
                     }
 
                     Ok(res)
+                }
+                ast::VarType::Union(tag) => {
+                    let UnionDef { members, size, .. } = self.sym_table.union_def(tag);
+                    let size = *size;
+
+                    if inits.len() > 1 {
+                        return Err(Error::IncompatibleTypes(0..0));
+                    }
+
+                    let ty = members[0].ty.clone();
+                    let mut res = self.static_init_from_initializer(&ty, &inits[0])?;
+                    let ty_size = self.sym_table.size(&ty);
+                    if size > ty_size {
+                        res.push(StaticInit::Zero(size - ty_size));
+                        Ok(res)
+                    } else {
+                        Ok(res)
+                    }
                 }
 
                 _ => Err(Error::IncompatibleTypes(0..0)),
@@ -621,6 +709,7 @@ impl TypeChecker {
                 self.check_fun_decl(decl)
             }
             crate::ast::Declaration::StructDecl(decl) => self.check_struct_decl(decl),
+            crate::ast::Declaration::UnionDecl(decl) => self.check_union_decl(decl),
         }
     }
 
@@ -652,7 +741,7 @@ impl TypeChecker {
         let mut global = storage_class != &Some(crate::ast::StorageClass::Static);
 
         match self.sym_table.get(&ident.data) {
-            Some(Attr::Fun { .. } | Attr::Struct { .. }) => {
+            Some(Attr::Fun { .. } | Attr::Struct { .. } | Attr::Union(..)) => {
                 return Err(Error::IncompatibleTypes(ident.span.clone()));
             }
             Some(Attr::Static {
@@ -719,7 +808,7 @@ impl TypeChecker {
                 }
                 match self.sym_table.entry(ident.data.clone()) {
                     Entry::Occupied(o) => match o.get() {
-                        Attr::Fun { .. } | Attr::Struct(_) => {
+                        Attr::Fun { .. } | Attr::Struct(_) | Attr::Union(_) => {
                             return Err(Error::IncompatibleTypes(ident.span.clone()));
                         }
                         Attr::Local(ty0) | Attr::Static { ty: ty0, .. } => {
@@ -827,6 +916,16 @@ impl TypeChecker {
 
                 Ok(())
             }
+            (ast::VarType::Union(tag), ast::Initializer::CompoundInit(list)) => {
+                let UnionDef { members, .. } = self.sym_table.union_def(tag);
+
+                if list.len() > 1 {
+                    return Err(Error::IncompatibleTypes(span.unwrap()));
+                }
+
+                let ty = members[0].ty.clone();
+                self.check_init(&ty, &mut list[0])
+            }
 
             _ => Err(Error::IncompatibleTypes(span.unwrap())),
         }
@@ -848,7 +947,7 @@ impl TypeChecker {
                     *ty = target.clone();
                     Ok(target.clone())
                 }
-                Some(Attr::Constant { .. } | Attr::Struct { .. }) => {
+                Some(Attr::Constant { .. } | Attr::Struct { .. } | Attr::Union(_)) => {
                     unreachable!()
                 }
                 None => Err(Error::IncompatibleTypes(name.span.clone())),
@@ -886,9 +985,19 @@ impl TypeChecker {
                 }
                 Ok(ty.clone())
             }
-            crate::ast::Expression::Binary { op, lhs, rhs, ty } => {
+            crate::ast::Expression::Binary {
+                op,
+                lhs,
+                rhs,
+                ty,
+                assign,
+            } => {
                 let tyl = self.check_expression_and_convert(lhs)?;
                 let tyr = self.check_expression_and_convert(rhs)?;
+
+                if *assign && !lhs.is_lvalue() {
+                    return Err(Error::IncompatibleTypes(lhs.token_span()));
+                }
 
                 match op {
                     ast::BinaryOp::And | ast::BinaryOp::Or => {
@@ -911,7 +1020,7 @@ impl TypeChecker {
                             return Err(Error::IncompatibleTypes(exp.token_span()));
                         };
 
-                        convert_to(lhs, &cty);
+                        // convert_to(lhs, &cty);
                         convert_to(rhs, &cty);
 
                         *ty = ast::BaseType::Int.into();
@@ -919,7 +1028,7 @@ impl TypeChecker {
                     ast::BinaryOp::Add => {
                         if let (ast::VarType::Base(tyl), ast::VarType::Base(tyr)) = (&tyl, &tyr) {
                             let cty = common_base_type(*tyl, *tyr).into();
-                            convert_to(lhs, &cty);
+                            // convert_to(lhs, &cty);
                             convert_to(rhs, &cty);
                             *ty = cty;
                         } else if self.sym_table.is_pointer_to_complete(&tyl) && tyr.is_integer() {
@@ -935,7 +1044,7 @@ impl TypeChecker {
                     ast::BinaryOp::Subtract => {
                         if let (ast::VarType::Base(tyl), ast::VarType::Base(tyr)) = (&tyl, &tyr) {
                             let cty = common_base_type(*tyl, *tyr).into();
-                            convert_to(lhs, &cty);
+                            // convert_to(lhs, &cty);
                             convert_to(rhs, &cty);
                             *ty = cty;
                         } else if self.sym_table.is_pointer_to_complete(&tyl) && tyr.is_integer() {
@@ -945,16 +1054,31 @@ impl TypeChecker {
                             && self.sym_table.is_pointer_to_complete(&tyr)
                             && tyl == tyr
                         {
+                            if *assign {
+                                return Err(Error::IncompatibleTypes(exp.token_span()));
+                            }
                             *ty = ast::BaseType::Long.into();
                         } else {
                             return Err(Error::IncompatibleTypes(exp.token_span()));
                         }
                     }
                     ast::BinaryOp::ShiftLeft | ast::BinaryOp::ShiftRight => {
-                        if !tyl.is_integer() || !tyr.is_integer() {
+                        if let (ast::VarType::Base(tyl), ast::VarType::Base(tyr)) = (&tyl, &tyr) {
+                            let cty = ast::VarType::Base(match tyl {
+                                ast::BaseType::Char
+                                | ast::BaseType::SChar
+                                | ast::BaseType::UChar => ast::BaseType::Int,
+                                _ => tyl.clone(),
+                            });
+                            if *tyl == ast::BaseType::Double || *tyr == ast::BaseType::Double {
+                                return Err(Error::IncompatibleTypes(exp.token_span()));
+                            }
+                            // convert_to(lhs, &cty);
+                            convert_to(rhs, &cty);
+                            *ty = cty;
+                        } else {
                             return Err(Error::IncompatibleTypes(exp.token_span()));
                         }
-                        *ty = tyl.clone();
                     }
                     ast::BinaryOp::BitAnd | ast::BinaryOp::BitOr | ast::BinaryOp::Xor => {
                         if let (ast::VarType::Base(tyl), ast::VarType::Base(tyr)) = (tyl, tyr) {
@@ -962,7 +1086,7 @@ impl TypeChecker {
                                 return Err(Error::IncompatibleTypes(exp.token_span()));
                             }
                             let cty = common_base_type(tyl, tyr).into();
-                            convert_to(lhs, &cty);
+                            // convert_to(lhs, &cty);
                             convert_to(rhs, &cty);
                             *ty = cty;
                         } else {
@@ -973,7 +1097,7 @@ impl TypeChecker {
                         ast::BinaryOp::Multiply | ast::BinaryOp::Divide => {
                             if let (ast::VarType::Base(tyl), ast::VarType::Base(tyr)) = (tyl, tyr) {
                                 let cty = common_base_type(tyl, tyr).into();
-                                convert_to(lhs, &cty);
+                                // convert_to(lhs, &cty);
                                 convert_to(rhs, &cty);
                                 *ty = cty;
                             } else {
@@ -987,7 +1111,7 @@ impl TypeChecker {
                                     return Err(Error::IncompatibleTypes(exp.token_span()));
                                 }
                                 let cty = cty.into();
-                                convert_to(lhs, &cty);
+                                // convert_to(lhs, &cty);
                                 convert_to(rhs, &cty);
                                 *ty = cty;
                             } else {
@@ -1007,7 +1131,7 @@ impl TypeChecker {
 
                             if let (ast::VarType::Base(tyl), ast::VarType::Base(tyr)) = (tyl, tyr) {
                                 let cty = common_base_type(tyl, tyr).into();
-                                convert_to(lhs, &cty);
+                                // convert_to(lhs, &cty);
                                 convert_to(rhs, &cty);
                             }
 
@@ -1047,7 +1171,7 @@ impl TypeChecker {
                     } else {
                         return Err(Error::IncompatibleTypes(exp.token_span()));
                     }
-                } else if tyl.is_struct() || tyr.is_struct() {
+                } else if tyl.is_struct() || tyl.is_union() || tyr.is_struct() || tyr.is_union() {
                     if tyl == tyr {
                         tyl.clone()
                     } else {
@@ -1144,7 +1268,7 @@ impl TypeChecker {
                 let index_ty = self.check_expression_and_convert(index)?;
 
                 if array_ty.is_pointer() && index_ty.is_integer() {
-                    convert_to(index, &ast::VarType::Base(ast::BaseType::Ulong));
+                    convert_to(index, &ast::VarType::Base(ast::BaseType::Long));
                     *ty = match array_ty {
                         ast::VarType::Pointer(ty) => {
                             if let ast::Ty::Var(ty) = ty.as_ref() {
@@ -1159,7 +1283,7 @@ impl TypeChecker {
                         _ => unreachable!(),
                     };
                 } else if array_ty.is_integer() && index_ty.is_pointer() {
-                    convert_to(array, &ast::BaseType::Ulong.into());
+                    convert_to(array, &ast::BaseType::Long.into());
                     *ty = match index_ty {
                         ast::VarType::Pointer(ty) => {
                             if let ast::Ty::Var(ty) = ty.as_ref() {
@@ -1215,16 +1339,26 @@ impl TypeChecker {
                 ty,
             } => {
                 let structure_ty = self.check_expression_and_convert(structure)?;
-                if let ast::VarType::Struct(s) = structure_ty {
-                    let StructDef { members, .. } = self.sym_table.struct_def(&s);
-                    if let Some(member) = members.iter().find(|name| name.name == member.data) {
-                        *ty = member.ty.clone();
-                        Ok(ty.clone())
-                    } else {
-                        Err(Error::IncompatibleTypes(exp.token_span()))
+                match structure_ty {
+                    ast::VarType::Struct(s) => {
+                        let StructDef { members, .. } = self.sym_table.struct_def(&s);
+                        if let Some(member) = members.iter().find(|name| name.name == member.data) {
+                            *ty = member.ty.clone();
+                            Ok(ty.clone())
+                        } else {
+                            Err(Error::IncompatibleTypes(exp.token_span()))
+                        }
                     }
-                } else {
-                    Err(Error::IncompatibleTypes(exp.token_span()))
+                    ast::VarType::Union(u) => {
+                        let UnionDef { members, .. } = self.sym_table.union_def(&u);
+                        if let Some(member) = members.iter().find(|name| name.name == member.data) {
+                            *ty = member.ty.clone();
+                            Ok(ty.clone())
+                        } else {
+                            Err(Error::IncompatibleTypes(exp.token_span()))
+                        }
+                    }
+                    _ => Err(Error::IncompatibleTypes(exp.token_span())),
                 }
             }
             ast::Expression::Arrow {
@@ -1233,17 +1367,36 @@ impl TypeChecker {
                 ty,
             } => {
                 if let VarType::Pointer(box_ty) = self.check_expression_and_convert(pointer)? {
-                    let s = if let Ty::Var(VarType::Struct(s)) = box_ty.as_ref() {
+                    let s = if let Ty::Var(s) = box_ty.as_ref() {
                         s
                     } else {
                         return Err(Error::IncompatibleTypes(exp.token_span()));
                     };
-                    let StructDef { members, .. } = self.sym_table.struct_def(s);
-                    if let Some(member) = members.iter().find(|name| name.name == member.data) {
-                        *ty = member.ty.clone();
-                        Ok(ty.clone())
-                    } else {
-                        Err(Error::IncompatibleTypes(exp.token_span()))
+                    match s {
+                        ast::VarType::Struct(s) => {
+                            let StructDef { members, .. } = self.sym_table.struct_def(s);
+                            if let Some(member) =
+                                members.iter().find(|name| name.name == member.data)
+                            {
+                                *ty = member.ty.clone();
+                                Ok(ty.clone())
+                            } else {
+                                Err(Error::IncompatibleTypes(exp.token_span()))
+                            }
+                        }
+
+                        ast::VarType::Union(u) => {
+                            let UnionDef { members, .. } = self.sym_table.union_def(u);
+                            if let Some(member) =
+                                members.iter().find(|name| name.name == member.data)
+                            {
+                                *ty = member.ty.clone();
+                                Ok(ty.clone())
+                            } else {
+                                Err(Error::IncompatibleTypes(exp.token_span()))
+                            }
+                        }
+                        _ => Err(Error::IncompatibleTypes(exp.token_span())),
                     }
                 } else {
                     Err(Error::IncompatibleTypes(exp.token_span()))
@@ -1285,6 +1438,13 @@ impl TypeChecker {
             VarType::Struct(s) => {
                 if self.sym_table.is_complete(&VarType::Struct(s.clone())) {
                     Ok(VarType::Struct(s))
+                } else {
+                    Err(Error::IncompatibleTypes(exp.token_span()))
+                }
+            }
+            VarType::Union(u) => {
+                if self.sym_table.is_complete(&VarType::Union(u.clone())) {
+                    Ok(VarType::Union(u))
                 } else {
                     Err(Error::IncompatibleTypes(exp.token_span()))
                 }
@@ -1422,7 +1582,16 @@ impl TypeChecker {
                 if !ty.is_integer() {
                     return Err(Error::IncompatibleTypes(exp.token_span()));
                 }
-                let bits = 8 * self.sym_table.size(&ty);
+                match &ty {
+                    VarType::Base(BaseType::Char | BaseType::SChar) => {
+                        convert_to(exp, &ast::BaseType::Int.into());
+                    }
+                    VarType::Base(BaseType::UChar) => {
+                        convert_to(exp, &ast::BaseType::Uint.into());
+                    }
+                    _ => {}
+                }
+                let bits = 8 * self.sym_table.size(exp.ty());
                 let new_cases = labels
                     .cases
                     .iter()
@@ -1489,7 +1658,69 @@ impl TypeChecker {
         Ok(())
     }
 
+    fn check_union_decl(&mut self, decl: &ast::UnionDecl) -> Result<(), Error> {
+        if decl.member_decls.is_empty() {
+            return Ok(());
+        }
+
+        if self.sym_table.contains_key(&decl.tag.data) {
+            return Err(Error::Redefined(decl.tag.clone()));
+        }
+
+        let mut members = Vec::new();
+
+        let mut union_size = 0;
+        let mut union_align = 0;
+
+        for member in &decl.member_decls {
+            let size = self.sym_table.size(&member.ty);
+            let align = if let VarType::Array { element, .. } = &member.ty {
+                // HACK
+                // TODO: Read SystemV ABI
+                self.sym_table.alignment(element)
+            } else {
+                self.sym_table.alignment(&member.ty)
+            };
+
+            members.push(UnionMember {
+                name: member.name.clone(),
+                ty: member.ty.clone(),
+            });
+
+            union_size = std::cmp::max(union_size, size);
+            union_align = std::cmp::max(union_align, align);
+        }
+        union_size = round_up(union_size, union_align);
+
+        self.sym_table.insert(
+            decl.tag.data.clone(),
+            Attr::Union(UnionDef {
+                members,
+                size: union_size,
+                alignment: union_align,
+            }),
+        );
+        self.validate_union_definition(decl)?;
+        Ok(())
+    }
+
     fn validate_struct_definition(&self, decl: &ast::StructDecl) -> Result<(), Error> {
+        let mut member_names = HashSet::new();
+
+        for member in &decl.member_decls {
+            if !member_names.insert(member.name.clone()) {
+                todo!()
+            }
+
+            if self.validate_var_type(&member.ty, false).is_err() {
+                todo!()
+            }
+        }
+
+        Ok(())
+    }
+
+    fn validate_union_definition(&self, decl: &ast::UnionDecl) -> Result<(), Error> {
         let mut member_names = HashSet::new();
 
         for member in &decl.member_decls {
@@ -1528,6 +1759,13 @@ impl TypeChecker {
             VarType::Struct(tag) => {
                 if !allow_incomplete_struct
                     && !matches!(self.sym_table.get(tag), Some(Attr::Struct { .. }))
+                {
+                    return Err(());
+                }
+            }
+            VarType::Union(tag) => {
+                if !allow_incomplete_struct
+                    && !matches!(self.sym_table.get(tag), Some(Attr::Union { .. }))
                 {
                     return Err(());
                 }

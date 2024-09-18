@@ -13,7 +13,7 @@ use crate::{
     optimize_asm::register_allocation,
     semantics::{
         self,
-        type_check::{self, Attr, StructDef, SymbolTable},
+        type_check::{self, Attr, StructDef, SymbolTable, UnionDef},
     },
     tacky::{self, Val},
 };
@@ -1697,11 +1697,9 @@ impl<'a> CodeGen<'a> {
                         stack_args.push((asm_ty, val.into()));
                     }
                 }
-                VarType::Struct(name) => {
-                    let structure = self.symbol_table.struct_def(name);
-                    let classes = classify_struct(structure, self.symbol_table);
+                VarType::Struct(_) | VarType::Union(_) => {
+                    let (classes, struct_size) = classify(&ty, self.symbol_table);
                     let mut use_stack = true;
-                    let struct_size = structure.size;
                     let Val::Var(val_name) = val else {
                         unreachable!()
                     };
@@ -1773,12 +1771,7 @@ impl<'a> CodeGen<'a> {
                 let Val::Var(name) = retval else {
                     unreachable!()
                 };
-                let VarType::Struct(struct_name) = &ty else {
-                    unreachable!()
-                };
-                let struct_def = self.symbol_table.struct_def(struct_name);
-                let classes = classify_struct(struct_def, self.symbol_table);
-                let struct_size = struct_def.size;
+                let (classes, size) = classify(&ty, self.symbol_table);
 
                 if classes[0] == Class::Memory {
                     (Vec::new(), Vec::new(), true)
@@ -1797,7 +1790,7 @@ impl<'a> CodeGen<'a> {
                                 double_ret_vals.push(operand);
                             }
                             Class::Integer => {
-                                let eightbyte_type = get_eightbyte_type(offset, struct_size);
+                                let eightbyte_type = get_eightbyte_type(offset, size);
                                 int_retvals.push((eightbyte_type, operand));
                             }
                             Class::Memory => unreachable!(),
@@ -1823,11 +1816,7 @@ pub fn return_registers(ret_type: &VarType, symbol_table: &SymbolTable) -> Vec<R
     match asm_ty {
         AssemblyType::Double => vec![Register::Xmm(0)],
         AssemblyType::ByteArray { .. } => {
-            let VarType::Struct(struct_name) = ret_type else {
-                unreachable!()
-            };
-            let struct_def = symbol_table.struct_def(struct_name);
-            let classes = classify_struct(struct_def, symbol_table);
+            let classes = classify(ret_type, symbol_table).0;
 
             if classes[0] == Class::Memory {
                 vec![]
@@ -1875,11 +1864,11 @@ fn get_eightbyte_type(offset: usize, struct_size: usize) -> AssemblyType {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Class {
     Memory,
-    Sse,
     Integer,
+    Sse,
 }
 
 pub const INT_PARAM_REGISTERS: [Register; 6] = [
@@ -1957,6 +1946,9 @@ fn pseudo_to_stack(
                         }
                     }
                     semantics::type_check::Attr::Struct(StructDef {
+                        alignment, size, ..
+                    })
+                    | semantics::type_check::Attr::Union(UnionDef {
                         alignment, size, ..
                     }) => match known_vars.entry(name.clone()) {
                         Entry::Occupied(entry) => {
@@ -2923,12 +2915,34 @@ impl Display for CondCode {
 }
 
 pub fn is_return_in_memory(ty: &VarType, symbol_table: &SymbolTable) -> bool {
-    if let VarType::Struct(name) = ty {
-        let struct_def = symbol_table.struct_def(name);
-        let classes = classify_struct(struct_def, symbol_table);
+    if let VarType::Struct(_) | VarType::Union(_) = ty {
+        let classes = classify(ty, symbol_table).0;
         classes[0] == Class::Memory
     } else {
         false
+    }
+}
+
+pub fn classify(ty: &VarType, symbol_table: &SymbolTable) -> (Vec<Class>, usize) {
+    match ty {
+        VarType::Struct(s) => {
+            let struct_def = symbol_table.struct_def(s);
+            (classify_struct(struct_def, symbol_table), struct_def.size)
+        }
+        VarType::Union(u) => {
+            let union_def = symbol_table.union_def(u);
+            (classify_union(union_def, symbol_table), union_def.size)
+        }
+        VarType::Array { element, size } => {
+            let (classes, _) = classify(element, symbol_table);
+            let mut new_classes = Vec::new();
+            for _ in 0..*size {
+                new_classes.extend(classes.clone());
+            }
+            (new_classes, size * symbol_table.size(element))
+        }
+        VarType::Base(BaseType::Double) => (vec![Class::Sse], 8),
+        _ => (vec![Class::Integer], symbol_table.size(ty)),
     }
 }
 
@@ -2974,6 +2988,43 @@ pub fn classify_struct(
     }
 }
 
+pub fn classify_union(structure: &type_check::UnionDef, symbol_table: &SymbolTable) -> Vec<Class> {
+    if structure.size > 16 {
+        let mut ret = Vec::new();
+        let mut size = structure.size;
+        while size > 0 {
+            if size >= 8 {
+                size -= 8;
+            } else {
+                size = 0;
+            }
+            ret.push(Class::Memory);
+        }
+        ret
+    } else {
+        let classes: Vec<_> = structure
+            .members
+            .iter()
+            .map(|m| classify(&m.ty, symbol_table).0)
+            .collect();
+
+        let first_class = classes.iter().map(|c| c[0]).min().unwrap();
+
+        if structure.size > 8 {
+            let last_class = structure
+                .members
+                .iter()
+                .filter(|m| symbol_table.size(&m.ty) > 8)
+                .filter_map(|m| classify(&m.ty, symbol_table).0.last().cloned())
+                .min()
+                .unwrap();
+            vec![first_class, last_class]
+        } else {
+            vec![first_class]
+        }
+    }
+}
+
 pub fn asm_type(ty: &VarType, symbol_table: &SymbolTable) -> AssemblyType {
     match ty {
         VarType::Void => panic!("Void type must be eliminated in type checking stage"),
@@ -2994,6 +3045,14 @@ pub fn asm_type(ty: &VarType, symbol_table: &SymbolTable) -> AssemblyType {
             AssemblyType::ByteArray {
                 size: struct_def.size,
                 alignment: struct_def.alignment,
+            }
+        }
+        VarType::Union(name) => {
+            let union_def = symbol_table.union_def(name);
+
+            AssemblyType::ByteArray {
+                size: union_def.size,
+                alignment: union_def.alignment,
             }
         }
     }
