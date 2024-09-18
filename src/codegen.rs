@@ -1697,11 +1697,9 @@ impl<'a> CodeGen<'a> {
                         stack_args.push((asm_ty, val.into()));
                     }
                 }
-                VarType::Struct(name) => {
-                    let structure = self.symbol_table.struct_def(name);
-                    let classes = classify_struct(structure, self.symbol_table);
+                VarType::Struct(_) | VarType::Union(_) => {
+                    let (classes, struct_size) = classify(&ty, self.symbol_table);
                     let mut use_stack = true;
-                    let struct_size = structure.size;
                     let Val::Var(val_name) = val else {
                         unreachable!()
                     };
@@ -1818,11 +1816,7 @@ pub fn return_registers(ret_type: &VarType, symbol_table: &SymbolTable) -> Vec<R
     match asm_ty {
         AssemblyType::Double => vec![Register::Xmm(0)],
         AssemblyType::ByteArray { .. } => {
-            let VarType::Struct(struct_name) = ret_type else {
-                unreachable!()
-            };
-            let struct_def = symbol_table.struct_def(struct_name);
-            let classes = classify_struct(struct_def, symbol_table);
+            let classes = classify(ret_type, symbol_table).0;
 
             if classes[0] == Class::Memory {
                 vec![]
@@ -1870,11 +1864,11 @@ fn get_eightbyte_type(offset: usize, struct_size: usize) -> AssemblyType {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Class {
     Memory,
-    Sse,
     Integer,
+    Sse,
 }
 
 pub const INT_PARAM_REGISTERS: [Register; 6] = [
@@ -2921,9 +2915,8 @@ impl Display for CondCode {
 }
 
 pub fn is_return_in_memory(ty: &VarType, symbol_table: &SymbolTable) -> bool {
-    if let VarType::Struct(name) = ty {
-        let struct_def = symbol_table.struct_def(name);
-        let classes = classify_struct(struct_def, symbol_table);
+    if let VarType::Struct(_) | VarType::Union(_) = ty {
+        let classes = classify(ty, symbol_table).0;
         classes[0] == Class::Memory
     } else {
         false
@@ -2940,7 +2933,16 @@ pub fn classify(ty: &VarType, symbol_table: &SymbolTable) -> (Vec<Class>, usize)
             let union_def = symbol_table.union_def(u);
             (classify_union(union_def, symbol_table), union_def.size)
         }
-        _ => unreachable!(),
+        VarType::Array { element, size } => {
+            let (classes, _) = classify(element, symbol_table);
+            let mut new_classes = Vec::new();
+            for _ in 0..*size {
+                new_classes.extend(classes.clone());
+            }
+            (new_classes, size * symbol_table.size(element))
+        }
+        VarType::Base(BaseType::Double) => (vec![Class::Sse], 8),
+        _ => (vec![Class::Integer], symbol_table.size(ty)),
     }
 }
 
@@ -3000,10 +3002,23 @@ pub fn classify_union(structure: &type_check::UnionDef, _symbol_table: &SymbolTa
         }
         ret
     } else {
+        let classes: Vec<_> = structure
+            .members
+            .iter()
+            .map(|m| classify(&m.ty, _symbol_table).0)
+            .collect();
+
+        let first_class = classes.iter().map(|c| c[0]).min().unwrap();
+
         if structure.size > 8 {
-            vec![Class::Integer, Class::Integer]
+            let last_class = *classes
+                .iter()
+                .filter_map(|c| if c.len() > 1 { c.last() } else { None })
+                .min()
+                .unwrap();
+            vec![first_class, last_class]
         } else {
-            vec![Class::Integer]
+            vec![first_class]
         }
     }
 }
