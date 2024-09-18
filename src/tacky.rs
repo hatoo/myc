@@ -551,7 +551,7 @@ impl<'a> InstructionGenerator<'a> {
         }
     }
 
-    fn manual_assign(&mut self, dst: &ExpResult, val: &Val, ty: &VarType) {
+    fn manual_assign(&mut self, dst: &ExpResult, val: &Val, ty: &VarType) -> Val {
         match dst {
             ExpResult::PlainOperand(dst) => {
                 if ty == &val.ty(self.symbol_table) {
@@ -559,11 +559,13 @@ impl<'a> InstructionGenerator<'a> {
                         src: val.clone(),
                         dst: dst.clone(),
                     });
+                    dst.clone()
                 } else {
                     self.instructions.push(Instruction::Cast {
                         src: val.clone(),
                         dst: dst.clone(),
                     });
+                    dst.clone()
                 }
             }
             ExpResult::DereferencedPointer(ptr) => {
@@ -574,14 +576,16 @@ impl<'a> InstructionGenerator<'a> {
                         dst: tmp.clone(),
                     });
                     self.instructions.push(Instruction::Store {
-                        src: tmp,
+                        src: tmp.clone(),
                         dst: ptr.clone(),
                     });
+                    tmp
                 } else {
                     self.instructions.push(Instruction::Store {
                         src: val.clone(),
                         dst: ptr.clone(),
                     });
+                    val.clone()
                 }
             }
             ExpResult::SubObject { base, offset } => {
@@ -592,16 +596,18 @@ impl<'a> InstructionGenerator<'a> {
                         dst: tmp.clone(),
                     });
                     self.instructions.push(Instruction::CopyToOffset {
-                        src: tmp,
+                        src: tmp.clone(),
                         dst: Val::Var(base.clone()),
                         offset: *offset,
                     });
+                    tmp.clone()
                 } else {
                     self.instructions.push(Instruction::CopyToOffset {
                         src: val.clone(),
                         dst: Val::Var(base.clone()),
                         offset: *offset,
                     });
+                    val.clone()
                 }
             }
         }
@@ -677,9 +683,10 @@ impl<'a> InstructionGenerator<'a> {
                 self.instructions.push(Instruction::Label(end));
 
                 if *assign {
-                    self.manual_assign(&lhs_before_convert, &dst, lhs_ty);
+                    ExpResult::PlainOperand(self.manual_assign(&lhs_before_convert, &dst, lhs_ty))
+                } else {
+                    ExpResult::PlainOperand(dst)
                 }
-                ExpResult::PlainOperand(dst)
             }
             ast::Expression::Binary {
                 op: ast::BinaryOp::Or,
@@ -716,10 +723,10 @@ impl<'a> InstructionGenerator<'a> {
                 self.instructions.push(Instruction::Label(end));
 
                 if *assign {
-                    self.manual_assign(&lhs_before_convert, &dst, lhs_ty);
+                    ExpResult::PlainOperand(self.manual_assign(&lhs_before_convert, &dst, lhs_ty))
+                } else {
+                    ExpResult::PlainOperand(dst)
                 }
-
-                ExpResult::PlainOperand(dst)
             }
             ast::Expression::Binary {
                 op,
@@ -763,10 +770,15 @@ impl<'a> InstructionGenerator<'a> {
                                 scale: self.symbol_table.size(elem),
                                 dst: dst.clone(),
                             });
-                            if *assign {
-                                self.manual_assign(&lhs_before_convert, &dst, lhs_ty);
-                            }
-                            return ExpResult::PlainOperand(dst);
+                            return if *assign {
+                                ExpResult::PlainOperand(self.manual_assign(
+                                    &lhs_before_convert,
+                                    &dst,
+                                    lhs_ty,
+                                ))
+                            } else {
+                                ExpResult::PlainOperand(dst)
+                            };
                         }
                         ast::BinaryOp::Subtract => {
                             // ptr - int
@@ -783,10 +795,15 @@ impl<'a> InstructionGenerator<'a> {
                                 scale: self.symbol_table.size(elem),
                                 dst: dst.clone(),
                             });
-                            if *assign {
-                                self.manual_assign(&lhs_before_convert, &dst, lhs_ty);
-                            }
-                            return ExpResult::PlainOperand(dst);
+                            return if *assign {
+                                ExpResult::PlainOperand(self.manual_assign(
+                                    &lhs_before_convert,
+                                    &dst,
+                                    lhs_ty,
+                                ))
+                            } else {
+                                ExpResult::PlainOperand(dst)
+                            };
                         }
                         _ => unreachable!(),
                     }
@@ -814,10 +831,15 @@ impl<'a> InstructionGenerator<'a> {
                         rhs: Val::Constant(ast::Const::Long(elem_size as _)),
                         dst: dst.clone(),
                     });
-                    if *assign {
-                        self.manual_assign(&lhs_before_convert, &dst, lhs_ty);
-                    }
-                    return ExpResult::PlainOperand(dst);
+                    return if *assign {
+                        ExpResult::PlainOperand(self.manual_assign(
+                            &lhs_before_convert,
+                            &dst,
+                            lhs_ty,
+                        ))
+                    } else {
+                        ExpResult::PlainOperand(dst)
+                    };
                 }
 
                 self.instructions.push(Instruction::Binary {
@@ -845,9 +867,10 @@ impl<'a> InstructionGenerator<'a> {
                     dst: dst.clone(),
                 });
                 if *assign {
-                    self.manual_assign(&lhs_before_convert, &dst, lhs_ty);
+                    ExpResult::PlainOperand(self.manual_assign(&lhs_before_convert, &dst, lhs_ty))
+                } else {
+                    ExpResult::PlainOperand(dst)
                 }
-                ExpResult::PlainOperand(dst)
             }
             ast::Expression::Var(TokenSpanned { data: var, .. }, _) => {
                 if let semantics::type_check::Attr::Fun { ty, .. } = &self.symbol_table[var] {

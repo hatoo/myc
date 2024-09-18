@@ -415,7 +415,15 @@ impl Expression {
                 Const::UChar(_) => &VarType::Base(BaseType::UChar),
             },
             Self::Unary { ty, .. } => ty,
-            Self::Binary { ty, .. } => ty,
+            Self::Binary {
+                ty, assign, lhs, ..
+            } => {
+                if *assign {
+                    lhs.ty()
+                } else {
+                    ty
+                }
+            }
             Self::Assignment { lhs, .. } => lhs.ty(),
             Self::Conditional { then_branch, .. } => then_branch.ty(),
             Self::FunctionCall { ty, .. } => ty,
