@@ -420,6 +420,10 @@ fn convert_by_assignment(exp: &mut ast::Expression, ty: &ast::VarType) -> Result
         return Err(Error::IncompatibleTypes(exp.token_span()));
     }
 
+    if ety.is_union() || ty.is_union() {
+        return Err(Error::IncompatibleTypes(exp.token_span()));
+    }
+
     if !ety.is_pointer() && !ty.is_pointer() {
         convert_to(exp, ty);
         return Ok(());
