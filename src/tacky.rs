@@ -607,6 +607,19 @@ impl<'a> InstructionGenerator<'a> {
         }
     }
 
+    fn manual_cast(&mut self, val: &Val, ty: &VarType) -> Val {
+        if ty == &val.ty(self.symbol_table) {
+            return val.clone();
+        }
+
+        let dst = self.make_tmp_local(ty.clone());
+        self.instructions.push(Instruction::Cast {
+            src: val.clone(),
+            dst: dst.clone(),
+        });
+        dst
+    }
+
     fn add_expression(&mut self, expression: &ast::Expression) -> ExpResult {
         match expression {
             ast::Expression::Unary {
@@ -635,8 +648,10 @@ impl<'a> InstructionGenerator<'a> {
                 assign,
             } => {
                 // TODO: fix duplicated codes
+                let lhs_ty = lhs.ty();
                 let lhs_before_convert = self.add_expression(lhs);
                 let lhs = self.convert(&lhs_before_convert, lhs.ty());
+                let lhs = self.manual_cast(&lhs, ty);
                 let dst = self.make_tmp_local(ty.clone());
                 let and_false = self.new_label("and_false");
                 self.instructions.push(Instruction::JumpIfZero {
@@ -663,7 +678,7 @@ impl<'a> InstructionGenerator<'a> {
                 self.instructions.push(Instruction::Label(end));
 
                 if *assign {
-                    self.manual_assign(&lhs_before_convert, &dst, &lhs.ty(self.symbol_table));
+                    self.manual_assign(&lhs_before_convert, &dst, lhs_ty);
                 }
                 ExpResult::PlainOperand(dst)
             }
@@ -674,8 +689,10 @@ impl<'a> InstructionGenerator<'a> {
                 ty,
                 assign,
             } => {
+                let lhs_ty = lhs.ty();
                 let lhs_before_convert = self.add_expression(lhs);
                 let lhs = self.convert(&lhs_before_convert, lhs.ty());
+                let lhs = self.manual_cast(&lhs, ty);
                 let dst = self.make_tmp_local(ty.clone());
                 let or_true = self.new_label("or_true");
                 self.instructions.push(Instruction::JumpIfNotZero {
@@ -701,7 +718,7 @@ impl<'a> InstructionGenerator<'a> {
                 self.instructions.push(Instruction::Label(end));
 
                 if *assign {
-                    self.manual_assign(&lhs_before_convert, &dst, &lhs.ty(self.symbol_table));
+                    self.manual_assign(&lhs_before_convert, &dst, lhs_ty);
                 }
 
                 ExpResult::PlainOperand(dst)
@@ -713,8 +730,21 @@ impl<'a> InstructionGenerator<'a> {
                 ty,
                 assign,
             } => {
+                let lhs_ty = lhs.ty();
                 let lhs_before_convert = self.add_expression(lhs);
                 let lhs = self.convert(&lhs_before_convert, lhs.ty());
+                let lhs = self.manual_cast(
+                    &lhs,
+                    match op {
+                        ast::BinaryOp::Equal
+                        | ast::BinaryOp::NotEqual
+                        | ast::BinaryOp::LessThan
+                        | ast::BinaryOp::LessOrEqual
+                        | ast::BinaryOp::GreaterThan
+                        | ast::BinaryOp::GreaterOrEqual => rhs.ty(),
+                        _ => ty,
+                    },
+                );
                 let rhs = self.add_expression_and_convert(rhs);
                 let dst = self.make_tmp_local(ty.clone());
 
@@ -736,11 +766,7 @@ impl<'a> InstructionGenerator<'a> {
                                 dst: dst.clone(),
                             });
                             if *assign {
-                                self.manual_assign(
-                                    &lhs_before_convert,
-                                    &dst,
-                                    &lhs.ty(self.symbol_table),
-                                );
+                                self.manual_assign(&lhs_before_convert, &dst, lhs_ty);
                             }
                             return ExpResult::PlainOperand(dst);
                         }
@@ -760,11 +786,7 @@ impl<'a> InstructionGenerator<'a> {
                                 dst: dst.clone(),
                             });
                             if *assign {
-                                self.manual_assign(
-                                    &lhs_before_convert,
-                                    &dst,
-                                    &lhs.ty(self.symbol_table),
-                                );
+                                self.manual_assign(&lhs_before_convert, &dst, lhs_ty);
                             }
                             return ExpResult::PlainOperand(dst);
                         }
@@ -795,7 +817,7 @@ impl<'a> InstructionGenerator<'a> {
                         dst: dst.clone(),
                     });
                     if *assign {
-                        self.manual_assign(&lhs_before_convert, &dst, &lhs.ty(self.symbol_table));
+                        self.manual_assign(&lhs_before_convert, &dst, lhs_ty);
                     }
                     return ExpResult::PlainOperand(dst);
                 }
@@ -825,7 +847,7 @@ impl<'a> InstructionGenerator<'a> {
                     dst: dst.clone(),
                 });
                 if *assign {
-                    self.manual_assign(&lhs_before_convert, &dst, &lhs.ty(self.symbol_table));
+                    self.manual_assign(&lhs_before_convert, &dst, lhs_ty);
                 }
                 ExpResult::PlainOperand(dst)
             }

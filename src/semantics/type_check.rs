@@ -1020,7 +1020,7 @@ impl TypeChecker {
                             return Err(Error::IncompatibleTypes(exp.token_span()));
                         };
 
-                        convert_to(lhs, &cty);
+                        // convert_to(lhs, &cty);
                         convert_to(rhs, &cty);
 
                         *ty = ast::BaseType::Int.into();
@@ -1028,7 +1028,7 @@ impl TypeChecker {
                     ast::BinaryOp::Add => {
                         if let (ast::VarType::Base(tyl), ast::VarType::Base(tyr)) = (&tyl, &tyr) {
                             let cty = common_base_type(*tyl, *tyr).into();
-                            convert_to(lhs, &cty);
+                            // convert_to(lhs, &cty);
                             convert_to(rhs, &cty);
                             *ty = cty;
                         } else if self.sym_table.is_pointer_to_complete(&tyl) && tyr.is_integer() {
@@ -1044,7 +1044,7 @@ impl TypeChecker {
                     ast::BinaryOp::Subtract => {
                         if let (ast::VarType::Base(tyl), ast::VarType::Base(tyr)) = (&tyl, &tyr) {
                             let cty = common_base_type(*tyl, *tyr).into();
-                            convert_to(lhs, &cty);
+                            // convert_to(lhs, &cty);
                             convert_to(rhs, &cty);
                             *ty = cty;
                         } else if self.sym_table.is_pointer_to_complete(&tyl) && tyr.is_integer() {
@@ -1070,7 +1070,7 @@ impl TypeChecker {
                             if *tyl == ast::BaseType::Double || *tyr == ast::BaseType::Double {
                                 return Err(Error::IncompatibleTypes(exp.token_span()));
                             }
-                            convert_to(lhs, &cty);
+                            // convert_to(lhs, &cty);
                             convert_to(rhs, &cty);
                             *ty = cty;
                         } else {
@@ -1083,7 +1083,7 @@ impl TypeChecker {
                                 return Err(Error::IncompatibleTypes(exp.token_span()));
                             }
                             let cty = common_base_type(tyl, tyr).into();
-                            convert_to(lhs, &cty);
+                            // convert_to(lhs, &cty);
                             convert_to(rhs, &cty);
                             *ty = cty;
                         } else {
@@ -1094,7 +1094,7 @@ impl TypeChecker {
                         ast::BinaryOp::Multiply | ast::BinaryOp::Divide => {
                             if let (ast::VarType::Base(tyl), ast::VarType::Base(tyr)) = (tyl, tyr) {
                                 let cty = common_base_type(tyl, tyr).into();
-                                convert_to(lhs, &cty);
+                                // convert_to(lhs, &cty);
                                 convert_to(rhs, &cty);
                                 *ty = cty;
                             } else {
@@ -1108,7 +1108,7 @@ impl TypeChecker {
                                     return Err(Error::IncompatibleTypes(exp.token_span()));
                                 }
                                 let cty = cty.into();
-                                convert_to(lhs, &cty);
+                                // convert_to(lhs, &cty);
                                 convert_to(rhs, &cty);
                                 *ty = cty;
                             } else {
@@ -1128,7 +1128,7 @@ impl TypeChecker {
 
                             if let (ast::VarType::Base(tyl), ast::VarType::Base(tyr)) = (tyl, tyr) {
                                 let cty = common_base_type(tyl, tyr).into();
-                                convert_to(lhs, &cty);
+                                // convert_to(lhs, &cty);
                                 convert_to(rhs, &cty);
                             }
 
