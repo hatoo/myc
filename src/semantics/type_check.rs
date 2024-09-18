@@ -1052,8 +1052,9 @@ impl TypeChecker {
                     ast::BinaryOp::ShiftLeft | ast::BinaryOp::ShiftRight => {
                         if let (ast::VarType::Base(tyl), ast::VarType::Base(tyr)) = (&tyl, &tyr) {
                             let cty = ast::VarType::Base(match tyl {
-                                ast::BaseType::Char | ast::BaseType::SChar => ast::BaseType::Int,
-                                ast::BaseType::UChar => ast::BaseType::Uint,
+                                ast::BaseType::Char
+                                | ast::BaseType::SChar
+                                | ast::BaseType::UChar => ast::BaseType::Int,
                                 _ => tyl.clone(),
                             });
                             if *tyl == ast::BaseType::Double || *tyr == ast::BaseType::Double {
@@ -1062,6 +1063,8 @@ impl TypeChecker {
                             convert_to(lhs, &cty);
                             convert_to(rhs, &cty);
                             *ty = cty;
+                        } else {
+                            return Err(Error::IncompatibleTypes(exp.token_span()));
                         }
                     }
                     ast::BinaryOp::BitAnd | ast::BinaryOp::BitOr | ast::BinaryOp::Xor => {
@@ -1566,7 +1569,16 @@ impl TypeChecker {
                 if !ty.is_integer() {
                     return Err(Error::IncompatibleTypes(exp.token_span()));
                 }
-                let bits = 8 * self.sym_table.size(&ty);
+                match &ty {
+                    VarType::Base(BaseType::Char | BaseType::SChar) => {
+                        convert_to(exp, &ast::BaseType::Int.into());
+                    }
+                    VarType::Base(BaseType::UChar) => {
+                        convert_to(exp, &ast::BaseType::Uint.into());
+                    }
+                    _ => {}
+                }
+                let bits = 8 * self.sym_table.size(exp.ty());
                 let new_cases = labels
                     .cases
                     .iter()
