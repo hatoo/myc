@@ -321,13 +321,15 @@ impl<'a> InstructionGenerator<'a> {
                 }
                 VarType::Union(union_name) => {
                     let union_def = self.symbol_table.union_def(union_name).clone();
+                    let offset_start = *offset;
                     self.copy_initializers(
                         &inits[0],
                         name,
                         &union_def.members[0].ty,
                         offset,
                         depth + 1,
-                    )
+                    );
+                    *offset = offset_start + union_def.size;
                 }
                 _ => unreachable!(),
             },
