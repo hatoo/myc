@@ -735,6 +735,33 @@ impl<'a> InstructionGenerator<'a> {
                 ty,
                 assign,
             } => {
+                if matches!(op, ast::BinaryOp::Subtract)
+                    && lhs.ty().is_pointer()
+                    && rhs.ty().is_pointer()
+                {
+                    let lhs = self.add_expression_and_convert(lhs);
+                    let rhs = self.add_expression_and_convert(rhs);
+                    let dst = self.make_tmp_local(ty.clone());
+                    let VarType::Pointer(elem) = lhs.ty(self.symbol_table) else {
+                        unreachable!()
+                    };
+                    let elem_size = self.symbol_table.ty_size(&elem);
+                    // ptr - ptr
+                    let diff = self.make_tmp_local(ast::BaseType::Long.into());
+                    self.instructions.push(Instruction::Binary {
+                        op: BinaryOp::Subtract,
+                        lhs: lhs.clone(),
+                        rhs: rhs.clone(),
+                        dst: diff.clone(),
+                    });
+                    self.instructions.push(Instruction::Binary {
+                        op: BinaryOp::Divide,
+                        lhs: diff.clone(),
+                        rhs: Val::Constant(ast::Const::Long(elem_size as _)),
+                        dst: dst.clone(),
+                    });
+                    return ExpResult::PlainOperand(dst);
+                }
                 let lhs_ty = lhs.ty();
                 let lhs_before_convert = self.add_expression(lhs);
                 let lhs = self.convert(&lhs_before_convert, lhs.ty());
@@ -807,39 +834,6 @@ impl<'a> InstructionGenerator<'a> {
                         }
                         _ => unreachable!(),
                     }
-                }
-
-                if matches!(op, ast::BinaryOp::Subtract)
-                    && lhs.ty(self.symbol_table).is_pointer()
-                    && rhs.ty(self.symbol_table).is_pointer()
-                {
-                    let VarType::Pointer(elem) = lhs.ty(self.symbol_table) else {
-                        unreachable!()
-                    };
-                    let elem_size = self.symbol_table.ty_size(&elem);
-                    // ptr - ptr
-                    let diff = self.make_tmp_local(ast::BaseType::Long.into());
-                    self.instructions.push(Instruction::Binary {
-                        op: BinaryOp::Subtract,
-                        lhs: lhs.clone(),
-                        rhs: rhs.clone(),
-                        dst: diff.clone(),
-                    });
-                    self.instructions.push(Instruction::Binary {
-                        op: BinaryOp::Divide,
-                        lhs: diff.clone(),
-                        rhs: Val::Constant(ast::Const::Long(elem_size as _)),
-                        dst: dst.clone(),
-                    });
-                    return if *assign {
-                        ExpResult::PlainOperand(self.manual_assign(
-                            &lhs_before_convert,
-                            &dst,
-                            lhs_ty,
-                        ))
-                    } else {
-                        ExpResult::PlainOperand(dst)
-                    };
                 }
 
                 self.instructions.push(Instruction::Binary {

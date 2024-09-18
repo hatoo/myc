@@ -1054,6 +1054,9 @@ impl TypeChecker {
                             && self.sym_table.is_pointer_to_complete(&tyr)
                             && tyl == tyr
                         {
+                            if *assign {
+                                return Err(Error::IncompatibleTypes(exp.token_span()));
+                            }
                             *ty = ast::BaseType::Long.into();
                         } else {
                             return Err(Error::IncompatibleTypes(exp.token_span()));
