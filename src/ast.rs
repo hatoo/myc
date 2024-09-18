@@ -18,6 +18,7 @@ pub enum Declaration {
     VarDecl(VarDecl),
     FunDecl(FunDecl),
     StructDecl(StructDecl),
+    UnionDecl(UnionDecl),
 }
 
 #[derive(Debug)]
@@ -39,6 +40,12 @@ pub struct FunDecl {
 
 #[derive(Debug)]
 pub struct StructDecl {
+    pub tag: TokenSpanned<EcoString>,
+    pub member_decls: Vec<MemberDecl>,
+}
+
+#[derive(Debug)]
+pub struct UnionDecl {
     pub tag: TokenSpanned<EcoString>,
     pub member_decls: Vec<MemberDecl>,
 }
@@ -1687,20 +1694,19 @@ impl<'a> Parser<'a> {
                     Err(fun_err) => {
                         let fun_decl_fail = self.index;
                         self.index = index;
-                        match self.parse_struct_decl() {
-                            Ok(decl) => Ok(Declaration::StructDecl(decl)),
-                            Err(struct_err) => {
-                                let struct_decl_fail = self.index;
-                                self.index = index;
-                                if var_decl_fail > fun_decl_fail && var_decl_fail > struct_decl_fail
-                                {
+                        match self.peek()? {
+                            TokenSpanned {
+                                data: Token::Struct,
+                                ..
+                            } => Ok(Declaration::StructDecl(self.parse_struct_decl()?)),
+                            TokenSpanned {
+                                data: Token::Union, ..
+                            } => Ok(Declaration::UnionDecl(self.parse_union_decl()?)),
+                            _ => {
+                                if var_decl_fail > fun_decl_fail {
                                     Err(var_err)
-                                } else if fun_decl_fail > var_decl_fail
-                                    && fun_decl_fail > struct_decl_fail
-                                {
-                                    Err(fun_err)
                                 } else {
-                                    Err(struct_err)
+                                    Err(fun_err)
                                 }
                             }
                         }
@@ -2198,6 +2204,24 @@ impl<'a> Parser<'a> {
         self.expect(Token::SemiColon)?;
 
         Ok(StructDecl {
+            tag,
+            member_decls: member_decls.unwrap_or_default(),
+        })
+    }
+
+    fn parse_union_decl(&mut self) -> Result<UnionDecl, Error> {
+        self.expect(Token::Union)?;
+        let tag = self.expect_ident()?;
+
+        let member_decls = self.atomic(|s| {
+            s.expect(Token::OpenBrace)?;
+            let member_decls = s.many1(|s| s.parse_struct_member())?;
+            s.expect(Token::CloseBrace)?;
+            Ok::<_, Error>(member_decls)
+        });
+        self.expect(Token::SemiColon)?;
+
+        Ok(UnionDecl {
             tag,
             member_decls: member_decls.unwrap_or_default(),
         })
