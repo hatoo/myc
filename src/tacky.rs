@@ -172,6 +172,7 @@ impl Val {
                 Attr::Local(ty) => ty.clone(),
                 Attr::Constant { ty, .. } => ty.clone(),
                 Attr::Struct(_) => ast::VarType::Struct(var.clone()),
+                Attr::Union(_) => ast::VarType::Union(var.clone()),
             },
         }
     }
@@ -231,6 +232,7 @@ impl<'a> InstructionGenerator<'a> {
                 }
                 ast::Declaration::FunDecl(_) => {}
                 ast::Declaration::StructDecl(_) => {}
+                ast::Declaration::UnionDecl(_) => {}
             },
             ast::BlockItem::Statement(stmt) => {
                 self.add_statement(stmt);

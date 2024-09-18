@@ -1,6 +1,5 @@
 use core::panic;
 use std::{
-    cmp::max_by_key,
     collections::{hash_map::Entry, BTreeMap, HashMap, HashSet},
     fmt::Display,
     ops::DerefMut,

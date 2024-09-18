@@ -13,7 +13,7 @@ use crate::{
     optimize_asm::register_allocation,
     semantics::{
         self,
-        type_check::{self, Attr, StructDef, SymbolTable},
+        type_check::{self, Attr, StructDef, SymbolTable, UnionDef},
     },
     tacky::{self, Val},
 };
@@ -1958,6 +1958,9 @@ fn pseudo_to_stack(
                     }
                     semantics::type_check::Attr::Struct(StructDef {
                         alignment, size, ..
+                    })
+                    | semantics::type_check::Attr::Union(UnionDef {
+                        alignment, size, ..
                     }) => match known_vars.entry(name.clone()) {
                         Entry::Occupied(entry) => {
                             let addr = *entry.get();
@@ -2994,6 +2997,14 @@ pub fn asm_type(ty: &VarType, symbol_table: &SymbolTable) -> AssemblyType {
             AssemblyType::ByteArray {
                 size: struct_def.size,
                 alignment: struct_def.alignment,
+            }
+        }
+        VarType::Union(name) => {
+            let union_def = symbol_table.union_def(name);
+
+            AssemblyType::ByteArray {
+                size: union_def.size,
+                alignment: union_def.alignment,
             }
         }
     }
