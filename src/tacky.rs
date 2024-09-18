@@ -762,23 +762,6 @@ impl<'a> InstructionGenerator<'a> {
                     });
                     return ExpResult::PlainOperand(dst);
                 }
-                let lhs_ty = lhs.ty();
-                let lhs_before_convert = self.add_expression(lhs);
-                let lhs = self.convert(&lhs_before_convert, lhs.ty());
-                let lhs = self.manual_cast(
-                    &lhs,
-                    match op {
-                        ast::BinaryOp::Equal
-                        | ast::BinaryOp::NotEqual
-                        | ast::BinaryOp::LessThan
-                        | ast::BinaryOp::LessOrEqual
-                        | ast::BinaryOp::GreaterThan
-                        | ast::BinaryOp::GreaterOrEqual => rhs.ty(),
-                        _ => ty,
-                    },
-                );
-                let rhs = self.add_expression_and_convert(rhs);
-                let dst = self.make_tmp_local(ty.clone());
 
                 if let ast::VarType::Pointer(elem) = ty {
                     let ast::Ty::Var(elem) = elem.as_ref() else {
@@ -786,11 +769,17 @@ impl<'a> InstructionGenerator<'a> {
                     };
                     match op {
                         ast::BinaryOp::Add => {
-                            let (lhs, rhs) = if lhs.ty(self.symbol_table).is_pointer() {
+                            let (lhs, rhs) = if lhs.ty().is_pointer() {
                                 (lhs, rhs)
                             } else {
                                 (rhs, lhs)
                             };
+                            let lhs_ty = lhs.ty();
+                            let lhs_before_convert = self.add_expression(lhs);
+                            let lhs = self.convert(&lhs_before_convert, lhs.ty());
+                            let lhs = self.manual_cast(&lhs, ty);
+                            let rhs = self.add_expression_and_convert(rhs);
+                            let dst = self.make_tmp_local(ty.clone());
                             self.instructions.push(Instruction::AddPtr {
                                 ptr: lhs.clone(),
                                 index: rhs,
@@ -809,6 +798,12 @@ impl<'a> InstructionGenerator<'a> {
                         }
                         ast::BinaryOp::Subtract => {
                             // ptr - int
+                            let lhs_ty = lhs.ty();
+                            let lhs_before_convert = self.add_expression(lhs);
+                            let lhs = self.convert(&lhs_before_convert, lhs.ty());
+                            let lhs = self.manual_cast(&lhs, ty);
+                            let rhs = self.add_expression_and_convert(rhs);
+                            let dst = self.make_tmp_local(ty.clone());
 
                             let neg = self.make_tmp_local(ast::BaseType::Long.into());
                             self.instructions.push(Instruction::Unary {
@@ -835,6 +830,24 @@ impl<'a> InstructionGenerator<'a> {
                         _ => unreachable!(),
                     }
                 }
+
+                let lhs_ty = lhs.ty();
+                let lhs_before_convert = self.add_expression(lhs);
+                let lhs = self.convert(&lhs_before_convert, lhs.ty());
+                let lhs = self.manual_cast(
+                    &lhs,
+                    match op {
+                        ast::BinaryOp::Equal
+                        | ast::BinaryOp::NotEqual
+                        | ast::BinaryOp::LessThan
+                        | ast::BinaryOp::LessOrEqual
+                        | ast::BinaryOp::GreaterThan
+                        | ast::BinaryOp::GreaterOrEqual => rhs.ty(),
+                        _ => ty,
+                    },
+                );
+                let rhs = self.add_expression_and_convert(rhs);
+                let dst = self.make_tmp_local(ty.clone());
 
                 self.instructions.push(Instruction::Binary {
                     op: match op {
