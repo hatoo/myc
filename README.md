@@ -2,4 +2,4 @@
 
 My codes to https://nostarch.com/writing-c-compiler
 
-Done all chapters without extra-credit.
+Done all chapters including extra-credit.
