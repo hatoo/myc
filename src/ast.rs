@@ -696,6 +696,18 @@ impl BinaryOp {
             Self::Multiply | Self::Divide | Self::Remainder => 50,
         }
     }
+
+    pub fn is_comparison(&self) -> bool {
+        matches!(
+            self,
+            Self::Equal
+                | Self::NotEqual
+                | Self::LessThan
+                | Self::LessOrEqual
+                | Self::GreaterThan
+                | Self::GreaterOrEqual
+        )
+    }
 }
 
 impl TryFrom<&Token> for BinaryOp {

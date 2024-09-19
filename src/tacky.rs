@@ -834,18 +834,7 @@ impl<'a> InstructionGenerator<'a> {
                 let lhs_ty = lhs.ty();
                 let lhs_before_convert = self.add_expression(lhs);
                 let lhs = self.convert(&lhs_before_convert, lhs.ty());
-                let lhs = self.manual_cast(
-                    &lhs,
-                    match op {
-                        ast::BinaryOp::Equal
-                        | ast::BinaryOp::NotEqual
-                        | ast::BinaryOp::LessThan
-                        | ast::BinaryOp::LessOrEqual
-                        | ast::BinaryOp::GreaterThan
-                        | ast::BinaryOp::GreaterOrEqual => rhs.ty(),
-                        _ => ty,
-                    },
-                );
+                let lhs = self.manual_cast(&lhs, if op.is_comparison() { rhs.ty() } else { ty });
                 let rhs = self.add_expression_and_convert(rhs);
                 let dst = self.make_tmp_local(ty.clone());
 
