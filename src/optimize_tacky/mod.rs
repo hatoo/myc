@@ -288,7 +288,21 @@ pub fn constant_folding(program: &mut [Instruction], symbol_table: &SymbolTable)
                     Const::Ulong(c) => Const::Ulong(!*c),
                     _ => panic!(),
                 },
-                UnaryOp::Not => Const::Int(if c.get_ulong() == 0 { 1 } else { 0 }),
+                UnaryOp::Not => Const::Int(
+                    if c == &Const::Char(0)
+                        || c == &Const::UChar(0)
+                        || c == &Const::Int(0)
+                        || c == &Const::Uint(0)
+                        || c == &Const::Long(0)
+                        || c == &Const::Ulong(0)
+                        || c == &Const::Double(0.0)
+                        || c == &Const::Double(-0.0)
+                    {
+                        1
+                    } else {
+                        0
+                    },
+                ),
             };
 
             *inst = Instruction::Copy {
