@@ -1215,6 +1215,22 @@ impl<'a> InstructionGenerator<'a> {
                     _ => unreachable!(),
                 };
 
+                let pointer = if let VarType::Pointer(elem) = exp.ty() {
+                    let scale = if let Ty::Var(elem) = elem.as_ref() {
+                        self.symbol_table.size(elem)
+                    } else {
+                        1
+                    };
+                    let index = if op == BinaryOp::Add {
+                        Val::Constant(Const::Long(1))
+                    } else {
+                        Val::Constant(Const::Long(-1))
+                    };
+                    Some((scale, index))
+                } else {
+                    None
+                };
+
                 let res = self.add_expression(exp);
                 let one = one_value(exp.ty(), self.symbol_table);
 
@@ -1227,12 +1243,21 @@ impl<'a> InstructionGenerator<'a> {
                                 src: val.clone(),
                                 dst: dst.clone(),
                             });
-                            self.instructions.push(Instruction::Binary {
-                                op,
-                                lhs: val.clone(),
-                                rhs: Val::Constant(one),
-                                dst: val.clone(),
-                            });
+                            if let Some((scale, index)) = pointer {
+                                self.instructions.push(Instruction::AddPtr {
+                                    ptr: val.clone(),
+                                    index,
+                                    scale,
+                                    dst: val.clone(),
+                                });
+                            } else {
+                                self.instructions.push(Instruction::Binary {
+                                    op,
+                                    lhs: val.clone(),
+                                    rhs: Val::Constant(one),
+                                    dst: val.clone(),
+                                });
+                            }
                         }
                         ExpResult::DereferencedPointer(ptr) => {
                             let tmp = self.make_tmp_local(exp.ty().clone());
@@ -1240,12 +1265,21 @@ impl<'a> InstructionGenerator<'a> {
                                 src: ptr.clone(),
                                 dst: dst.clone(),
                             });
-                            self.instructions.push(Instruction::Binary {
-                                op,
-                                lhs: dst.clone(),
-                                rhs: Val::Constant(one),
-                                dst: tmp.clone(),
-                            });
+                            if let Some((scale, index)) = pointer {
+                                self.instructions.push(Instruction::AddPtr {
+                                    ptr: dst.clone(),
+                                    index,
+                                    scale,
+                                    dst: tmp.clone(),
+                                });
+                            } else {
+                                self.instructions.push(Instruction::Binary {
+                                    op,
+                                    lhs: dst.clone(),
+                                    rhs: Val::Constant(one),
+                                    dst: tmp.clone(),
+                                });
+                            }
                             self.instructions
                                 .push(Instruction::Store { src: tmp, dst: ptr });
                         }
@@ -1256,12 +1290,21 @@ impl<'a> InstructionGenerator<'a> {
                                 offset,
                                 dst: dst.clone(),
                             });
-                            self.instructions.push(Instruction::Binary {
-                                op,
-                                lhs: dst.clone(),
-                                rhs: Val::Constant(one),
-                                dst: tmp.clone(),
-                            });
+                            if let Some((scale, index)) = pointer {
+                                self.instructions.push(Instruction::AddPtr {
+                                    ptr: dst.clone(),
+                                    index,
+                                    scale,
+                                    dst: tmp.clone(),
+                                });
+                            } else {
+                                self.instructions.push(Instruction::Binary {
+                                    op,
+                                    lhs: dst.clone(),
+                                    rhs: Val::Constant(one),
+                                    dst: tmp.clone(),
+                                });
+                            }
                             self.instructions.push(Instruction::CopyToOffset {
                                 src: tmp,
                                 dst: Val::Var(base),
@@ -1273,12 +1316,21 @@ impl<'a> InstructionGenerator<'a> {
                 } else {
                     match res {
                         ExpResult::PlainOperand(val) => {
-                            self.instructions.push(Instruction::Binary {
-                                op,
-                                lhs: val.clone(),
-                                rhs: Val::Constant(one),
-                                dst: val.clone(),
-                            });
+                            if let Some((scale, index)) = pointer {
+                                self.instructions.push(Instruction::AddPtr {
+                                    ptr: val.clone(),
+                                    index,
+                                    scale,
+                                    dst: val.clone(),
+                                });
+                            } else {
+                                self.instructions.push(Instruction::Binary {
+                                    op,
+                                    lhs: val.clone(),
+                                    rhs: Val::Constant(one),
+                                    dst: val.clone(),
+                                });
+                            }
                             ExpResult::PlainOperand(val)
                         }
                         ExpResult::DereferencedPointer(ptr) => {
@@ -1287,12 +1339,21 @@ impl<'a> InstructionGenerator<'a> {
                                 src: ptr.clone(),
                                 dst: tmp.clone(),
                             });
-                            self.instructions.push(Instruction::Binary {
-                                op,
-                                lhs: tmp.clone(),
-                                rhs: Val::Constant(one),
-                                dst: tmp.clone(),
-                            });
+                            if let Some((scale, index)) = pointer {
+                                self.instructions.push(Instruction::AddPtr {
+                                    ptr: tmp.clone(),
+                                    index,
+                                    scale,
+                                    dst: tmp.clone(),
+                                });
+                            } else {
+                                self.instructions.push(Instruction::Binary {
+                                    op,
+                                    lhs: tmp.clone(),
+                                    rhs: Val::Constant(one),
+                                    dst: tmp.clone(),
+                                });
+                            }
                             self.instructions.push(Instruction::Store {
                                 src: tmp.clone(),
                                 dst: ptr,
@@ -1306,12 +1367,21 @@ impl<'a> InstructionGenerator<'a> {
                                 offset,
                                 dst: tmp.clone(),
                             });
-                            self.instructions.push(Instruction::Binary {
-                                op,
-                                lhs: tmp.clone(),
-                                rhs: Val::Constant(one),
-                                dst: tmp.clone(),
-                            });
+                            if let Some((scale, index)) = pointer {
+                                self.instructions.push(Instruction::AddPtr {
+                                    ptr: tmp.clone(),
+                                    index,
+                                    scale,
+                                    dst: tmp.clone(),
+                                });
+                            } else {
+                                self.instructions.push(Instruction::Binary {
+                                    op,
+                                    lhs: tmp.clone(),
+                                    rhs: Val::Constant(one),
+                                    dst: tmp.clone(),
+                                });
+                            }
                             self.instructions.push(Instruction::CopyToOffset {
                                 src: tmp.clone(),
                                 dst: Val::Var(base),

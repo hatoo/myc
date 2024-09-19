@@ -94,7 +94,8 @@ impl Annotation {
                 }
                 Instruction::Unary { dst, .. }
                 | Instruction::Binary { dst, .. }
-                | Instruction::Cast { dst, .. } => {
+                | Instruction::Cast { dst, .. }
+                | Instruction::AddPtr { dst, .. } => {
                     current_reaching_copies.retain(|c| !(&c.src == dst || &c.dst == dst));
                 }
                 Instruction::Store { .. } => {
