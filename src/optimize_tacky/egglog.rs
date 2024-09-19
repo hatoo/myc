@@ -44,7 +44,7 @@ impl ToEgglogExpr for BinaryOp {
             BinaryOp::GreaterOrEqual => Expr::call("GreaterOrEqual", None),
             BinaryOp::BitAnd => Expr::call("BitAnd", None),
             BinaryOp::BitOr => Expr::call("BitOr", None),
-            BinaryOp::Xor => Expr::call("Xor", None),
+            BinaryOp::BitXor => Expr::call("Xor", None),
             BinaryOp::ShiftLeft => Expr::call("ShiftLeft", None),
             BinaryOp::ShiftRight => Expr::call("ShiftRight", None),
         }

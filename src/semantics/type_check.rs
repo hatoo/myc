@@ -1080,7 +1080,7 @@ impl TypeChecker {
                             return Err(Error::IncompatibleTypes(exp.token_span()));
                         }
                     }
-                    ast::BinaryOp::BitAnd | ast::BinaryOp::BitOr | ast::BinaryOp::Xor => {
+                    ast::BinaryOp::BitAnd | ast::BinaryOp::BitOr | ast::BinaryOp::BitXor => {
                         if let (ast::VarType::Base(tyl), ast::VarType::Base(tyr)) = (tyl, tyr) {
                             if tyl == BaseType::Double || tyr == BaseType::Double {
                                 return Err(Error::IncompatibleTypes(exp.token_span()));

@@ -136,7 +136,7 @@ pub enum BinaryOp {
     GreaterOrEqual,
     BitAnd,
     BitOr,
-    Xor,
+    BitXor,
     ShiftLeft,
     ShiftRight,
 }
@@ -854,7 +854,7 @@ impl<'a> InstructionGenerator<'a> {
                         ast::BinaryOp::And | ast::BinaryOp::Or => unreachable!(),
                         ast::BinaryOp::BitAnd => BinaryOp::BitAnd,
                         ast::BinaryOp::BitOr => BinaryOp::BitOr,
-                        ast::BinaryOp::Xor => BinaryOp::Xor,
+                        ast::BinaryOp::BitXor => BinaryOp::BitXor,
                         ast::BinaryOp::ShiftLeft => BinaryOp::ShiftLeft,
                         ast::BinaryOp::ShiftRight => BinaryOp::ShiftRight,
                     },

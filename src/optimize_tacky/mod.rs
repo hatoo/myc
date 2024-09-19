@@ -259,7 +259,7 @@ pub fn constant_folding(program: &mut [Instruction], symbol_table: &SymbolTable)
             }
         }
         fold_binary!(inst; BinaryOp::Add => (wrapping_add, add), BinaryOp::Subtract => (wrapping_sub, sub), BinaryOp::Multiply => (wrapping_mul, mul), BinaryOp::Divide => (div, div), BinaryOp::Remainder => (rem, rem));
-        fold_binary_int!(inst; BinaryOp::BitAnd => bitand, BinaryOp::BitOr => bitor, BinaryOp::Xor => bitxor);
+        fold_binary_int!(inst; BinaryOp::BitAnd => bitand, BinaryOp::BitOr => bitor, BinaryOp::BitXor => bitxor);
         fold_binary_int_shift!(inst; BinaryOp::ShiftLeft => wrapping_shl, BinaryOp::ShiftRight => wrapping_shr);
         fold_binary_cmp!(inst; BinaryOp::Equal => eq, BinaryOp::NotEqual => ne, BinaryOp::LessThan => lt, BinaryOp::LessOrEqual => le, BinaryOp::GreaterThan => gt, BinaryOp::GreaterOrEqual => ge);
 

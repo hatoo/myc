@@ -729,7 +729,7 @@ impl<'a> CodeGen<'a> {
                         tacky::BinaryOp::Multiply => Binary::Simple(BinaryOp::Mult),
                         tacky::BinaryOp::BitAnd => Binary::Simple(BinaryOp::And),
                         tacky::BinaryOp::BitOr => Binary::Simple(BinaryOp::Or),
-                        tacky::BinaryOp::Xor => Binary::Simple(BinaryOp::Xor),
+                        tacky::BinaryOp::BitXor => Binary::Simple(BinaryOp::Xor),
                         tacky::BinaryOp::ShiftLeft => Binary::Shl,
                         tacky::BinaryOp::ShiftRight => Binary::Shr,
                         tacky::BinaryOp::Divide => Binary::Divide,
