@@ -1,4 +1,4 @@
-use std::ops::{Add, Div, Mul, Rem, Sub};
+use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Rem, Sub};
 
 use copy_analysis::copy_propagation;
 use liveness_analysis::eliminate_dead_stores;
@@ -63,6 +63,114 @@ macro_rules! fold_binary {
                     (Const::Double(lhs), Const::Double(rhs)) => {
                         *$arg = Instruction::Copy {
                             src: Val::Constant(Const::Double((*lhs).$fd(*rhs))),
+                            dst: dst.clone(),
+                        };
+                    }
+                    _ => {}
+                },
+            )*
+            _ => {}
+        }
+    };
+}
+
+macro_rules! fold_binary_int {
+    ($arg:expr; $($op:pat => $f:ident),*) => {
+        match $arg {
+            $(
+                Instruction::Binary {
+                    op: $op,
+                    lhs: Val::Constant(lhs),
+                    rhs: Val::Constant(rhs),
+                    dst,
+                } => match (lhs, rhs) {
+                    (Const::Char(lhs), Const::Char(rhs)) => {
+                        *$arg = Instruction::Copy {
+                            src: Val::Constant(Const::Char((*lhs).$f(*rhs))),
+                            dst: dst.clone(),
+                        };
+                    }
+                    (Const::UChar(lhs), Const::UChar(rhs)) => {
+                        *$arg = Instruction::Copy {
+                            src: Val::Constant(Const::UChar((*lhs).$f(*rhs))),
+                            dst: dst.clone(),
+                        };
+                    }
+                    (Const::Int(lhs), Const::Int(rhs)) => {
+                        *$arg = Instruction::Copy {
+                            src: Val::Constant(Const::Int((*lhs).$f(*rhs))),
+                            dst: dst.clone(),
+                        };
+                    }
+                    (Const::Uint(lhs), Const::Uint(rhs)) => {
+                        *$arg = Instruction::Copy {
+                            src: Val::Constant(Const::Uint((*lhs).$f(*rhs))),
+                            dst: dst.clone(),
+                        };
+                    }
+                    (Const::Long(lhs), Const::Long(rhs)) => {
+                        *$arg = Instruction::Copy {
+                            src: Val::Constant(Const::Long((*lhs).$f(*rhs))),
+                            dst: dst.clone(),
+                        };
+                    }
+                    (Const::Ulong(lhs), Const::Ulong(rhs)) => {
+                        *$arg = Instruction::Copy {
+                            src: Val::Constant(Const::Ulong((*lhs).$f(*rhs))),
+                            dst: dst.clone(),
+                        };
+                    }
+                    _ => {}
+                },
+            )*
+            _ => {}
+        }
+    };
+}
+
+macro_rules! fold_binary_int_shift {
+    ($arg:expr; $($op:pat => $f:ident),*) => {
+        match $arg {
+            $(
+                Instruction::Binary {
+                    op: $op,
+                    lhs: Val::Constant(lhs),
+                    rhs: Val::Constant(rhs),
+                    dst,
+                } => match (lhs, rhs) {
+                    (Const::Char(lhs), Const::Char(rhs)) => {
+                        *$arg = Instruction::Copy {
+                            src: Val::Constant(Const::Char((*lhs).$f(*rhs as u32))),
+                            dst: dst.clone(),
+                        };
+                    }
+                    (Const::UChar(lhs), Const::UChar(rhs)) => {
+                        *$arg = Instruction::Copy {
+                            src: Val::Constant(Const::UChar((*lhs).$f(*rhs as u32))),
+                            dst: dst.clone(),
+                        };
+                    }
+                    (Const::Int(lhs), Const::Int(rhs)) => {
+                        *$arg = Instruction::Copy {
+                            src: Val::Constant(Const::Int((*lhs).$f(*rhs as u32))),
+                            dst: dst.clone(),
+                        };
+                    }
+                    (Const::Uint(lhs), Const::Uint(rhs)) => {
+                        *$arg = Instruction::Copy {
+                            src: Val::Constant(Const::Uint((*lhs).$f(*rhs as u32))),
+                            dst: dst.clone(),
+                        };
+                    }
+                    (Const::Long(lhs), Const::Long(rhs)) => {
+                        *$arg = Instruction::Copy {
+                            src: Val::Constant(Const::Long((*lhs).$f(*rhs as u32))),
+                            dst: dst.clone(),
+                        };
+                    }
+                    (Const::Ulong(lhs), Const::Ulong(rhs)) => {
+                        *$arg = Instruction::Copy {
+                            src: Val::Constant(Const::Ulong((*lhs).$f(*rhs as u32))),
                             dst: dst.clone(),
                         };
                     }
@@ -151,6 +259,8 @@ pub fn constant_folding(program: &mut [Instruction], symbol_table: &SymbolTable)
             }
         }
         fold_binary!(inst; BinaryOp::Add => (wrapping_add, add), BinaryOp::Subtract => (wrapping_sub, sub), BinaryOp::Multiply => (wrapping_mul, mul), BinaryOp::Divide => (div, div), BinaryOp::Remainder => (rem, rem));
+        fold_binary_int!(inst; BinaryOp::BitAnd => bitand, BinaryOp::BitOr => bitor, BinaryOp::Xor => bitxor);
+        fold_binary_int_shift!(inst; BinaryOp::ShiftLeft => wrapping_shl, BinaryOp::ShiftRight => wrapping_shr);
         fold_binary_cmp!(inst; BinaryOp::Equal => eq, BinaryOp::NotEqual => ne, BinaryOp::LessThan => lt, BinaryOp::LessOrEqual => le, BinaryOp::GreaterThan => gt, BinaryOp::GreaterOrEqual => ge);
 
         if let Instruction::Unary {
