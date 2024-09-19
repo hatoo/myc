@@ -1221,7 +1221,7 @@ impl<'a> InstructionGenerator<'a> {
                 };
 
                 let res = self.add_expression(exp);
-                let one = one_value(exp.ty(), self.symbol_table);
+                let one = one_step_value(exp.ty(), self.symbol_table);
 
                 if *postfix {
                     let dst = self.make_tmp_local(exp.ty().clone());
@@ -1413,7 +1413,8 @@ impl<'a> InstructionGenerator<'a> {
     }
 }
 
-fn one_value(ty: &VarType, symbol_table: &SymbolTable) -> Const {
+// The value of increment/decrement
+fn one_step_value(ty: &VarType, symbol_table: &SymbolTable) -> Const {
     match ty {
         VarType::Base(base) => match base {
             BaseType::Char | BaseType::SChar => ast::Const::Char(1),
@@ -1429,7 +1430,7 @@ fn one_value(ty: &VarType, symbol_table: &SymbolTable) -> Const {
                 Ty::Var(ty) => symbol_table.size(ty),
                 Ty::Fun(_) => 1,
             };
-            ast::Const::Ulong(size as _)
+            ast::Const::Long(size as _)
         }
         _ => unreachable!(),
     }
