@@ -1385,26 +1385,8 @@ impl<'a> InstructionGenerator<'a> {
     }
 
     fn add_expression_and_convert(&mut self, expression: &ast::Expression) -> Val {
-        match self.add_expression(expression) {
-            ExpResult::PlainOperand(val) => val,
-            ExpResult::DereferencedPointer(ptr) => {
-                let dst = self.make_tmp_local(expression.ty().clone());
-                self.instructions.push(Instruction::Load {
-                    src: ptr,
-                    dst: dst.clone(),
-                });
-                dst
-            }
-            ExpResult::SubObject { base, offset } => {
-                let dst = self.make_tmp_local(expression.ty().clone());
-                self.instructions.push(Instruction::CopyFromOffset {
-                    src: Val::Var(base),
-                    offset,
-                    dst: dst.clone(),
-                });
-                dst
-            }
-        }
+        let exp_res = self.add_expression(expression);
+        self.convert(&exp_res, expression.ty())
     }
 
     fn convert(&mut self, exp_res: &ExpResult, ty: &VarType) -> Val {
