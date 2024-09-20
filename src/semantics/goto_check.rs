@@ -130,70 +130,70 @@ impl GotoCheck {
 
         for item in &mut block.0 {
             if let BlockItem::Statement(stmt) = item {
-                self.check_statement(stmt, &known_labels)?;
+                check_statement(stmt, &known_labels)?;
             }
         }
 
         Ok(())
     }
-    fn check_statement(
-        &mut self,
-        statement: &mut Statement,
-        known_labels: &HashMap<EcoString, EcoString>,
-    ) -> Result<(), Error> {
-        match statement {
-            Statement::Label { statement, .. } => {
-                self.check_statement(statement, known_labels)?;
-            }
-            Statement::If {
-                condition: _,
-                then_branch,
-                else_branch,
-            } => {
-                self.check_statement(then_branch, known_labels)?;
-                if let Some(else_branch) = else_branch {
-                    self.check_statement(else_branch, known_labels)?;
-                }
-            }
-            Statement::While {
-                label: _,
-                condition: _,
-                body,
-            } => {
-                self.check_statement(body, known_labels)?;
-            }
-            Statement::For { body, .. } => {
-                self.check_statement(body, known_labels)?;
-            }
-            Statement::DoWhile { body, .. } => {
-                self.check_statement(body, known_labels)?;
-            }
-            Statement::Compound(block) => {
-                for item in &mut block.0 {
-                    if let BlockItem::Statement(stmt) = item {
-                        self.check_statement(stmt, known_labels)?
-                    }
-                }
-            }
-            Statement::Goto(label) => {
-                if let Some(new_label) = known_labels.get(&label.data) {
-                    label.data = new_label.clone();
-                } else {
-                    return Err(Error::GotoUndefined(label.clone()));
-                }
-            }
-            Statement::Default { statement, .. } => {
-                self.check_statement(statement, known_labels)?;
-            }
-            Statement::Case { statement, .. } => {
-                self.check_statement(statement, known_labels)?;
-            }
-            Statement::Switch { statement, .. } => {
-                self.check_statement(statement, known_labels)?;
-            }
-            _ => {}
-        }
+}
 
-        Ok(())
+fn check_statement(
+    statement: &mut Statement,
+    known_labels: &HashMap<EcoString, EcoString>,
+) -> Result<(), Error> {
+    match statement {
+        Statement::Label { statement, .. } => {
+            check_statement(statement, known_labels)?;
+        }
+        Statement::If {
+            condition: _,
+            then_branch,
+            else_branch,
+        } => {
+            check_statement(then_branch, known_labels)?;
+            if let Some(else_branch) = else_branch {
+                check_statement(else_branch, known_labels)?;
+            }
+        }
+        Statement::While {
+            label: _,
+            condition: _,
+            body,
+        } => {
+            check_statement(body, known_labels)?;
+        }
+        Statement::For { body, .. } => {
+            check_statement(body, known_labels)?;
+        }
+        Statement::DoWhile { body, .. } => {
+            check_statement(body, known_labels)?;
+        }
+        Statement::Compound(block) => {
+            for item in &mut block.0 {
+                if let BlockItem::Statement(stmt) = item {
+                    check_statement(stmt, known_labels)?
+                }
+            }
+        }
+        Statement::Goto(label) => {
+            if let Some(new_label) = known_labels.get(&label.data) {
+                label.data = new_label.clone();
+            } else {
+                return Err(Error::GotoUndefined(label.clone()));
+            }
+        }
+        Statement::Default { statement, .. } => {
+            check_statement(statement, known_labels)?;
+        }
+        Statement::Case { statement, .. } => {
+            check_statement(statement, known_labels)?;
+        }
+        Statement::Switch { statement, .. } => {
+            check_statement(statement, known_labels)?;
+        }
+        _ => {}
     }
+
+    Ok(())
 }
