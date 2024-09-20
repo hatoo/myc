@@ -1122,10 +1122,7 @@ impl<'a> InstructionGenerator<'a> {
                         ExpResult::SubObject { base: v, offset: 0 }
                     }
                     ExpResult::PlainOperand(Val::Constant(_)) => unreachable!(),
-                    ExpResult::SubObject { base, offset } => ExpResult::SubObject {
-                        base,
-                        offset: offset + 0,
-                    },
+                    ExpResult::SubObject { base, offset } => ExpResult::SubObject { base, offset },
                     ExpResult::DereferencedPointer(ptr) => {
                         let dst_ptr = self.make_tmp_local(ast::VarType::Pointer(Box::new(
                             ast::Ty::Var(ty.clone()),

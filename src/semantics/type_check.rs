@@ -1068,7 +1068,7 @@ impl TypeChecker {
                                 ast::BaseType::Char
                                 | ast::BaseType::SChar
                                 | ast::BaseType::UChar => ast::BaseType::Int,
-                                _ => tyl.clone(),
+                                _ => *tyl,
                             });
                             if *tyl == ast::BaseType::Double || *tyr == ast::BaseType::Double {
                                 return Err(Error::IncompatibleTypes(exp.token_span()));
