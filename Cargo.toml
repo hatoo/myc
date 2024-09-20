@@ -11,3 +11,6 @@ miette = { version = "7.2.0", features = ["fancy"] }
 ordered-float = "3.9.2"
 regex = "1.10.6"
 thiserror = "1.0.63"
+
+[dev-dependencies]
+assert_cmd = "2.0.16"
