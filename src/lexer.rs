@@ -321,8 +321,7 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
                             span: index..index + 1,
                         }));
                     }
-                }
-                if index + 1 < src.len()
+                } else if index + 1 < src.len()
                     && src[index + 1] == b'.'
                     && index + 2 < src.len()
                     && src[index + 2] == b'.'
