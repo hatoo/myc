@@ -1,4 +1,4 @@
-use std::path::{self, Path};
+use std::path::Path;
 
 use assert_cmd::Command;
 
@@ -70,6 +70,7 @@ fn test_compile_and_run() {
             let (return_code, stdout) = run_gcc(&path);
             assert_myc(&path, return_code, &stdout);
         }
+        eprintln!("path = {:?} ok", path);
         clean(&path);
     }
 }
