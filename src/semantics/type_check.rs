@@ -1198,7 +1198,9 @@ impl TypeChecker {
                 match ty {
                     ast::VarType::Pointer(pty) => {
                         if let ast::Ty::Fun(ty) = pty.as_ref() {
-                            if ty.params.len() != args.len() {
+                            if (!ty.variable_length_params && ty.params.len() != args.len())
+                                || (ty.variable_length_params && ty.params.len() > args.len())
+                            {
                                 return Err(Error::IncompatibleTypes(callee.token_span()));
                             }
                             let ret = ty.ret.clone();

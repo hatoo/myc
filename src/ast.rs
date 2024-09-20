@@ -636,6 +636,7 @@ impl VarType {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FunType {
     pub params: Vec<VarType>,
+    pub variable_length_params: bool,
     pub ret: VarType,
 }
 
@@ -950,6 +951,7 @@ enum Declarator {
     },
     Fun {
         params: Vec<ParamInfo>,
+        variable_length_params: bool,
         decl: TokenSpanned<Box<Declarator>>,
     },
 }
@@ -958,6 +960,12 @@ enum Declarator {
 struct ParamInfo {
     ty: VarType,
     decl: TokenSpanned<Declarator>,
+}
+
+#[derive(Debug)]
+struct FunctionParamList {
+    params: Vec<ParamInfo>,
+    variable_length_params: bool,
 }
 
 #[allow(clippy::type_complexity)]
@@ -976,7 +984,11 @@ fn process_declarator(
             let derived_type = VarType::Pointer(Box::new(Ty::Var(base_type)));
             process_declarator(d.map(|d| *d), derived_type)
         }
-        Declarator::Fun { params, decl } => {
+        Declarator::Fun {
+            params,
+            variable_length_params,
+            decl,
+        } => {
             let mut param_names = Vec::new();
             let mut param_types = Vec::new();
 
@@ -995,6 +1007,7 @@ fn process_declarator(
                 Declarator::Ident(name) => {
                     let derived_type = Ty::Fun(FunType {
                         params: param_types,
+                        variable_length_params,
                         ret: base_type,
                     });
 
@@ -1003,6 +1016,7 @@ fn process_declarator(
                 Declarator::Pointer(decl) => {
                     let fun_ptr = VarType::Pointer(Box::new(Ty::Fun(FunType {
                         params: param_types,
+                        variable_length_params,
                         ret: base_type,
                     })));
 
@@ -1444,7 +1458,8 @@ impl<'a> Parser<'a> {
             let span = decl.span.start..self.index;
             return Ok(TokenSpanned {
                 data: Declarator::Fun {
-                    params,
+                    params: params.params,
+                    variable_length_params: params.variable_length_params,
                     decl: decl.map(Box::new),
                 },
                 span,
@@ -1482,7 +1497,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_param_list(&mut self) -> Result<Vec<ParamInfo>, Error> {
+    fn parse_param_list(&mut self) -> Result<FunctionParamList, Error> {
         let mut params = Vec::new();
         self.expect(Token::OpenParen)?;
 
@@ -1495,17 +1510,30 @@ impl<'a> Parser<'a> {
             .is_ok();
 
         if is_void {
-            return Ok(params);
+            return Ok(FunctionParamList {
+                params,
+                variable_length_params: false,
+            });
         }
 
         loop {
+            if self.expect(Token::ThreeDots).is_ok() {
+                self.expect(Token::CloseParen)?;
+                return Ok(FunctionParamList {
+                    params,
+                    variable_length_params: true,
+                });
+            }
             params.push(self.parse_param()?);
             if self.expect(Token::Comma).is_err() {
                 self.expect(Token::CloseParen)?;
                 break;
             }
         }
-        Ok(params)
+        Ok(FunctionParamList {
+            params,
+            variable_length_params: false,
+        })
     }
 
     fn parse_param(&mut self) -> Result<ParamInfo, Error> {
