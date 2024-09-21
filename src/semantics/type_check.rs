@@ -283,7 +283,9 @@ impl StaticInit {
     pub fn is_zero(&self) -> bool {
         matches!(
             self,
-            StaticInit::Int(0)
+            StaticInit::Char(0)
+                | StaticInit::UChar(0)
+                | StaticInit::Int(0)
                 | StaticInit::Long(0)
                 | StaticInit::Uint(0)
                 | StaticInit::Ulong(0)
