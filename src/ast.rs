@@ -1450,7 +1450,11 @@ impl<'a> Parser<'a> {
         }) = self.expect(Token::Asterisk)
         {
             let asterisk_span = asterisk_span.clone();
-            let TokenSpanned { data, span } = self.parse_declarator()?;
+            let TokenSpanned { data, span } =
+                self.parse_declarator().unwrap_or_else(|_| TokenSpanned {
+                    data: Declarator::Ident("".into()),
+                    span: asterisk_span.clone(),
+                });
             Ok(TokenSpanned {
                 data: Declarator::Pointer(TokenSpanned {
                     data: Box::new(data),
@@ -1582,10 +1586,10 @@ impl<'a> Parser<'a> {
                     span: start..end,
                 })
             }
-            s => Err(Error::Unexpected(
-                s.map(Clone::clone),
-                ExpectedToken::Declarator,
-            )),
+            _ => Ok(TokenSpanned {
+                data: Declarator::Ident("".into()),
+                span: self.index..self.index + 1,
+            }),
         }
     }
 
@@ -1713,6 +1717,13 @@ impl<'a> Parser<'a> {
         let (ty, storage_class) = self.parse_specifiers(true)?;
         let decl = self.parse_declarator()?;
         let (ident, ty, _) = process_declarator(decl, ty)?;
+        // TODO
+        if ident.data.is_empty() {
+            return Err(Error::UnexpectedSpecifier(TokenSpanned {
+                data: Token::Ident(ident.data.clone()),
+                span: ident.span.clone(),
+            }));
+        }
 
         let ty = match ty {
             Ty::Var(ty) => ty,
@@ -2175,7 +2186,7 @@ impl<'a> Parser<'a> {
 
     fn parse_type_name(&mut self) -> Result<VarType, Error> {
         let base_type = self.parse_specifiers(false)?.0;
-        if let Ok(decl) = self.atomic(|s| s.parse_abstract_declarator()) {
+        if let Ok(decl) = self.atomic(|s| s.parse_declarator()) {
             let span = decl.span.clone();
 
             let (_, ty, _) = process_declarator(decl, base_type)?;
@@ -2320,6 +2331,13 @@ impl<'a> Parser<'a> {
         let ty = self.parse_specifiers(false)?.0;
         let decl = self.parse_declarator()?;
         let (ident, ty, _) = process_declarator(decl, ty)?;
+        // TODO
+        if ident.data.is_empty() {
+            return Err(Error::UnexpectedSpecifier(TokenSpanned {
+                data: Token::Ident(ident.data.clone()),
+                span: ident.span.clone(),
+            }));
+        }
         self.expect(Token::SemiColon)?;
 
         let ty = match ty {
