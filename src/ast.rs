@@ -2103,8 +2103,12 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_abstract_declarator(&mut self) -> Result<TokenSpanned<Declarator>, Error> {
-        if let Ok(TokenSpanned { span: aspan, .. }) = self.expect(Token::Asterisk) {
-            let aspan = aspan.clone();
+        if let Ok(TokenSpanned {
+            span: asterisk_span,
+            ..
+        }) = self.expect(Token::Asterisk)
+        {
+            let asterisk_span = asterisk_span.clone();
             if let Ok(TokenSpanned { data, span }) = self.atomic(|s| s.parse_abstract_declarator())
             {
                 Ok(TokenSpanned {
@@ -2112,15 +2116,15 @@ impl<'a> Parser<'a> {
                         data: Box::new(data),
                         span: span.clone(),
                     }),
-                    span: aspan.start..span.end,
+                    span: asterisk_span.start..span.end,
                 })
             } else {
                 Ok(TokenSpanned {
                     data: Declarator::Pointer(TokenSpanned {
                         data: Box::new(Declarator::Ident("".into())),
-                        span: aspan.clone(),
+                        span: asterisk_span.clone(),
                     }),
-                    span: aspan.clone(),
+                    span: asterisk_span.clone(),
                 })
             }
         } else {
@@ -2282,7 +2286,7 @@ impl<'a> Parser<'a> {
 
         let member_decls = self.atomic(|s| {
             s.expect(Token::OpenBrace)?;
-            let member_decls = s.many1(|s| s.parse_struct_member())?;
+            let member_decls = s.many1(|s| s.parse_member())?;
             s.expect(Token::CloseBrace)?;
             Ok::<_, Error>(member_decls)
         });
@@ -2300,7 +2304,7 @@ impl<'a> Parser<'a> {
 
         let member_decls = self.atomic(|s| {
             s.expect(Token::OpenBrace)?;
-            let member_decls = s.many1(|s| s.parse_struct_member())?;
+            let member_decls = s.many1(|s| s.parse_member())?;
             s.expect(Token::CloseBrace)?;
             Ok::<_, Error>(member_decls)
         });
@@ -2312,7 +2316,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_struct_member(&mut self) -> Result<MemberDecl, Error> {
+    fn parse_member(&mut self) -> Result<MemberDecl, Error> {
         let ty = self.parse_specifiers(false)?.0;
         let decl = self.parse_declarator()?;
         let (ident, ty, _) = process_declarator(decl, ty)?;
