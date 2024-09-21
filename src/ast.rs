@@ -799,6 +799,8 @@ pub enum Error {
     EmptyInitializer(std::ops::Range<usize>),
     #[error("Function type can't be an array element")]
     FunctionCantBeArrayElement(std::ops::Range<usize>),
+    #[error("Variable name is missing")]
+    NoVariableName(std::ops::Range<usize>),
 }
 
 impl From<Error> for () {
@@ -821,6 +823,7 @@ impl MayHasTokenSpan for Error {
             Error::BadArrayLength(span) => Some(span.clone()),
             Error::EmptyInitializer(span) => Some(span.clone()),
             Error::FunctionCantBeArrayElement(span) => Some(span.clone()),
+            Error::NoVariableName(span) => Some(span.clone()),
         }
     }
 }
@@ -1717,12 +1720,8 @@ impl<'a> Parser<'a> {
         let (ty, storage_class) = self.parse_specifiers(true)?;
         let decl = self.parse_declarator()?;
         let (ident, ty, _) = process_declarator(decl, ty)?;
-        // TODO
         if ident.data.is_empty() {
-            return Err(Error::UnexpectedSpecifier(TokenSpanned {
-                data: Token::Ident(ident.data.clone()),
-                span: ident.span.clone(),
-            }));
+            return Err(Error::NoVariableName(ident.span.clone()));
         }
 
         let ty = match ty {
@@ -2260,12 +2259,8 @@ impl<'a> Parser<'a> {
         let ty = self.parse_specifiers(false)?.0;
         let decl = self.parse_declarator()?;
         let (ident, ty, _) = process_declarator(decl, ty)?;
-        // TODO
         if ident.data.is_empty() {
-            return Err(Error::UnexpectedSpecifier(TokenSpanned {
-                data: Token::Ident(ident.data.clone()),
-                span: ident.span.clone(),
-            }));
+            return Err(Error::NoVariableName(ident.span.clone()));
         }
         self.expect(Token::SemiColon)?;
 
