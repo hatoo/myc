@@ -104,7 +104,12 @@ impl GotoCheck {
             Statement::Switch { statement, .. } => {
                 self.collect_label_statement(statement, known_labels)?;
             }
-            _ => {}
+            Statement::Return(..) => {}
+            Statement::Expression(..) => {}
+            Statement::Break { .. } => {}
+            Statement::Continue { .. } => {}
+            Statement::Null => {}
+            Statement::Goto(..) => {}
         }
 
         Ok(())
@@ -192,7 +197,11 @@ fn check_statement(
         Statement::Switch { statement, .. } => {
             check_statement(statement, known_labels)?;
         }
-        _ => {}
+        Statement::Return(..) => {}
+        Statement::Expression(..) => {}
+        Statement::Break { .. } => {}
+        Statement::Continue { .. } => {}
+        Statement::Null => {}
     }
 
     Ok(())
