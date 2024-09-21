@@ -795,6 +795,8 @@ pub enum Error {
     NotFunType(std::ops::Range<usize>),
     #[error("Array length must be a constant integer")]
     BadArrayLength(std::ops::Range<usize>),
+    #[error("Empty Initializer is not allowed")]
+    EmptyInitializer(std::ops::Range<usize>),
 }
 
 impl From<Error> for () {
@@ -815,6 +817,7 @@ impl MayHasTokenSpan for Error {
             Error::NotVarType(span) => Some(span.clone()),
             Error::NotFunType(span) => Some(span.clone()),
             Error::BadArrayLength(span) => Some(span.clone()),
+            Error::EmptyInitializer(span) => Some(span.clone()),
         }
     }
 }
@@ -1673,6 +1676,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_initializer(&mut self) -> Result<Initializer, Error> {
+        let start = self.index;
         if self.expect(Token::OpenBrace).is_ok() {
             let mut inits = Vec::new();
 
@@ -1687,6 +1691,10 @@ impl<'a> Parser<'a> {
                     self.expect(Token::CloseBrace)?;
                     break;
                 }
+            }
+
+            if inits.is_empty() {
+                return Err(Error::EmptyInitializer(start..self.index));
             }
 
             Ok(Initializer::CompoundInit(inits))
@@ -1775,8 +1783,10 @@ impl<'a> Parser<'a> {
                             } => Ok(Declaration::Union(self.parse_union_decl()?)),
                             _ => {
                                 if var_decl_fail > fun_decl_fail {
+                                    self.index = var_decl_fail;
                                     Err(var_err)
                                 } else {
+                                    self.index = fun_decl_fail;
                                     Err(fun_err)
                                 }
                             }
