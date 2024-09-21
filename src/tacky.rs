@@ -647,7 +647,7 @@ impl<'a> InstructionGenerator<'a> {
                 ExpResult::PlainOperand(dst)
             }
             ast::Expression::Binary {
-                op: ast::BinaryOp::And,
+                op: ast::BinaryOp::LogicalAnd,
                 lhs,
                 rhs,
                 ty,
@@ -689,7 +689,7 @@ impl<'a> InstructionGenerator<'a> {
                 }
             }
             ast::Expression::Binary {
-                op: ast::BinaryOp::Or,
+                op: ast::BinaryOp::LogicalOr,
                 lhs,
                 rhs,
                 ty,
@@ -851,7 +851,7 @@ impl<'a> InstructionGenerator<'a> {
                         ast::BinaryOp::LessOrEqual => BinaryOp::LessOrEqual,
                         ast::BinaryOp::GreaterThan => BinaryOp::GreaterThan,
                         ast::BinaryOp::GreaterOrEqual => BinaryOp::GreaterOrEqual,
-                        ast::BinaryOp::And | ast::BinaryOp::Or => unreachable!(),
+                        ast::BinaryOp::LogicalAnd | ast::BinaryOp::LogicalOr => unreachable!(),
                         ast::BinaryOp::BitAnd => BinaryOp::BitAnd,
                         ast::BinaryOp::BitOr => BinaryOp::BitOr,
                         ast::BinaryOp::BitXor => BinaryOp::BitXor,

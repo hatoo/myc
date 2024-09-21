@@ -1000,7 +1000,7 @@ impl TypeChecker {
                 }
 
                 match op {
-                    ast::BinaryOp::And | ast::BinaryOp::Or => {
+                    ast::BinaryOp::LogicalAnd | ast::BinaryOp::LogicalOr => {
                         if !tyl.is_scalar() || !tyr.is_scalar() {
                             return Err(Error::IncompatibleTypes(exp.token_span()));
                         }

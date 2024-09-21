@@ -667,8 +667,8 @@ pub enum BinaryOp {
     Multiply,
     Divide,
     Remainder,
-    And,
-    Or,
+    LogicalAnd,
+    LogicalOr,
     Equal,
     NotEqual,
     LessThan,
@@ -685,8 +685,8 @@ pub enum BinaryOp {
 impl BinaryOp {
     fn precedence(&self) -> usize {
         match self {
-            Self::Or => 5,
-            Self::And => 10,
+            Self::LogicalOr => 5,
+            Self::LogicalAnd => 10,
             Self::BitOr => 11,
             Self::BitXor => 12,
             Self::BitAnd => 13,
@@ -721,8 +721,8 @@ impl TryFrom<&Token> for BinaryOp {
             Token::Asterisk => Ok(Self::Multiply),
             Token::Slash => Ok(Self::Divide),
             Token::Percent => Ok(Self::Remainder),
-            Token::TwoAmpersands => Ok(Self::And),
-            Token::TwoPipes => Ok(Self::Or),
+            Token::TwoAmpersands => Ok(Self::LogicalAnd),
+            Token::TwoPipes => Ok(Self::LogicalOr),
             Token::TwoEquals => Ok(Self::Equal),
             Token::ExclamationEquals => Ok(Self::NotEqual),
             Token::LessThan => Ok(Self::LessThan),
