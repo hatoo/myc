@@ -1689,11 +1689,6 @@ impl<'a> Parser<'a> {
                 }
             }
 
-            if inits.is_empty() {
-                // To Pass the test
-                todo!()
-            }
-
             Ok(Initializer::CompoundInit(inits))
         } else {
             let exp = self.parse_expression(0)?;
