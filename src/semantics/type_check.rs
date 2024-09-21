@@ -1327,7 +1327,7 @@ impl TypeChecker {
                 Ok(ast::BaseType::Ulong.into())
             }
             ast::Expression::SizeofType(ty) => {
-                if !self.sym_table.is_complete(&ty.data) && ty.data != VarType::Void {
+                if !self.sym_table.is_complete(&ty.data) {
                     return Err(Error::IncompatibleTypes(exp.token_span()));
                 }
                 /*
@@ -1420,6 +1420,9 @@ impl TypeChecker {
 
                 let ty = self.check_expression_and_convert(exp)?;
                 if !ty.is_scalar() {
+                    return Err(Error::IncompatibleTypes(exp.token_span()));
+                }
+                if ty.is_pointer() && !self.sym_table.is_pointer_to_complete(&ty) {
                     return Err(Error::IncompatibleTypes(exp.token_span()));
                 }
                 if !exp.is_lvalue() {
