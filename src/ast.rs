@@ -1147,7 +1147,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn expect_block(&mut self) -> Result<Block, Error> {
+    fn parse_block(&mut self) -> Result<Block, Error> {
         self.expect(Token::OpenBrace)?;
         let mut body = Vec::new();
         while !matches!(
@@ -1192,7 +1192,7 @@ impl<'a> Parser<'a> {
         Ok(Block(body))
     }
 
-    fn expect_for_init(&mut self) -> Result<Option<ForInit>, Error> {
+    fn parse_for_init(&mut self) -> Result<Option<ForInit>, Error> {
         if self.expect(Token::SemiColon).is_ok() {
             return Ok(None);
         }
@@ -1277,7 +1277,7 @@ impl<'a> Parser<'a> {
                 data: Token::OpenBrace,
                 ..
             } => {
-                let block = self.expect_block()?;
+                let block = self.parse_block()?;
                 Ok(Statement::Compound(block))
             }
             TokenSpanned {
@@ -1339,7 +1339,7 @@ impl<'a> Parser<'a> {
             } => {
                 self.advance();
                 self.expect(Token::OpenParen)?;
-                let init = self.expect_for_init()?;
+                let init = self.parse_for_init()?;
                 let condition = if self.expect(Token::SemiColon).is_ok() {
                     None
                 } else {
@@ -1436,15 +1436,19 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_declarator(&mut self) -> Result<TokenSpanned<Declarator>, Error> {
-        if let Ok(TokenSpanned { span: aspan, .. }) = self.expect(Token::Asterisk) {
-            let aspan = aspan.clone();
+        if let Ok(TokenSpanned {
+            span: asterisk_span,
+            ..
+        }) = self.expect(Token::Asterisk)
+        {
+            let asterisk_span = asterisk_span.clone();
             let TokenSpanned { data, span } = self.parse_declarator()?;
             Ok(TokenSpanned {
                 data: Declarator::Pointer(TokenSpanned {
                     data: Box::new(data),
                     span: span.clone(),
                 }),
-                span: aspan.start..span.end,
+                span: asterisk_span.start..span.end,
             })
         } else {
             self.parse_direct_declarator()
@@ -1503,7 +1507,7 @@ impl<'a> Parser<'a> {
 
         let is_void = self
             .atomic(|s| {
-                s.expect(Token::Void)?;
+                let _ = s.expect(Token::Void);
                 s.expect(Token::CloseParen)?;
                 Ok::<_, Error>(())
             })
@@ -1742,7 +1746,7 @@ impl<'a> Parser<'a> {
         let body = if self.expect(Token::SemiColon).is_ok() {
             None
         } else {
-            Some(self.expect_block()?)
+            Some(self.parse_block()?)
         };
 
         Ok(FunDecl {
