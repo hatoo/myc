@@ -1209,6 +1209,11 @@ impl TypeChecker {
                                 self.check_expression_and_convert(arg)?;
                                 convert_by_assignment(arg, &ty)?;
                             }
+                            if ty.variable_length_params {
+                                for arg in args.iter_mut().skip(ty.params.len()) {
+                                    self.check_expression(arg)?;
+                                }
+                            }
                             *fty = ret.clone();
 
                             if ret != ast::VarType::Void && !self.sym_table.is_complete(&ret) {
