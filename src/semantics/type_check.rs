@@ -453,10 +453,10 @@ impl TypeChecker {
     pub fn check_program(&mut self, program: &mut crate::ast::Program) -> Result<(), Error> {
         for decl in &mut program.decls {
             match decl {
-                crate::ast::Declaration::VarDecl(decl) => self.check_var_decl_file(decl)?,
-                crate::ast::Declaration::FunDecl(decl) => self.check_fun_decl(decl)?,
-                crate::ast::Declaration::StructDecl(decl) => self.check_struct_decl(decl)?,
-                crate::ast::Declaration::UnionDecl(decl) => self.check_union_decl(decl)?,
+                crate::ast::Declaration::Var(decl) => self.check_var_decl_file(decl)?,
+                crate::ast::Declaration::Fun(decl) => self.check_fun_decl(decl)?,
+                crate::ast::Declaration::Struct(decl) => self.check_struct_decl(decl)?,
+                crate::ast::Declaration::Union(decl) => self.check_union_decl(decl)?,
             }
         }
 
@@ -701,15 +701,15 @@ impl TypeChecker {
 
     fn check_decl_local(&mut self, decl: &mut crate::ast::Declaration) -> Result<(), Error> {
         match decl {
-            crate::ast::Declaration::VarDecl(decl) => self.check_var_decl_local(decl),
-            crate::ast::Declaration::FunDecl(decl) => {
+            crate::ast::Declaration::Var(decl) => self.check_var_decl_local(decl),
+            crate::ast::Declaration::Fun(decl) => {
                 if decl.body.is_some() {
                     return Err(Error::BlockScopeFunWithBody(decl.name.clone()));
                 }
                 self.check_fun_decl(decl)
             }
-            crate::ast::Declaration::StructDecl(decl) => self.check_struct_decl(decl),
-            crate::ast::Declaration::UnionDecl(decl) => self.check_union_decl(decl),
+            crate::ast::Declaration::Struct(decl) => self.check_struct_decl(decl),
+            crate::ast::Declaration::Union(decl) => self.check_union_decl(decl),
         }
     }
 

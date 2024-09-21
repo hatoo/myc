@@ -33,10 +33,10 @@ impl GotoCheck {
     pub fn check_goto(&mut self, program: &mut Program) -> Result<(), Error> {
         for decl in &mut program.decls {
             match decl {
-                crate::ast::Declaration::VarDecl(_) => {}
-                crate::ast::Declaration::StructDecl(_) => {}
-                crate::ast::Declaration::UnionDecl(_) => {}
-                crate::ast::Declaration::FunDecl(fun_decl) => {
+                crate::ast::Declaration::Var(_) => {}
+                crate::ast::Declaration::Struct(_) => {}
+                crate::ast::Declaration::Union(_) => {}
+                crate::ast::Declaration::Fun(fun_decl) => {
                     if let Some(body) = &mut fun_decl.body {
                         self.check_block(body)?;
                     }

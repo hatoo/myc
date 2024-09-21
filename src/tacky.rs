@@ -227,12 +227,12 @@ impl<'a> InstructionGenerator<'a> {
     fn add_block_item(&mut self, block_item: &ast::BlockItem) {
         match block_item {
             ast::BlockItem::Declaration(decl) => match decl {
-                ast::Declaration::VarDecl(decl) => {
+                ast::Declaration::Var(decl) => {
                     self.add_var_declaration(decl);
                 }
-                ast::Declaration::FunDecl(_) => {}
-                ast::Declaration::StructDecl(_) => {}
-                ast::Declaration::UnionDecl(_) => {}
+                ast::Declaration::Fun(_) => {}
+                ast::Declaration::Struct(_) => {}
+                ast::Declaration::Union(_) => {}
             },
             ast::BlockItem::Statement(stmt) => {
                 self.add_statement(stmt);
@@ -1440,7 +1440,7 @@ pub fn gen_program(program: &ast::Program, symbol_table: &mut SymbolTable) -> Pr
         .decls
         .iter()
         .filter_map(|f| match f {
-            ast::Declaration::FunDecl(f) => gen_function(&mut generator, f),
+            ast::Declaration::Fun(f) => gen_function(&mut generator, f),
             _ => None,
         })
         .map(TopLevelItem::Function)

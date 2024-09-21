@@ -15,10 +15,10 @@ pub struct Program {
 
 #[derive(Debug)]
 pub enum Declaration {
-    VarDecl(VarDecl),
-    FunDecl(FunDecl),
-    StructDecl(StructDecl),
-    UnionDecl(UnionDecl),
+    Var(VarDecl),
+    Fun(FunDecl),
+    Struct(StructDecl),
+    Union(UnionDecl),
 }
 
 #[derive(Debug)]
@@ -1757,12 +1757,12 @@ impl<'a> Parser<'a> {
     fn parse_declaration(&mut self) -> Result<Declaration, Error> {
         let index = self.index;
         match self.parse_var_decl() {
-            Ok(decl) => Ok(Declaration::VarDecl(decl)),
+            Ok(decl) => Ok(Declaration::Var(decl)),
             Err(var_err) => {
                 let var_decl_fail = self.index;
                 self.index = index;
                 match self.parse_fun_decl() {
-                    Ok(decl) => Ok(Declaration::FunDecl(decl)),
+                    Ok(decl) => Ok(Declaration::Fun(decl)),
                     Err(fun_err) => {
                         let fun_decl_fail = self.index;
                         self.index = index;
@@ -1770,10 +1770,10 @@ impl<'a> Parser<'a> {
                             TokenSpanned {
                                 data: Token::Struct,
                                 ..
-                            } => Ok(Declaration::StructDecl(self.parse_struct_decl()?)),
+                            } => Ok(Declaration::Struct(self.parse_struct_decl()?)),
                             TokenSpanned {
                                 data: Token::Union, ..
-                            } => Ok(Declaration::UnionDecl(self.parse_union_decl()?)),
+                            } => Ok(Declaration::Union(self.parse_union_decl()?)),
                             _ => {
                                 if var_decl_fail > fun_decl_fail {
                                     Err(var_err)

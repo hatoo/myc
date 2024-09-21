@@ -105,10 +105,10 @@ impl VarResolver {
         self.push();
         for decl in &mut program.decls {
             match decl {
-                ast::Declaration::VarDecl(decl) => self.resolve_var_decl_file_scope(decl)?,
-                ast::Declaration::FunDecl(decl) => self.resolve_fun_decl(decl, true)?,
-                ast::Declaration::StructDecl(decl) => self.resolve_structure_declaration(decl)?,
-                ast::Declaration::UnionDecl(decl) => self.resolve_union_declaration(decl)?,
+                ast::Declaration::Var(decl) => self.resolve_var_decl_file_scope(decl)?,
+                ast::Declaration::Fun(decl) => self.resolve_fun_decl(decl, true)?,
+                ast::Declaration::Struct(decl) => self.resolve_structure_declaration(decl)?,
+                ast::Declaration::Union(decl) => self.resolve_union_declaration(decl)?,
             }
         }
         self.pop();
@@ -219,10 +219,10 @@ impl VarResolver {
 
     fn resolve_decl(&mut self, decl: &mut ast::Declaration) -> Result<(), Error> {
         match decl {
-            ast::Declaration::VarDecl(decl) => self.resolve_var_decl_local(decl),
-            ast::Declaration::FunDecl(decl) => self.resolve_fun_decl(decl, false),
-            ast::Declaration::StructDecl(decl) => self.resolve_structure_declaration(decl),
-            ast::Declaration::UnionDecl(decl) => self.resolve_union_declaration(decl),
+            ast::Declaration::Var(decl) => self.resolve_var_decl_local(decl),
+            ast::Declaration::Fun(decl) => self.resolve_fun_decl(decl, false),
+            ast::Declaration::Struct(decl) => self.resolve_structure_declaration(decl),
+            ast::Declaration::Union(decl) => self.resolve_union_declaration(decl),
         }
     }
     fn resolve_fun_decl(&mut self, decl: &mut ast::FunDecl, file_scope: bool) -> Result<(), Error> {

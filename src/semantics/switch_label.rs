@@ -29,10 +29,10 @@ impl HasTokenSpan for Error {
 pub fn collect_switch_labels(program: &mut ast::Program) -> Result<(), Error> {
     for decl in &mut program.decls {
         match decl {
-            ast::Declaration::VarDecl(_) => {}
-            ast::Declaration::StructDecl(_) => {}
-            ast::Declaration::UnionDecl(_) => {}
-            ast::Declaration::FunDecl(fun_decl) => {
+            ast::Declaration::Var(_) => {}
+            ast::Declaration::Struct(_) => {}
+            ast::Declaration::Union(_) => {}
+            ast::Declaration::Fun(fun_decl) => {
                 if let Some(body) = &mut fun_decl.body {
                     for item in &mut body.0 {
                         match item {
