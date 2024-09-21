@@ -797,6 +797,8 @@ pub enum Error {
     BadArrayLength(std::ops::Range<usize>),
     #[error("Empty Initializer is not allowed")]
     EmptyInitializer(std::ops::Range<usize>),
+    #[error("Function type can't be an array element")]
+    FunctionCantBeArrayElement(std::ops::Range<usize>),
 }
 
 impl From<Error> for () {
@@ -818,6 +820,7 @@ impl MayHasTokenSpan for Error {
             Error::NotFunType(span) => Some(span.clone()),
             Error::BadArrayLength(span) => Some(span.clone()),
             Error::EmptyInitializer(span) => Some(span.clone()),
+            Error::FunctionCantBeArrayElement(span) => Some(span.clone()),
         }
     }
 }
@@ -1027,7 +1030,9 @@ fn process_declarator(
                     Ok((name, ty, param_names))
                 }
                 Declarator::Fun { .. } => Err(Error::NotVarType(decl.span.clone())),
-                Declarator::Array { .. } => todo!(),
+                Declarator::Array { .. } => {
+                    Err(Error::FunctionCantBeArrayElement(decl.span.clone()))
+                }
             }
         }
         Declarator::Array { decl, size } => {
