@@ -116,7 +116,7 @@ impl SymbolTable {
             }
             ast::VarType::Pointer(_) => 8,
             ast::VarType::Base(base) => base.size(),
-            ast::VarType::Void => panic!("Get size of void"),
+            ast::VarType::Void => 1,
         }
     }
 
@@ -1327,7 +1327,7 @@ impl TypeChecker {
                 Ok(ast::BaseType::Ulong.into())
             }
             ast::Expression::SizeofType(ty) => {
-                if !self.sym_table.is_complete(&ty.data) {
+                if !self.sym_table.is_complete(&ty.data) && ty.data != VarType::Void {
                     return Err(Error::IncompatibleTypes(exp.token_span()));
                 }
                 if let ast::VarType::Pointer(ty) = &ty.data {

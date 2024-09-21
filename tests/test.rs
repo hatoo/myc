@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use assert_cmd::Command;
+use clap::builder::OsStr;
 
 fn test_compile_myc(path: &Path, optimize: bool) {
     let mut command = Command::cargo_bin("myc").unwrap();
@@ -66,7 +67,7 @@ fn test_compile_and_run() {
         let entry = entry.unwrap();
         let path = entry.path();
 
-        if path.extension().unwrap() == "c" {
+        if path.extension() == Some(&OsStr::from("c")) {
             let (return_code, stdout) = run_gcc(&path);
             assert_myc(&path, return_code, &stdout);
         }
