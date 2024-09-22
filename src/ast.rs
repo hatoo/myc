@@ -1799,15 +1799,13 @@ impl<'a> Parser<'a> {
                 } = p
                 {
                     Ok(TokenSpanned { data, span })
+                } else if body.is_some() {
+                    Err(Error::NoVariableName(p.span))
                 } else {
-                    if body.is_some() {
-                        Err(Error::NoVariableName(p.span))
-                    } else {
-                        Ok(TokenSpanned {
-                            data: "".into(),
-                            span: p.span,
-                        })
-                    }
+                    Ok(TokenSpanned {
+                        data: "".into(),
+                        span: p.span,
+                    })
                 }
             })
             .collect::<Result<Vec<_>, _>>()?;
