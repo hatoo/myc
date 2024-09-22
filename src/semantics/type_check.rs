@@ -1358,6 +1358,12 @@ impl TypeChecker {
             }
             ast::Expression::String(_, ty) => Ok(ty.clone()),
             ast::Expression::Sizeof(exp) => {
+                if let Expression::Var(name, _) = exp.as_ref() {
+                    if let Some(Attr::Fun { .. }) = self.sym_table.get(&name.data) {
+                        // You can't write function type other than this, right?
+                        return Err(Error::IncompatibleTypes(exp.token_span()));
+                    }
+                }
                 let ty = self.check_expression(exp)?;
                 if !self.sym_table.is_complete(&ty) {
                     return Err(Error::IncompatibleTypes(exp.token_span()));
