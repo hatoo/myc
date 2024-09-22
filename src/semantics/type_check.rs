@@ -328,6 +328,8 @@ pub enum Error {
     BadForInit(TokenSpanned<EcoString>),
     #[error("Case expression is not constant")]
     CaseExpIsNotConstant(std::ops::Range<usize>),
+    #[error("Expression is not an lvalue")]
+    NotLValue(std::ops::Range<usize>),
 }
 
 impl HasTokenSpan for Error {
@@ -341,6 +343,7 @@ impl HasTokenSpan for Error {
             Error::BlockScopeFunWithBody(ident) => ident.span.clone(),
             Error::BadForInit(ident) => ident.span.clone(),
             Error::CaseExpIsNotConstant(span) => span.clone(),
+            Error::NotLValue(span) => span.clone(),
         }
     }
 }
@@ -998,7 +1001,7 @@ impl TypeChecker {
                 let tyr = self.check_expression_and_convert(rhs)?;
 
                 if *assign && !lhs.is_lvalue() {
-                    return Err(Error::IncompatibleTypes(lhs.token_span()));
+                    return Err(Error::NotLValue(lhs.token_span()));
                 }
 
                 match op {
@@ -1147,7 +1150,7 @@ impl TypeChecker {
             crate::ast::Expression::Assignment { lhs, rhs } => {
                 let tyl = self.check_expression_and_convert(lhs)?;
                 if !lhs.is_lvalue() {
-                    return Err(Error::IncompatibleTypes(lhs.token_span()));
+                    return Err(Error::NotLValue(lhs.token_span()));
                 }
                 self.check_expression_and_convert(rhs)?;
                 convert_by_assignment(rhs, &tyl)?;
@@ -1265,7 +1268,7 @@ impl TypeChecker {
             }
             ast::Expression::AddrOf { exp, ty } => {
                 if !exp.is_lvalue() {
-                    return Err(Error::IncompatibleTypes(exp.token_span()));
+                    return Err(Error::NotLValue(exp.token_span()));
                 }
 
                 let exp_ty = self.check_expression(exp)?;
@@ -1428,7 +1431,7 @@ impl TypeChecker {
                     return Err(Error::IncompatibleTypes(exp.token_span()));
                 }
                 if !exp.is_lvalue() {
-                    return Err(Error::IncompatibleTypes(exp.token_span()));
+                    return Err(Error::NotLValue(exp.token_span()));
                 }
 
                 Ok(ty)
