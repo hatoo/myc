@@ -330,6 +330,8 @@ pub enum Error {
     CaseExpIsNotConstant(std::ops::Range<usize>),
     #[error("Expression is not an lvalue")]
     NotLValue(std::ops::Range<usize>),
+    #[error("Unknown member: {0}")]
+    UnknownMember(TokenSpanned<EcoString>),
 }
 
 impl HasTokenSpan for Error {
@@ -344,6 +346,7 @@ impl HasTokenSpan for Error {
             Error::BadForInit(ident) => ident.span.clone(),
             Error::CaseExpIsNotConstant(span) => span.clone(),
             Error::NotLValue(span) => span.clone(),
+            Error::UnknownMember(ident) => ident.span.clone(),
         }
     }
 }
@@ -1345,7 +1348,7 @@ impl TypeChecker {
                             *ty = member.ty.clone();
                             Ok(ty.clone())
                         } else {
-                            Err(Error::IncompatibleTypes(exp.token_span()))
+                            Err(Error::UnknownMember(member.clone()))
                         }
                     }
                     ast::VarType::Union(u) => {
@@ -1354,7 +1357,7 @@ impl TypeChecker {
                             *ty = member.ty.clone();
                             Ok(ty.clone())
                         } else {
-                            Err(Error::IncompatibleTypes(exp.token_span()))
+                            Err(Error::UnknownMember(member.clone()))
                         }
                     }
                     _ => Err(Error::IncompatibleTypes(exp.token_span())),
@@ -1380,7 +1383,7 @@ impl TypeChecker {
                                 *ty = member.ty.clone();
                                 Ok(ty.clone())
                             } else {
-                                Err(Error::IncompatibleTypes(exp.token_span()))
+                                Err(Error::UnknownMember(member.clone()))
                             }
                         }
 
@@ -1392,7 +1395,7 @@ impl TypeChecker {
                                 *ty = member.ty.clone();
                                 Ok(ty.clone())
                             } else {
-                                Err(Error::IncompatibleTypes(exp.token_span()))
+                                Err(Error::UnknownMember(member.clone()))
                             }
                         }
                         _ => Err(Error::IncompatibleTypes(exp.token_span())),
