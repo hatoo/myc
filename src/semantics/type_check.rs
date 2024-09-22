@@ -1358,17 +1358,6 @@ impl TypeChecker {
             }
             ast::Expression::String(_, ty) => Ok(ty.clone()),
             ast::Expression::Sizeof(exp) => {
-                if let Expression::Var(name, exp_ty) = exp.as_mut() {
-                    if let Some(Attr::Typedef(ty)) = self.sym_table.get(&name.data) {
-                        // looks like expression but it actually specifies a type
-                        // typedef int foo; sizeof(foo) is sizeof(int)
-                        if !self.sym_table.is_complete(&ty) {
-                            return Err(Error::IncompatibleTypes(exp.token_span()));
-                        }
-                        *exp_ty = ty.clone();
-                        return Ok(ast::BaseType::Ulong.into());
-                    }
-                }
                 let ty = self.check_expression(exp)?;
                 if !self.sym_table.is_complete(&ty) {
                     return Err(Error::IncompatibleTypes(exp.token_span()));

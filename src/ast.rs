@@ -1,4 +1,7 @@
-use std::{collections::BTreeMap, hash::Hash};
+use std::{
+    collections::{BTreeMap, HashMap},
+    hash::Hash,
+};
 
 use ecow::EcoString;
 
@@ -746,13 +749,46 @@ impl TryFrom<&Token> for BinaryOp {
 }
 
 pub fn parse(tokens: &[span::Spanned<Token>]) -> Result<Program, Error> {
-    let mut parser = Parser { tokens, index: 0 };
+    let mut parser = Parser {
+        tokens,
+        index: 0,
+        scope: Default::default(),
+    };
     parser.parse_program()
+}
+
+#[derive(Debug, Default)]
+struct Scope {
+    vars: Vec<HashMap<EcoString, bool>>,
+}
+
+impl Scope {
+    fn push(&mut self) {
+        self.vars.push(HashMap::new());
+    }
+
+    fn pop(&mut self) {
+        self.vars.pop();
+    }
+
+    fn insert(&mut self, name: EcoString, is_typedef: bool) {
+        self.vars.last_mut().unwrap().insert(name, is_typedef);
+    }
+
+    fn is_typedef(&self, name: &EcoString) -> bool {
+        for scope in self.vars.iter().rev() {
+            if let Some(is_typedef) = scope.get(name) {
+                return *is_typedef;
+            }
+        }
+        false
+    }
 }
 
 struct Parser<'a> {
     tokens: &'a [span::Spanned<Token>],
     index: usize,
+    scope: Scope,
 }
 
 #[derive(Debug)]
@@ -1187,6 +1223,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_block(&mut self) -> Result<Block, Error> {
+        self.scope.push();
         self.expect(Token::OpenBrace)?;
         let mut body = Vec::new();
         while !matches!(
@@ -1228,6 +1265,7 @@ impl<'a> Parser<'a> {
         }
         self.expect(Token::CloseBrace)?;
 
+        self.scope.pop();
         Ok(Block(body))
     }
 
@@ -1260,6 +1298,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_program(&mut self) -> Result<Program, Error> {
+        self.scope.push();
         let mut decls = Vec::new();
         loop {
             if self.expect_eof().is_ok() {
@@ -1267,6 +1306,7 @@ impl<'a> Parser<'a> {
             }
             decls.push(self.parse_declaration()?);
         }
+        self.scope.pop();
         Ok(Program { decls })
     }
 
@@ -1689,7 +1729,7 @@ impl<'a> Parser<'a> {
                         span: tag.span,
                     });
                 }
-                Token::Ident(ident) => {
+                Token::Ident(ident) if self.scope.is_typedef(ident) => {
                     if ty.is_empty() {
                         ty.push(TokenSpanned {
                             data: TypeSpecifier::Typedef(TokenSpanned {
@@ -1786,6 +1826,11 @@ impl<'a> Parser<'a> {
             Ty::Fun(_) => return Err(Error::NotVarType(span)),
         };
 
+        self.scope.insert(
+            ident.data.clone(),
+            storage_class == Some(StorageClass::Typedef),
+        );
+
         if self.expect(Token::Equal).is_ok() {
             let init = self.parse_initializer()?;
             self.expect(Token::SemiColon)?;
@@ -1852,6 +1897,11 @@ impl<'a> Parser<'a> {
                 }
             })
             .collect::<Result<Vec<_>, _>>()?;
+
+        self.scope.insert(
+            name.data.clone(),
+            storage_class == Some(StorageClass::Typedef),
+        );
 
         Ok(FunDecl {
             name,
@@ -2164,16 +2214,18 @@ impl<'a> Parser<'a> {
             }
             Token::Sizeof => {
                 self.advance();
-                if let Ok(exp) = self.atomic(|s| s.parse_unary_exp()) {
-                    Ok(Expression::Sizeof(Box::new(exp)))
-                } else {
-                    let start = self.expect(Token::OpenParen)?.span.start;
-                    let ty = self.parse_type_name()?;
-                    let end = self.expect(Token::CloseParen)?.span.end;
-                    Ok(Expression::SizeofType(TokenSpanned {
+                if let Ok(ty) = self.atomic(|s| {
+                    let start = s.expect(Token::OpenParen)?.span.start;
+                    let ty = s.parse_type_name()?;
+                    let end = s.expect(Token::CloseParen)?.span.end;
+                    Ok::<_, Error>(TokenSpanned {
                         data: ty,
                         span: start..end,
-                    }))
+                    })
+                }) {
+                    Ok(Expression::SizeofType(ty))
+                } else {
+                    Ok(Expression::Sizeof(Box::new(self.parse_unary_exp()?)))
                 }
             }
             Token::TwoPlus => {
