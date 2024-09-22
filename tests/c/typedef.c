@@ -29,5 +29,12 @@ int main(void) {
     printf("%ld\n", sizeof(u_t));
     printf("%ld\n", sizeof(v_u_t));
 
+    typedef int t1;
+    typedef t1 t2;
+    typedef t2 t3;
+    t3 v_t3;
+    printf("%ld\n", sizeof(t3));
+    printf("%ld\n", sizeof(v_t3));
+
     return 0;
 }
