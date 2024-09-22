@@ -801,6 +801,8 @@ pub enum Error {
     FunctionCantBeArrayElement(std::ops::Range<usize>),
     #[error("Variable name is missing")]
     NoVariableName(std::ops::Range<usize>),
+    #[error("Variable name is not allowed here")]
+    VariableNameNotAllowed(std::ops::Range<usize>),
 }
 
 impl From<Error> for () {
@@ -824,6 +826,7 @@ impl MayHasTokenSpan for Error {
             Error::EmptyInitializer(span) => Some(span.clone()),
             Error::FunctionCantBeArrayElement(span) => Some(span.clone()),
             Error::NoVariableName(span) => Some(span.clone()),
+            Error::VariableNameNotAllowed(span) => Some(span.clone()),
         }
     }
 }
@@ -2160,7 +2163,11 @@ impl<'a> Parser<'a> {
         if let Ok(decl) = self.atomic(|s| s.parse_declarator()) {
             let span = decl.span.clone();
 
-            let (_, ty, _) = process_declarator(decl, base_type)?;
+            let (ident, ty, _) = process_declarator(decl, base_type)?;
+
+            if ident.data.is_some() {
+                return Err(Error::VariableNameNotAllowed(ident.span));
+            }
 
             match ty {
                 Ty::Var(ty) => Ok(ty),
