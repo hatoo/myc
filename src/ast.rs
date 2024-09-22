@@ -1779,21 +1779,6 @@ impl<'a> Parser<'a> {
             return Err(Error::NoVariableName(name.span));
         };
 
-        let params = params
-            .into_iter()
-            .map(|p| {
-                if let TokenSpanned {
-                    data: Some(data),
-                    span,
-                } = p
-                {
-                    Ok(TokenSpanned { data, span })
-                } else {
-                    Err(Error::NoVariableName(p.span))
-                }
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-
         let ty = match ty {
             Ty::Var(_) => return Err(Error::NotFunType(span.clone())),
             Ty::Fun(ft) => ft,
@@ -1804,6 +1789,28 @@ impl<'a> Parser<'a> {
         } else {
             Some(self.parse_block()?)
         };
+
+        let params = params
+            .into_iter()
+            .map(|p| {
+                if let TokenSpanned {
+                    data: Some(data),
+                    span,
+                } = p
+                {
+                    Ok(TokenSpanned { data, span })
+                } else {
+                    if body.is_some() {
+                        Err(Error::NoVariableName(p.span))
+                    } else {
+                        Ok(TokenSpanned {
+                            data: "".into(),
+                            span: p.span,
+                        })
+                    }
+                }
+            })
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(FunDecl {
             name,

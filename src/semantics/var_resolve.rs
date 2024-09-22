@@ -269,6 +269,7 @@ impl VarResolver {
                     },
                 )
                 .is_some()
+                && (!param.data.is_empty() || body.is_some())
             {
                 return Err(Error::VariableAlreadyDeclared(param.clone()));
             }
