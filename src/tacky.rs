@@ -173,6 +173,7 @@ impl Val {
                 Attr::Constant { ty, .. } => ty.clone(),
                 Attr::Struct(_) => ast::VarType::Struct(var.clone()),
                 Attr::Union(_) => ast::VarType::Union(var.clone()),
+                Attr::Typedef(_) => panic!("Typedef should be resolved"),
             },
         }
     }

@@ -175,6 +175,7 @@ pub enum Token {
     Default,
     Union,
     ThreeDots,
+    Typedef,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -373,6 +374,7 @@ pub fn lexer(src: &[u8]) -> Result<Vec<Spanned<Token>>, Error> {
                     "case" => Token::Case,
                     "default" => Token::Default,
                     "union" => Token::Union,
+                    "typedef" => Token::Typedef,
                     _ => Token::Ident(EcoString::from(ident)),
                 };
                 tokens.push(Spanned {

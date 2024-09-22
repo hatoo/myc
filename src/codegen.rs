@@ -1963,6 +1963,7 @@ fn pseudo_to_stack(
                             *operand = Operand::stack(-total + (*offset as i32));
                         }
                     },
+                    semantics::type_check::Attr::Typedef(_) => panic!("Typedef in pseudo"),
                 },
             }
         }
@@ -3055,5 +3056,6 @@ pub fn asm_type(ty: &VarType, symbol_table: &SymbolTable) -> AssemblyType {
                 alignment: union_def.alignment,
             }
         }
+        VarType::Typedef(_) => unreachable!(),
     }
 }
