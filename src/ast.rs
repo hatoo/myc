@@ -110,6 +110,7 @@ impl MayHasTokenSpan for Initializer {
 pub enum StorageClass {
     Static,
     Extern,
+    Typedef,
 }
 
 #[derive(Debug)]
@@ -1685,6 +1686,14 @@ impl<'a> Parser<'a> {
                     }
                     end = s.span.end;
                     storage_class = Some(StorageClass::Extern);
+                    self.advance();
+                }
+                Token::Typedef => {
+                    if storage_class.is_some() || !allow_storage_class {
+                        return Err(Error::ConflictingSpecifier(s.span.clone()));
+                    }
+                    end = s.span.end;
+                    storage_class = Some(StorageClass::Typedef);
                     self.advance();
                 }
                 _ => break,
