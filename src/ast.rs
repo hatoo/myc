@@ -952,7 +952,7 @@ fn solve_type_specifier(ty: &[TokenSpanned<TypeSpecifier>]) -> Result<VarType, E
 
 #[derive(Debug)]
 enum Declarator {
-    Ident(EcoString),
+    Ident(Option<EcoString>),
     Pointer(TokenSpanned<Box<Declarator>>),
     Array {
         decl: TokenSpanned<Box<Declarator>>,
@@ -981,7 +981,14 @@ struct FunctionParamList {
 fn process_declarator(
     decl: TokenSpanned<Declarator>,
     base_type: VarType,
-) -> Result<(TokenSpanned<EcoString>, Ty, Vec<TokenSpanned<EcoString>>), Error> {
+) -> Result<
+    (
+        TokenSpanned<Option<EcoString>>,
+        Ty,
+        Vec<TokenSpanned<Option<EcoString>>>,
+    ),
+    Error,
+> {
     let span = decl.span.clone();
     match decl.data {
         Declarator::Ident(name) => Ok((
@@ -1455,7 +1462,7 @@ impl<'a> Parser<'a> {
             let asterisk_span = asterisk_span.clone();
             let TokenSpanned { data, span } =
                 self.parse_declarator().unwrap_or_else(|_| TokenSpanned {
-                    data: Declarator::Ident("".into()),
+                    data: Declarator::Ident(None),
                     span: asterisk_span.clone(),
                 });
             Ok(TokenSpanned {
@@ -1568,7 +1575,7 @@ impl<'a> Parser<'a> {
                 span,
             } => {
                 let ident = ident.clone();
-                let decl = Declarator::Ident(ident);
+                let decl = Declarator::Ident(Some(ident));
                 let span = span.clone();
                 self.advance();
                 Ok(TokenSpanned {
@@ -1590,7 +1597,7 @@ impl<'a> Parser<'a> {
                 })
             }
             _ => Ok(TokenSpanned {
-                data: Declarator::Ident("".into()),
+                data: Declarator::Ident(None),
                 span: self.index..self.index + 1,
             }),
         }
@@ -1720,13 +1727,20 @@ impl<'a> Parser<'a> {
         let (ty, storage_class) = self.parse_specifiers(true)?;
         let decl = self.parse_declarator()?;
         let (ident, ty, _) = process_declarator(decl, ty)?;
-        if ident.data.is_empty() {
-            return Err(Error::NoVariableName(ident.span.clone()));
-        }
+        let span = ident.span.clone();
+        let ident = if let TokenSpanned {
+            data: Some(data),
+            span,
+        } = ident
+        {
+            TokenSpanned { data, span }
+        } else {
+            return Err(Error::NoVariableName(ident.span));
+        };
 
         let ty = match ty {
             Ty::Var(ty) => ty,
-            Ty::Fun(_) => return Err(Error::NotVarType(ident.span.clone())),
+            Ty::Fun(_) => return Err(Error::NotVarType(span)),
         };
 
         if self.expect(Token::Equal).is_ok() {
@@ -1755,6 +1769,30 @@ impl<'a> Parser<'a> {
         let span = decl.span.clone();
 
         let (name, ty, params) = process_declarator(decl, return_type)?;
+        let name = if let TokenSpanned {
+            data: Some(data),
+            span,
+        } = name
+        {
+            TokenSpanned { data, span }
+        } else {
+            return Err(Error::NoVariableName(name.span));
+        };
+
+        let params = params
+            .into_iter()
+            .map(|p| {
+                if let TokenSpanned {
+                    data: Some(data),
+                    span,
+                } = p
+                {
+                    Ok(TokenSpanned { data, span })
+                } else {
+                    Err(Error::NoVariableName(p.span))
+                }
+            })
+            .collect::<Result<Vec<_>, _>>()?;
 
         let ty = match ty {
             Ty::Var(_) => return Err(Error::NotFunType(span.clone())),
@@ -2259,9 +2297,15 @@ impl<'a> Parser<'a> {
         let ty = self.parse_specifiers(false)?.0;
         let decl = self.parse_declarator()?;
         let (ident, ty, _) = process_declarator(decl, ty)?;
-        if ident.data.is_empty() {
-            return Err(Error::NoVariableName(ident.span.clone()));
-        }
+        let ident = if let TokenSpanned {
+            data: Some(data),
+            span,
+        } = ident
+        {
+            TokenSpanned { data, span }
+        } else {
+            return Err(Error::NoVariableName(ident.span));
+        };
         self.expect(Token::SemiColon)?;
 
         let ty = match ty {
