@@ -1,3 +1,4 @@
+use core::error;
 use std::collections::HashMap;
 
 use ecow::EcoString;
@@ -45,6 +46,8 @@ pub enum Error {
     StaticFunInBlock(TokenSpanned<EcoString>),
     #[error("Struct not declared: {0}")]
     StructNotDeclared(TokenSpanned<EcoString>),
+    #[error("Typedef not declared: {0}")]
+    TypedefNotDeclared(TokenSpanned<EcoString>),
 }
 
 impl HasTokenSpan for Error {
@@ -56,6 +59,7 @@ impl HasTokenSpan for Error {
             Error::UndeclaredFunction(exp) => exp.token_span(),
             Error::StaticFunInBlock(ident) => ident.span.clone(),
             Error::StructNotDeclared(ident) => ident.span.clone(),
+            Error::TypedefNotDeclared(ident) => ident.span.clone(),
         }
     }
 }
@@ -331,6 +335,17 @@ impl VarResolver {
                 },
             );
             Ok(())
+        } else if storage_class == &Some(ast::StorageClass::Typedef) {
+            let new_name = self.new_var(&ident.data);
+            self.current_scope_var().insert(
+                ident.data.clone(),
+                VarInfo {
+                    new_name: new_name.clone(),
+                    has_linkage: false,
+                },
+            );
+            ident.data = new_name;
+            Ok(())
         } else {
             let unique_name = self.new_var(&ident.data);
             self.current_scope_var().insert(
@@ -486,6 +501,17 @@ impl VarResolver {
                     }))
                 }
             }
+            ast::VarType::Typedef(name) => {
+                if let Some(var_info) = self.lookup_var(name) {
+                    *name = var_info.new_name.clone();
+                    Ok(())
+                } else {
+                    Err(Error::TypedefNotDeclared(TokenSpanned {
+                        data: name.clone(),
+                        span,
+                    }))
+                }
+            }
             ast::VarType::Pointer(inner) => match inner.as_mut() {
                 ast::Ty::Fun(ty) => self.resolve_fun_type(ty, span),
                 ast::Ty::Var(ty) => self.resolve_var_type(ty, span),
@@ -511,7 +537,7 @@ impl VarResolver {
             Some((true, prev, TypeKind::Struct)) => {
                 tag.data = prev.clone();
             }
-            Some((true, _, TypeKind::Union)) => {
+            Some((true, _, _)) => {
                 return Err(Error::StructNotDeclared(tag.clone()));
             }
         }
@@ -536,7 +562,7 @@ impl VarResolver {
             Some((true, prev, TypeKind::Union)) => {
                 tag.data = prev.clone();
             }
-            Some((true, _, TypeKind::Struct)) => {
+            Some((true, _, _)) => {
                 return Err(Error::StructNotDeclared(tag.clone()));
             }
         }
