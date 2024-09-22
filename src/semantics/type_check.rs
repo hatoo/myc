@@ -1322,27 +1322,12 @@ impl TypeChecker {
                     return Err(Error::IncompatibleTypes(exp.token_span()));
                 }
 
-                if let ast::VarType::Pointer(ty) = ty {
-                    if let ast::Ty::Fun(_) = ty.as_ref() {
-                        // I think this is legal but throw an error to pass tests
-                        return Err(Error::IncompatibleTypes(exp.token_span()));
-                    }
-                }
-
                 Ok(ast::BaseType::Ulong.into())
             }
             ast::Expression::SizeofType(ty) => {
                 if !self.sym_table.is_complete(&ty.data) {
                     return Err(Error::IncompatibleTypes(exp.token_span()));
                 }
-                /*
-                if let ast::VarType::Pointer(ty) = &ty.data {
-                    if let ast::Ty::Fun(_) = ty.as_ref() {
-                        // I think this is legal but throw an error to pass tests
-                        return Err(Error::IncompatibleTypes(exp.token_span()));
-                    }
-                }
-                */
                 self.validate_var_type(&ty.data, false)
                     .map_err(|_| Error::IncompatibleTypes(exp.token_span()))?;
                 Ok(ast::BaseType::Ulong.into())
