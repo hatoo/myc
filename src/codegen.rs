@@ -1963,6 +1963,7 @@ fn pseudo_to_stack(
                             *operand = Operand::stack(-total + (*offset as i32));
                         }
                     },
+                    semantics::type_check::Attr::Typedef(_) => panic!("Typedef in pseudo"),
                 },
             }
         }

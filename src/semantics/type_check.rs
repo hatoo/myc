@@ -233,6 +233,7 @@ pub enum Attr {
     Local(ast::VarType),
     Struct(StructDef),
     Union(UnionDef),
+    Typedef(ast::VarType),
 }
 
 #[derive(Debug, Clone)]
@@ -336,6 +337,8 @@ pub enum Error {
     NotLValue(std::ops::Range<usize>),
     #[error("Unknown member: {0}")]
     UnknownMember(TokenSpanned<EcoString>),
+    #[error("Unknown type: {0}")]
+    UnknownType(TokenSpanned<EcoString>),
 }
 
 impl HasTokenSpan for Error {
@@ -351,6 +354,7 @@ impl HasTokenSpan for Error {
             Error::CaseExpIsNotConstant(span) => span.clone(),
             Error::NotLValue(span) => span.clone(),
             Error::UnknownMember(ident) => ident.span.clone(),
+            Error::UnknownType(ident) => ident.span.clone(),
         }
     }
 }
@@ -479,6 +483,19 @@ impl TypeChecker {
         let s = format!("string.{}", self.tmp_string_count);
         self.tmp_string_count += 1;
         s.into()
+    }
+
+    fn resolve_type(&self, ty: &ast::VarType) -> Result<ast::VarType, Error> {
+        match ty {
+            ast::VarType::Typedef(name) => {
+                if let Some(Attr::Typedef(ty)) = self.sym_table.get(&name.data) {
+                    Ok(ty.clone())
+                } else {
+                    Err(Error::UnknownType(name.clone()))
+                }
+            }
+            _ => Ok(ty.clone()),
+        }
     }
 
     fn static_init_from_initializer(
@@ -725,7 +742,7 @@ impl TypeChecker {
         }
     }
 
-    fn check_var_decl_file(&mut self, decl: &crate::ast::VarDecl) -> Result<(), Error> {
+    fn check_var_decl_file(&mut self, decl: &mut crate::ast::VarDecl) -> Result<(), Error> {
         let crate::ast::VarDecl {
             ident,
             init,
@@ -737,6 +754,9 @@ impl TypeChecker {
             .map_err(|_| Error::IncompatibleTypes(ident.span.clone()))?;
         if ty == &ast::VarType::Void {
             return Err(Error::IncompatibleTypes(ident.span.clone()));
+        }
+        if storage_class == &Some(ast::StorageClass::Typedef) && init.is_some() {
+            return Err(Error::BadInitializer(ident.clone()));
         }
 
         let mut init = match init {
@@ -785,17 +805,23 @@ impl TypeChecker {
             Some(Attr::Local(_)) | Some(Attr::Constant { .. }) => {
                 unreachable!()
             }
-            None => {}
+            None | Some(Attr::Typedef(_)) => {}
         }
 
-        self.sym_table.insert(
-            ident.data.clone(),
-            Attr::Static {
-                init,
-                global,
-                ty: ty.clone(),
-            },
-        );
+        if storage_class == &Some(crate::ast::StorageClass::Typedef) {
+            let attr = Attr::Typedef(self.resolve_type(ty)?);
+            self.sym_table.insert(ident.data.clone(), attr);
+        } else {
+            self.sym_table.insert(
+                ident.data.clone(),
+                Attr::Static {
+                    init,
+                    global,
+                    ty: ty.clone(),
+                },
+            );
+        }
+
         Ok(())
     }
 
@@ -829,6 +855,7 @@ impl TypeChecker {
                             }
                         }
                         Attr::Constant { .. } => unreachable!(),
+                        Attr::Typedef(_) => unreachable!(),
                     },
                     Entry::Vacant(v) => {
                         v.insert(Attr::Static {
@@ -854,6 +881,13 @@ impl TypeChecker {
                         ty: ty.clone(),
                     },
                 );
+            }
+            Some(crate::ast::StorageClass::Typedef) => {
+                if init.is_some() {
+                    return Err(Error::BadInitializer(ident.clone()));
+                }
+                let attr = Attr::Typedef(self.resolve_type(ty)?);
+                self.sym_table.insert(ident.data.clone(), attr);
             }
             _ => {
                 self.sym_table
@@ -962,7 +996,7 @@ impl TypeChecker {
                 Some(Attr::Constant { .. } | Attr::Struct { .. } | Attr::Union(_)) => {
                     unreachable!()
                 }
-                None => Err(Error::IncompatibleTypes(name.span.clone())),
+                None | Some(Attr::Typedef(_)) => Err(Error::IncompatibleTypes(name.span.clone())),
             },
             crate::ast::Expression::Constant(_) => Ok(exp.ty().clone()),
             crate::ast::Expression::Unary { op, exp, ty } => {
@@ -1335,7 +1369,7 @@ impl TypeChecker {
                 if !self.sym_table.is_complete(&ty.data) {
                     return Err(Error::IncompatibleTypes(exp.token_span()));
                 }
-                self.validate_var_type(&ty.data, false)
+                self.validate_var_type(&mut ty.data, false)
                     .map_err(|_| Error::IncompatibleTypes(exp.token_span()))?;
                 Ok(ast::BaseType::Ulong.into())
             }
@@ -1619,7 +1653,7 @@ impl TypeChecker {
         }
     }
 
-    fn check_struct_decl(&mut self, decl: &ast::StructDecl) -> Result<(), Error> {
+    fn check_struct_decl(&mut self, decl: &mut ast::StructDecl) -> Result<(), Error> {
         if decl.member_decls.is_empty() {
             return Ok(());
         }
@@ -1667,7 +1701,7 @@ impl TypeChecker {
         Ok(())
     }
 
-    fn check_union_decl(&mut self, decl: &ast::UnionDecl) -> Result<(), Error> {
+    fn check_union_decl(&mut self, decl: &mut ast::UnionDecl) -> Result<(), Error> {
         if decl.member_decls.is_empty() {
             return Ok(());
         }
@@ -1713,15 +1747,15 @@ impl TypeChecker {
         Ok(())
     }
 
-    fn validate_struct_definition(&self, decl: &ast::StructDecl) -> Result<(), Error> {
+    fn validate_struct_definition(&self, decl: &mut ast::StructDecl) -> Result<(), Error> {
         let mut member_names = HashSet::new();
 
-        for member in &decl.member_decls {
+        for member in &mut decl.member_decls {
             if !member_names.insert(member.name.clone()) {
                 todo!()
             }
 
-            if self.validate_var_type(&member.ty, false).is_err() {
+            if self.validate_var_type(&mut member.ty, false).is_err() {
                 todo!()
             }
         }
@@ -1729,15 +1763,15 @@ impl TypeChecker {
         Ok(())
     }
 
-    fn validate_union_definition(&self, decl: &ast::UnionDecl) -> Result<(), Error> {
+    fn validate_union_definition(&self, decl: &mut ast::UnionDecl) -> Result<(), Error> {
         let mut member_names = HashSet::new();
 
-        for member in &decl.member_decls {
+        for member in &mut decl.member_decls {
             if !member_names.insert(member.name.clone()) {
                 todo!()
             }
 
-            if self.validate_var_type(&member.ty, false).is_err() {
+            if self.validate_var_type(&mut member.ty, false).is_err() {
                 todo!()
             }
         }
@@ -1747,7 +1781,7 @@ impl TypeChecker {
 
     fn validate_var_type(
         &self,
-        ty: &ast::VarType,
+        ty: &mut ast::VarType,
         allow_incomplete_struct: bool,
     ) -> Result<(), ()> {
         match ty {
@@ -1757,7 +1791,7 @@ impl TypeChecker {
                 }
                 self.validate_var_type(element, allow_incomplete_struct)?;
             }
-            VarType::Pointer(ty) => match ty.as_ref() {
+            VarType::Pointer(ty) => match ty.as_mut() {
                 ast::Ty::Fun(ty) => {
                     self.validate_fun_type(ty, allow_incomplete_struct)?;
                 }
@@ -1779,6 +1813,13 @@ impl TypeChecker {
                     return Err(());
                 }
             }
+            VarType::Typedef(name) => {
+                if let Some(Attr::Typedef(resolved_ty)) = self.sym_table.get(&name.data) {
+                    *ty = resolved_ty.clone();
+                } else {
+                    return Err(());
+                }
+            }
             _ => {}
         }
 
@@ -1787,10 +1828,10 @@ impl TypeChecker {
 
     fn validate_fun_type(
         &self,
-        ty: &ast::FunType,
+        ty: &mut ast::FunType,
         allow_incomplete_struct: bool,
     ) -> Result<(), ()> {
-        for ty in &ty.params {
+        for ty in &mut ty.params {
             if ty == &ast::VarType::Void {
                 return Err(());
             }
@@ -1801,7 +1842,7 @@ impl TypeChecker {
             return Err(());
         }
 
-        self.validate_var_type(&ty.ret, allow_incomplete_struct)?;
+        self.validate_var_type(&mut ty.ret, allow_incomplete_struct)?;
 
         Ok(())
     }

@@ -574,7 +574,7 @@ impl BaseType {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum VarType {
     Void,
     Base(BaseType),
@@ -583,8 +583,10 @@ pub enum VarType {
     Struct(EcoString),
     Union(EcoString),
     // must be removed before tacky generation
-    Typedef(EcoString),
+    Typedef(TokenSpanned<EcoString>),
 }
+
+impl Eq for VarType {}
 
 impl From<BaseType> for VarType {
     fn from(base: BaseType) -> Self {
@@ -773,7 +775,7 @@ enum TypeSpecifier {
     Double,
     Struct(EcoString),
     Union(EcoString),
-    Typedef(EcoString),
+    Typedef(TokenSpanned<EcoString>),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -1690,9 +1692,13 @@ impl<'a> Parser<'a> {
                 Token::Ident(ident) => {
                     if ty.is_empty() {
                         ty.push(TokenSpanned {
-                            data: TypeSpecifier::Typedef(ident.clone()),
+                            data: TypeSpecifier::Typedef(TokenSpanned {
+                                data: ident.clone(),
+                                span: s.span.clone(),
+                            }),
                             span: s.span,
                         });
+                        self.advance();
                     } else {
                         break;
                     }

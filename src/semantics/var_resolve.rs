@@ -1,4 +1,3 @@
-use core::error;
 use std::collections::HashMap;
 
 use ecow::EcoString;
@@ -502,12 +501,12 @@ impl VarResolver {
                 }
             }
             ast::VarType::Typedef(name) => {
-                if let Some(var_info) = self.lookup_var(name) {
-                    *name = var_info.new_name.clone();
+                if let Some(var_info) = self.lookup_var(&name.data) {
+                    name.data = var_info.new_name.clone();
                     Ok(())
                 } else {
                     Err(Error::TypedefNotDeclared(TokenSpanned {
-                        data: name.clone(),
+                        data: name.data.clone(),
                         span,
                     }))
                 }
