@@ -330,6 +330,7 @@ impl Const {
             VarType::Array { .. } => None,
             VarType::Struct(_) => None,
             VarType::Union(_) => None,
+            VarType::Typedef(_) => panic!("Typedef should be removed before tacky generation"),
         }
     }
 }
@@ -581,6 +582,8 @@ pub enum VarType {
     Array { element: Box<VarType>, size: usize },
     Struct(EcoString),
     Union(EcoString),
+    // must be removed before tacky generation
+    Typedef(EcoString),
 }
 
 impl From<BaseType> for VarType {
@@ -770,6 +773,7 @@ enum TypeSpecifier {
     Double,
     Struct(EcoString),
     Union(EcoString),
+    Typedef(EcoString),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -877,6 +881,14 @@ fn solve_type_specifier(ty: &[TokenSpanned<TypeSpecifier>]) -> Result<VarType, E
         return Ok(VarType::Union(tag.clone()));
     }
 
+    if let [TokenSpanned {
+        data: TypeSpecifier::Typedef(tag),
+        ..
+    }] = ty
+    {
+        return Ok(VarType::Typedef(tag.clone()));
+    }
+
     for s in ty {
         match s.data {
             TypeSpecifier::Void => {
@@ -916,6 +928,9 @@ fn solve_type_specifier(ty: &[TokenSpanned<TypeSpecifier>]) -> Result<VarType, E
                 return Err(Error::BadTypeSpecifier(s.span.clone()));
             }
             TypeSpecifier::Struct(_) | TypeSpecifier::Union(_) => {
+                return Err(Error::BadTypeSpecifier(s.span.clone()));
+            }
+            TypeSpecifier::Typedef(_) => {
                 return Err(Error::BadTypeSpecifier(s.span.clone()));
             }
         }
@@ -1671,6 +1686,16 @@ impl<'a> Parser<'a> {
                         data: TypeSpecifier::Union(tag.data.clone()),
                         span: tag.span,
                     });
+                }
+                Token::Ident(ident) => {
+                    if ty.is_empty() {
+                        ty.push(TokenSpanned {
+                            data: TypeSpecifier::Typedef(ident.clone()),
+                            span: s.span,
+                        });
+                    } else {
+                        break;
+                    }
                 }
                 Token::Static => {
                     if storage_class.is_some() || !allow_storage_class {

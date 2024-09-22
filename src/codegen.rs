@@ -3055,5 +3055,6 @@ pub fn asm_type(ty: &VarType, symbol_table: &SymbolTable) -> AssemblyType {
                 alignment: union_def.alignment,
             }
         }
+        VarType::Typedef(_) => unreachable!(),
     }
 }

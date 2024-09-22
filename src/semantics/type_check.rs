@@ -88,6 +88,7 @@ impl SymbolTable {
                 }
             }
             VarType::Void => unreachable!(),
+            VarType::Typedef(_) => unreachable!(),
         }
 
         ret
@@ -117,6 +118,7 @@ impl SymbolTable {
             ast::VarType::Pointer(_) => 8,
             ast::VarType::Base(base) => base.size(),
             ast::VarType::Void => 1,
+            ast::VarType::Typedef(_) => unreachable!(),
         }
     }
 
@@ -142,6 +144,7 @@ impl SymbolTable {
             ast::VarType::Pointer(_) => 8,
             ast::VarType::Base(base) => base.alignment(),
             ast::VarType::Void => panic!("Get alignment of void"),
+            ast::VarType::Typedef(_) => unreachable!(),
         }
     }
 
@@ -200,6 +203,7 @@ impl SymbolTable {
                 let inits = vec![self.zero_init(&mem.ty); elems];
                 ast::Initializer::CompoundInit(inits)
             }
+            VarType::Typedef(_) => unreachable!(),
         }
     }
 }
