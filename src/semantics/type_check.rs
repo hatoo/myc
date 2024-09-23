@@ -1737,7 +1737,11 @@ impl TypeChecker {
         let mut struct_size = 0;
         let mut struct_align = 0;
 
-        for member in &decl.member_decls {
+        for member in &mut decl.member_decls {
+            if let Some(type_decl) = member.type_decl.as_mut() {
+                self.check_type_decl(type_decl)?;
+            }
+
             let size = self.sym_table.size(&member.ty);
             let align = if let VarType::Array { element, .. } = &member.ty {
                 // HACK
@@ -1747,9 +1751,13 @@ impl TypeChecker {
                 self.sym_table.alignment(&member.ty)
             };
 
+            let Some(name) = member.ident.data.as_ref() else {
+                todo!()
+            };
+
             let offset = round_up(struct_size, align);
             members.push(StructMember {
-                name: member.name.clone(),
+                name: name.clone(),
                 offset,
                 ty: member.ty.clone(),
             });
@@ -1785,7 +1793,11 @@ impl TypeChecker {
         let mut union_size = 0;
         let mut union_align = 0;
 
-        for member in &decl.member_decls {
+        for member in &mut decl.member_decls {
+            if let Some(type_decl) = member.type_decl.as_mut() {
+                self.check_type_decl(type_decl)?;
+            }
+
             let size = self.sym_table.size(&member.ty);
             let align = if let VarType::Array { element, .. } = &member.ty {
                 // HACK
@@ -1795,8 +1807,12 @@ impl TypeChecker {
                 self.sym_table.alignment(&member.ty)
             };
 
+            let Some(name) = member.ident.data.as_ref() else {
+                todo!()
+            };
+
             members.push(UnionMember {
-                name: member.name.clone(),
+                name: name.clone(),
                 ty: member.ty.clone(),
             });
 
@@ -1821,7 +1837,7 @@ impl TypeChecker {
         let mut member_names = HashSet::new();
 
         for member in &mut decl.member_decls {
-            if !member_names.insert(member.name.clone()) {
+            if !member_names.insert(member.ident.data.as_ref().unwrap().clone()) {
                 todo!()
             }
 
@@ -1837,7 +1853,7 @@ impl TypeChecker {
         let mut member_names = HashSet::new();
 
         for member in &mut decl.member_decls {
-            if !member_names.insert(member.name.clone()) {
+            if !member_names.insert(member.ident.data.as_ref().unwrap().clone()) {
                 todo!()
             }
 

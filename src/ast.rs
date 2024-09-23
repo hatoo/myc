@@ -44,7 +44,7 @@ impl TypeDeclaration {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct VarDecl {
     pub storage_class: Option<StorageClass>,
     pub type_decl: Option<TypeDeclaration>,
@@ -66,19 +66,13 @@ pub struct FunDecl {
 #[derive(Debug, Clone)]
 pub struct StructDecl {
     pub tag: TokenSpanned<EcoString>,
-    pub member_decls: Vec<MemberDecl>,
+    pub member_decls: Vec<VarDecl>,
 }
 
 #[derive(Debug, Clone)]
 pub struct UnionDecl {
     pub tag: TokenSpanned<EcoString>,
-    pub member_decls: Vec<MemberDecl>,
-}
-
-#[derive(Debug, Clone)]
-pub struct MemberDecl {
-    pub name: EcoString,
-    pub ty: VarType,
+    pub member_decls: Vec<VarDecl>,
 }
 
 #[derive(Debug, Clone)]
@@ -131,7 +125,7 @@ impl MayHasTokenSpan for Initializer {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum StorageClass {
     Static,
     Extern,
@@ -2419,7 +2413,7 @@ impl<'a> Parser<'a> {
 
         let member_decls = self.atomic(|s| {
             s.expect(Token::OpenBrace)?;
-            let member_decls = s.many1(|s| s.parse_member())?;
+            let member_decls = s.many1(|s| s.parse_var_decl())?;
             s.expect(Token::CloseBrace)?;
             Ok::<_, Error>(member_decls)
         });
@@ -2440,7 +2434,7 @@ impl<'a> Parser<'a> {
 
         let member_decls = self.atomic(|s| {
             s.expect(Token::OpenBrace)?;
-            let member_decls = s.many1(|s| s.parse_member())?;
+            let member_decls = s.many1(|s| s.parse_var_decl())?;
             s.expect(Token::CloseBrace)?;
             Ok::<_, Error>(member_decls)
         });
@@ -2449,33 +2443,6 @@ impl<'a> Parser<'a> {
         Ok(UnionDecl {
             tag,
             member_decls: member_decls.unwrap_or_default(),
-        })
-    }
-
-    fn parse_member(&mut self) -> Result<MemberDecl, Error> {
-        // TODO
-        let ty = self.parse_specifiers(false)?.1;
-        let decl = self.parse_declarator()?;
-        let (ident, ty, _) = process_declarator(decl, ty)?;
-        let ident = if let TokenSpanned {
-            data: Some(data),
-            span,
-        } = ident
-        {
-            TokenSpanned { data, span }
-        } else {
-            return Err(Error::NoVariableName(ident.span));
-        };
-        self.expect(Token::SemiColon)?;
-
-        let ty = match ty {
-            Ty::Fun(_) => return Err(Error::NotVarType(ident.span.clone())),
-            Ty::Var(ty) => ty,
-        };
-
-        Ok(MemberDecl {
-            name: ident.data,
-            ty,
         })
     }
 }

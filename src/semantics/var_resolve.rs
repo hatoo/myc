@@ -572,6 +572,9 @@ impl VarResolver {
         }
 
         for member_decl in member_decls {
+            if let Some(type_decl) = &mut member_decl.type_decl {
+                self.resolve_type_declaration(type_decl)?;
+            }
             self.resolve_var_type(&mut member_decl.ty, tag.span.clone())?;
         }
 
@@ -597,6 +600,9 @@ impl VarResolver {
         }
 
         for member_decl in member_decls {
+            if let Some(type_decl) = &mut member_decl.type_decl {
+                self.resolve_type_declaration(type_decl)?;
+            }
             self.resolve_var_type(&mut member_decl.ty, tag.span.clone())?;
         }
 
