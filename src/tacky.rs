@@ -232,8 +232,6 @@ impl<'a> InstructionGenerator<'a> {
                     self.add_var_declaration(decl);
                 }
                 ast::Declaration::Fun(_) => {}
-                ast::Declaration::Struct(_) => {}
-                ast::Declaration::Union(_) => {}
             },
             ast::BlockItem::Statement(stmt) => {
                 self.add_statement(stmt);
@@ -343,7 +341,13 @@ impl<'a> InstructionGenerator<'a> {
         }
 
         if let Some(init) = decl.init.as_ref() {
-            self.copy_initializers(init, decl.ident.data.clone(), &decl.ty, &mut 0, 0);
+            self.copy_initializers(
+                init,
+                decl.ident.data.as_ref().unwrap().clone(),
+                &decl.ty,
+                &mut 0,
+                0,
+            );
         }
     }
 
