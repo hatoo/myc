@@ -310,15 +310,15 @@ impl VarResolver {
             ty,
         } = decl;
 
+        if let Some(type_decl) = type_decl {
+            self.resolve_type_declaration(type_decl)?;
+        }
+        self.resolve_var_type(ty, ident.span.clone())?;
+
         if let TokenSpanned {
-            data: Some(ident),
-            span,
+            data: Some(ident), ..
         } = &ident
         {
-            if let Some(type_decl) = type_decl {
-                self.resolve_type_declaration(type_decl)?;
-            }
-            self.resolve_var_type(ty, span.clone())?;
             self.current_scope_var().insert(
                 ident.clone(),
                 VarInfo {
@@ -326,30 +326,6 @@ impl VarResolver {
                     has_linkage: true,
                 },
             );
-        } else {
-            if let Some(type_decl) = type_decl {
-                self.resolve_type_declaration(type_decl)?;
-            } else {
-                match ty {
-                    VarType::Struct(name) => {
-                        let mut decl = StructDecl {
-                            tag: ident.clone().map(|_| name.clone()),
-                            member_decls: Vec::new(),
-                        };
-                        self.resolve_structure_declaration(&mut decl)?;
-                        *name = decl.tag.data.clone();
-                    }
-                    VarType::Union(name) => {
-                        let mut decl = UnionDecl {
-                            tag: ident.clone().map(|_| name.clone()),
-                            member_decls: Vec::new(),
-                        };
-                        self.resolve_union_declaration(&mut decl)?;
-                        *name = decl.tag.data.clone();
-                    }
-                    _ => {}
-                }
-            }
         }
         Ok(())
     }
@@ -367,16 +343,16 @@ impl VarResolver {
             ty,
         } = decl;
 
+        if let Some(type_decl) = type_decl {
+            self.resolve_type_declaration(type_decl)?;
+        }
+        self.resolve_var_type(ty, ident.span.clone())?;
+
         if let TokenSpanned {
             data: Some(ident),
             span,
         } = ident
         {
-            if let Some(type_decl) = type_decl {
-                self.resolve_type_declaration(type_decl)?;
-            }
-            self.resolve_var_type(ty, span.clone())?;
-
             let old_ident = ident;
             let ident = TokenSpanned {
                 data: old_ident.clone(),
@@ -418,34 +394,6 @@ impl VarResolver {
                 *old_ident = unique_name;
                 if let Some(init) = init {
                     self.resolve_initializer(init)?;
-                }
-            }
-        } else {
-            if look_up_only {
-                self.resolve_var_type(ty, ident.span.clone())?;
-            } else {
-                if let Some(type_decl) = type_decl {
-                    self.resolve_type_declaration(type_decl)?;
-                } else {
-                    match ty {
-                        VarType::Struct(name) => {
-                            let mut decl = StructDecl {
-                                tag: ident.clone().map(|_| name.clone()),
-                                member_decls: Vec::new(),
-                            };
-                            self.resolve_structure_declaration(&mut decl)?;
-                            *name = decl.tag.data.clone();
-                        }
-                        VarType::Union(name) => {
-                            let mut decl = UnionDecl {
-                                tag: ident.clone().map(|_| name.clone()),
-                                member_decls: Vec::new(),
-                            };
-                            self.resolve_union_declaration(&mut decl)?;
-                            *name = decl.tag.data.clone();
-                        }
-                        _ => {}
-                    }
                 }
             }
         }
@@ -637,26 +585,43 @@ impl VarResolver {
     fn resolve_structure_declaration(&mut self, decl: &mut StructDecl) -> Result<(), Error> {
         let StructDecl { tag, member_decls } = decl;
 
-        match self.lookup_type(&tag.data) {
-            None | Some((false, _, _)) => {
-                let new_name = self.new_var(&tag.data);
-                self.current_scope_type()
-                    .insert(tag.data.clone(), (new_name.clone(), TypeKind::Struct));
-                tag.data = new_name.clone();
+        if member_decls.is_empty() {
+            match self.lookup_type(&tag.data) {
+                None => {
+                    let new_name = self.new_var(&tag.data);
+                    self.current_scope_type()
+                        .insert(tag.data.clone(), (new_name.clone(), TypeKind::Struct));
+                    tag.data = new_name.clone();
+                }
+                Some((_, prev, TypeKind::Struct)) => {
+                    tag.data = prev.clone();
+                }
+                _ => {
+                    todo!()
+                }
             }
-            Some((true, prev, TypeKind::Struct)) => {
-                tag.data = prev.clone();
+        } else {
+            match self.lookup_type(&tag.data) {
+                None | Some((false, _, _)) => {
+                    let new_name = self.new_var(&tag.data);
+                    self.current_scope_type()
+                        .insert(tag.data.clone(), (new_name.clone(), TypeKind::Struct));
+                    tag.data = new_name.clone();
+                }
+                Some((true, prev, TypeKind::Struct)) => {
+                    tag.data = prev.clone();
+                }
+                Some((true, _, _)) => {
+                    return Err(Error::StructNotDeclared(tag.clone()));
+                }
             }
-            Some((true, _, _)) => {
-                return Err(Error::StructNotDeclared(tag.clone()));
-            }
-        }
 
-        for member_decl in member_decls {
-            if let Some(type_decl) = &mut member_decl.type_decl {
-                self.resolve_type_declaration(type_decl)?;
+            for member_decl in member_decls {
+                if let Some(type_decl) = &mut member_decl.type_decl {
+                    self.resolve_type_declaration(type_decl)?;
+                }
+                self.resolve_var_type(&mut member_decl.ty, tag.span.clone())?;
             }
-            self.resolve_var_type(&mut member_decl.ty, tag.span.clone())?;
         }
 
         Ok(())
@@ -665,26 +630,43 @@ impl VarResolver {
     fn resolve_union_declaration(&mut self, decl: &mut UnionDecl) -> Result<(), Error> {
         let UnionDecl { tag, member_decls } = decl;
 
-        match self.lookup_type(&tag.data) {
-            None | Some((false, _, _)) => {
-                let new_name = self.new_var(&tag.data);
-                self.current_scope_type()
-                    .insert(tag.data.clone(), (new_name.clone(), TypeKind::Union));
-                tag.data = new_name.clone();
+        if member_decls.is_empty() {
+            match self.lookup_type(&tag.data) {
+                None => {
+                    let new_name = self.new_var(&tag.data);
+                    self.current_scope_type()
+                        .insert(tag.data.clone(), (new_name.clone(), TypeKind::Union));
+                    tag.data = new_name.clone();
+                }
+                Some((_, prev, TypeKind::Union)) => {
+                    tag.data = prev.clone();
+                }
+                _ => {
+                    todo!()
+                }
             }
-            Some((true, prev, TypeKind::Union)) => {
-                tag.data = prev.clone();
+        } else {
+            match self.lookup_type(&tag.data) {
+                None | Some((false, _, _)) => {
+                    let new_name = self.new_var(&tag.data);
+                    self.current_scope_type()
+                        .insert(tag.data.clone(), (new_name.clone(), TypeKind::Union));
+                    tag.data = new_name.clone();
+                }
+                Some((true, prev, TypeKind::Union)) => {
+                    tag.data = prev.clone();
+                }
+                Some((true, _, _)) => {
+                    return Err(Error::StructNotDeclared(tag.clone()));
+                }
             }
-            Some((true, _, _)) => {
-                return Err(Error::StructNotDeclared(tag.clone()));
-            }
-        }
 
-        for member_decl in member_decls {
-            if let Some(type_decl) = &mut member_decl.type_decl {
-                self.resolve_type_declaration(type_decl)?;
+            for member_decl in member_decls {
+                if let Some(type_decl) = &mut member_decl.type_decl {
+                    self.resolve_type_declaration(type_decl)?;
+                }
+                self.resolve_var_type(&mut member_decl.ty, tag.span.clone())?;
             }
-            self.resolve_var_type(&mut member_decl.ty, tag.span.clone())?;
         }
 
         Ok(())

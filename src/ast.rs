@@ -681,7 +681,7 @@ impl VarType {
             Self::Struct(_) => false,
             Self::Union(_) => false,
             Self::Void => false,
-            Self::Typedef(_) => panic!("Typedef should be removed before tacky generation"),
+            Self::Typedef(_) => false,
         }
     }
 
@@ -1833,39 +1833,19 @@ impl<'a> Parser<'a> {
                 }
                 Token::Struct => {
                     let start = self.index;
-                    if let Ok(decl) = self.atomic(|s| s.parse_struct_decl()) {
-                        let span = start..self.index;
-                        ty.push(TokenSpanned {
-                            data: TypeSpecifier::TypeDecl(TypeDeclaration::Struct(decl)),
-                            span,
-                        });
-                    } else {
-                        self.advance();
-                        let tag = self.expect_ident()?;
-                        end = tag.span.end;
-                        ty.push(TokenSpanned {
-                            data: TypeSpecifier::Struct(tag.data.clone()),
-                            span: tag.span,
-                        });
-                    }
+                    let decl = self.parse_struct_decl()?;
+                    ty.push(TokenSpanned {
+                        data: TypeSpecifier::TypeDecl(TypeDeclaration::Struct(decl)),
+                        span: start..self.index,
+                    });
                 }
                 Token::Union => {
                     let start = self.index;
-                    if let Ok(decl) = self.atomic(|s| s.parse_union_decl()) {
-                        let span = start..self.index;
-                        ty.push(TokenSpanned {
-                            data: TypeSpecifier::TypeDecl(TypeDeclaration::Union(decl)),
-                            span,
-                        });
-                    } else {
-                        self.advance();
-                        let tag = self.expect_ident()?;
-                        end = tag.span.end;
-                        ty.push(TokenSpanned {
-                            data: TypeSpecifier::Union(tag.data.clone()),
-                            span: tag.span,
-                        });
-                    }
+                    let decl = self.parse_union_decl()?;
+                    ty.push(TokenSpanned {
+                        data: TypeSpecifier::TypeDecl(TypeDeclaration::Union(decl)),
+                        span: start..self.index,
+                    });
                 }
                 Token::Ident(ident) if self.scope.is_typedef_symbol(ident) => {
                     if ty.is_empty() {
@@ -2487,17 +2467,23 @@ impl<'a> Parser<'a> {
             span: self.index..self.index + 1,
         });
 
-        self.expect(Token::OpenBrace)?;
-        let member_decls = self.many1(|s| s.parse_var_decl())?;
-        if member_decls
-            .iter()
-            .any(|decl| decl.storage_class.is_some() || decl.init.is_some())
-        {
-            todo!()
-        }
-        self.expect(Token::CloseBrace)?;
+        let member_decls = self.atomic(|s| {
+            s.expect(Token::OpenBrace)?;
+            let member_decls = s.many1(|s| s.parse_var_decl())?;
+            if member_decls
+                .iter()
+                .any(|decl| decl.storage_class.is_some() || decl.init.is_some())
+            {
+                todo!()
+            }
+            s.expect(Token::CloseBrace)?;
+            Ok::<_, Error>(member_decls)
+        });
 
-        Ok(StructDecl { tag, member_decls })
+        Ok(StructDecl {
+            tag,
+            member_decls: member_decls.unwrap_or_default(),
+        })
     }
 
     fn parse_union_decl(&mut self) -> Result<UnionDecl, Error> {
@@ -2507,17 +2493,23 @@ impl<'a> Parser<'a> {
             span: self.index..self.index + 1,
         });
 
-        self.expect(Token::OpenBrace)?;
-        let member_decls = self.many1(|s| s.parse_var_decl())?;
-        if member_decls
-            .iter()
-            .any(|decl| decl.storage_class.is_some() || decl.init.is_some())
-        {
-            todo!()
-        }
-        self.expect(Token::CloseBrace)?;
+        let member_decls = self.atomic(|s| {
+            s.expect(Token::OpenBrace)?;
+            let member_decls = s.many1(|s| s.parse_var_decl())?;
+            if member_decls
+                .iter()
+                .any(|decl| decl.storage_class.is_some() || decl.init.is_some())
+            {
+                todo!()
+            }
+            s.expect(Token::CloseBrace)?;
+            Ok::<_, Error>(member_decls)
+        });
 
-        Ok(UnionDecl { tag, member_decls })
+        Ok(UnionDecl {
+            tag,
+            member_decls: member_decls.unwrap_or_default(),
+        })
     }
 }
 
