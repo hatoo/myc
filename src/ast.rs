@@ -659,6 +659,27 @@ impl VarType {
     pub fn is_function_pointer(&self) -> bool {
         matches!(self, Self::Pointer(ty) if matches!(**ty, Ty::Fun(_)))
     }
+
+    pub fn contains_void_array(&self) -> bool {
+        match self {
+            Self::Base(_) => false,
+            Self::Pointer(ty) => match ty.as_ref() {
+                Ty::Var(ty) => ty.contains_void_array(),
+                _ => false,
+            },
+            Self::Array { element, .. } => {
+                if **element == VarType::Void {
+                    true
+                } else {
+                    element.contains_void_array()
+                }
+            }
+            Self::Struct(_) => false,
+            Self::Union(_) => false,
+            Self::Typedef(_) => panic!("Typedef should be removed before tacky generation"),
+            Self::Void => false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

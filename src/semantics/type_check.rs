@@ -1359,8 +1359,10 @@ impl TypeChecker {
 
                 let target = &target.ty;
 
+                // TODO
                 if (target.is_pointer() && ty == ast::BaseType::Double.into())
                     || (ty.is_pointer() && target == &VarType::Base(ast::BaseType::Double))
+                    || target.contains_void_array()
                 {
                     return Err(Error::IncompatibleTypes(exp.token_span()));
                 }
