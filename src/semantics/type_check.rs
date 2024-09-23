@@ -1455,6 +1455,8 @@ impl TypeChecker {
             }
             ast::Expression::SizeofType(ty) => {
                 self.check_var_decl_local(&mut ty.data)?;
+                self.validate_var_type(&mut ty.data.ty, false)
+                    .map_err(|_| Error::IncompatibleTypes(ty.data.ident.span.clone()))?;
                 if !self.sym_table.is_complete(&ty.data.ty) {
                     return Err(Error::IncompatibleTypes(exp.token_span()));
                 }
