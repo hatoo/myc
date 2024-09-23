@@ -302,7 +302,7 @@ impl VarResolver {
     }
 
     fn resolve_var_decl_file_scope(&mut self, decl: &mut ast::VarDecl) -> Result<(), Error> {
-        let is_type_only = decl.is_type_only();
+        let force_decl = decl.is_type_only();
         let ast::VarDecl {
             type_decl,
             ident,
@@ -312,7 +312,7 @@ impl VarResolver {
         } = decl;
 
         if let Some(type_decl) = type_decl {
-            self.resolve_type_declaration(type_decl, is_type_only)?;
+            self.resolve_type_declaration(type_decl, force_decl)?;
         }
         self.resolve_var_type(ty, ident.span.clone())?;
 
@@ -334,9 +334,9 @@ impl VarResolver {
     fn resolve_var_decl_local(
         &mut self,
         decl: &mut ast::VarDecl,
-        look_up_only: bool,
+        not_decl: bool,
     ) -> Result<(), Error> {
-        let is_type_only = decl.is_type_only();
+        let force_decl = decl.is_type_only() && !not_decl;
         let ast::VarDecl {
             type_decl,
             ident,
@@ -346,7 +346,7 @@ impl VarResolver {
         } = decl;
 
         if let Some(type_decl) = type_decl {
-            self.resolve_type_declaration(type_decl, !look_up_only && is_type_only)?;
+            self.resolve_type_declaration(type_decl, force_decl)?;
         }
         self.resolve_var_type(ty, ident.span.clone())?;
 
