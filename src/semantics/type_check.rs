@@ -655,7 +655,7 @@ impl TypeChecker {
 
     fn check_fun_decl(&mut self, fun_decl: &mut crate::ast::FunDecl) -> Result<(), Error> {
         let crate::ast::FunDecl {
-            type_decl,
+            type_decl_ret: type_decl,
             name,
             params,
             body,

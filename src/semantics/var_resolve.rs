@@ -226,7 +226,7 @@ impl VarResolver {
     }
     fn resolve_fun_decl(&mut self, decl: &mut ast::FunDecl, file_scope: bool) -> Result<(), Error> {
         let ast::FunDecl {
-            type_decl,
+            type_decl_ret: type_decl,
             name,
             params,
             body,

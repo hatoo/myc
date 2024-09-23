@@ -48,7 +48,8 @@ pub struct VarDecl {
 
 #[derive(Debug)]
 pub struct FunDecl {
-    pub type_decl: Option<TypeDeclaration>,
+    pub type_decl_ret: Option<TypeDeclaration>,
+    pub type_decl_params: Vec<Option<TypeDeclaration>>,
     pub ty: FunType,
     pub name: TokenSpanned<EcoString>,
     pub params: Vec<TokenSpanned<EcoString>>,
@@ -1954,7 +1955,7 @@ impl<'a> Parser<'a> {
         );
 
         Ok(FunDecl {
-            type_decl,
+            type_decl_ret: type_decl,
             name,
             params,
             ty,
