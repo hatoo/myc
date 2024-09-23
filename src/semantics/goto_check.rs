@@ -34,8 +34,6 @@ impl GotoCheck {
         for decl in &mut program.decls {
             match decl {
                 crate::ast::Declaration::Var(_) => {}
-                crate::ast::Declaration::Struct(_) => {}
-                crate::ast::Declaration::Union(_) => {}
                 crate::ast::Declaration::Fun(fun_decl) => {
                     if let Some(body) = &mut fun_decl.body {
                         self.check_block(body)?;

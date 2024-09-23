@@ -20,43 +20,76 @@ pub struct Program {
 pub enum Declaration {
     Var(VarDecl),
     Fun(FunDecl),
-    Struct(StructDecl),
-    Union(UnionDecl),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
+pub enum TypeDeclaration {
+    Struct(StructDecl),
+    Union(UnionDecl),
+    Fun {
+        ret: Option<Box<TypeDeclaration>>,
+        params: Vec<Option<TypeDeclaration>>,
+    },
+}
+
+impl TypeDeclaration {
+    fn var_ty(&self) -> Option<VarType> {
+        match self {
+            Self::Struct(decl) => Some(VarType::Struct(decl.tag.data.clone())),
+            Self::Union(decl) => Some(VarType::Union(decl.tag.data.clone())),
+            Self::Fun { .. } => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct VarDecl {
-    pub ident: TokenSpanned<EcoString>,
-    pub init: Option<Initializer>,
-    pub ty: VarType,
     pub storage_class: Option<StorageClass>,
+    pub type_decl: Option<TypeDeclaration>,
+    pub ty: VarType,
+    pub ident: TokenSpanned<Option<EcoString>>,
+    pub init: Option<Initializer>,
+}
+
+impl VarDecl {
+    fn assert_just_type(&self) -> Result<(), Error> {
+        if self.ident.data.is_some() {
+            Err(Error::VariableNameNotAllowed(self.ident.span.clone()))
+        } else if self.init.is_some() {
+            Err(Error::InitializerNotAllowed(self.ident.span.clone()))
+        } else if self.storage_class.is_some() {
+            Err(Error::TypeSpecifierNotAllowed(self.ident.span.clone()))
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn is_type_only(&self) -> bool {
+        self.ident.data.is_none() && self.init.is_none() && self.storage_class.is_none()
+    }
 }
 
 #[derive(Debug)]
 pub struct FunDecl {
+    pub type_decl_ret: Option<TypeDeclaration>,
+    pub type_decl_params: Vec<Option<TypeDeclaration>>,
+    pub ty: FunType,
     pub name: TokenSpanned<EcoString>,
     pub params: Vec<TokenSpanned<EcoString>>,
     pub body: Option<Block>,
-    pub ty: FunType,
     pub storage_class: Option<StorageClass>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct StructDecl {
     pub tag: TokenSpanned<EcoString>,
-    pub member_decls: Vec<MemberDecl>,
+    pub member_decls: Vec<VarDecl>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct UnionDecl {
     pub tag: TokenSpanned<EcoString>,
-    pub member_decls: Vec<MemberDecl>,
-}
-
-#[derive(Debug)]
-pub struct MemberDecl {
-    pub name: EcoString,
-    pub ty: VarType,
+    pub member_decls: Vec<VarDecl>,
 }
 
 #[derive(Debug, Clone)]
@@ -109,7 +142,7 @@ impl MayHasTokenSpan for Initializer {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum StorageClass {
     Static,
     Extern,
@@ -342,7 +375,7 @@ impl Const {
 pub enum Expression {
     Var(TokenSpanned<EcoString>, VarType),
     Cast {
-        target: VarType,
+        target: Box<VarDecl>,
         exp: Box<Expression>,
     },
     Constant(TokenSpanned<Const>),
@@ -384,7 +417,7 @@ pub enum Expression {
     },
     String(TokenSpanned<Vec<u8>>, VarType),
     Sizeof(Box<Expression>),
-    SizeofType(TokenSpanned<VarType>),
+    SizeofType(TokenSpanned<Box<VarDecl>>),
     Dot {
         structure: Box<Expression>,
         member: TokenSpanned<EcoString>,
@@ -409,7 +442,7 @@ impl Expression {
     pub fn ty(&self) -> &VarType {
         match self {
             Self::Var(_, ty) => ty,
-            Self::Cast { target, .. } => target,
+            Self::Cast { target, .. } => &target.ty,
             Self::Constant(TokenSpanned { data, .. }) => match data {
                 Const::Int(_) => &VarType::Base(BaseType::Int),
                 Const::Long(_) => &VarType::Base(BaseType::Long),
@@ -640,6 +673,42 @@ impl VarType {
     pub fn is_union(&self) -> bool {
         matches!(self, Self::Union(_))
     }
+
+    pub fn contains_function(&self) -> bool {
+        match self {
+            Self::Base(_) => false,
+            Self::Pointer(ty) => match ty.as_ref() {
+                Ty::Var(ty) => ty.contains_function(),
+                Ty::Fun(_) => true,
+            },
+            Self::Array { element, .. } => element.contains_function(),
+            Self::Struct(_) => false,
+            Self::Union(_) => false,
+            Self::Void => false,
+            Self::Typedef(_) => false,
+        }
+    }
+
+    pub fn contains_void_array(&self) -> bool {
+        match self {
+            Self::Base(_) => false,
+            Self::Pointer(ty) => match ty.as_ref() {
+                Ty::Var(ty) => ty.contains_void_array(),
+                _ => false,
+            },
+            Self::Array { element, .. } => {
+                if **element == VarType::Void {
+                    true
+                } else {
+                    element.contains_void_array()
+                }
+            }
+            Self::Struct(_) => false,
+            Self::Union(_) => false,
+            Self::Typedef(_) => panic!("Typedef should be removed before tacky generation"),
+            Self::Void => false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -753,6 +822,7 @@ pub fn parse(tokens: &[span::Spanned<Token>]) -> Result<Program, Error> {
         tokens,
         index: 0,
         scope: Default::default(),
+        counter: 0,
     };
     parser.parse_program()
 }
@@ -775,7 +845,7 @@ impl Scope {
         self.vars.last_mut().unwrap().insert(name, is_typedef);
     }
 
-    fn is_typedef(&self, name: &EcoString) -> bool {
+    fn is_typedef_symbol(&self, name: &EcoString) -> bool {
         for scope in self.vars.iter().rev() {
             if let Some(is_typedef) = scope.get(name) {
                 return *is_typedef;
@@ -789,6 +859,7 @@ struct Parser<'a> {
     tokens: &'a [span::Spanned<Token>],
     index: usize,
     scope: Scope,
+    counter: usize,
 }
 
 #[derive(Debug)]
@@ -809,9 +880,8 @@ enum TypeSpecifier {
     Unsigned,
     Signed,
     Double,
-    Struct(EcoString),
-    Union(EcoString),
     Typedef(TokenSpanned<EcoString>),
+    TypeDecl(TypeDeclaration),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -846,6 +916,10 @@ pub enum Error {
     NoVariableName(std::ops::Range<usize>),
     #[error("Variable name is not allowed here")]
     VariableNameNotAllowed(std::ops::Range<usize>),
+    #[error("Initializer is not allowed here")]
+    InitializerNotAllowed(std::ops::Range<usize>),
+    #[error("Type specifier is not allowed here")]
+    TypeSpecifierNotAllowed(std::ops::Range<usize>),
 }
 
 impl From<Error> for () {
@@ -870,11 +944,15 @@ impl MayHasTokenSpan for Error {
             Error::FunctionCantBeArrayElement(span) => Some(span.clone()),
             Error::NoVariableName(span) => Some(span.clone()),
             Error::VariableNameNotAllowed(span) => Some(span.clone()),
+            Error::InitializerNotAllowed(span) => Some(span.clone()),
+            Error::TypeSpecifierNotAllowed(span) => Some(span.clone()),
         }
     }
 }
 
-fn solve_type_specifier(ty: &[TokenSpanned<TypeSpecifier>]) -> Result<VarType, Error> {
+fn solve_type_specifier(
+    ty: &[TokenSpanned<TypeSpecifier>],
+) -> Result<(Option<TypeDeclaration>, VarType), Error> {
     debug_assert!(!ty.is_empty());
 
     let mut int = false;
@@ -890,7 +968,7 @@ fn solve_type_specifier(ty: &[TokenSpanned<TypeSpecifier>]) -> Result<VarType, E
             ..
         }]
     ) {
-        return Ok(BaseType::Double.into());
+        return Ok((None, BaseType::Double.into()));
     }
 
     if matches!(
@@ -900,23 +978,7 @@ fn solve_type_specifier(ty: &[TokenSpanned<TypeSpecifier>]) -> Result<VarType, E
             ..
         }]
     ) {
-        return Ok(VarType::Void);
-    }
-
-    if let [TokenSpanned {
-        data: TypeSpecifier::Struct(tag),
-        ..
-    }] = ty
-    {
-        return Ok(VarType::Struct(tag.clone()));
-    }
-
-    if let [TokenSpanned {
-        data: TypeSpecifier::Union(tag),
-        ..
-    }] = ty
-    {
-        return Ok(VarType::Union(tag.clone()));
+        return Ok((None, VarType::Void));
     }
 
     if let [TokenSpanned {
@@ -924,7 +986,16 @@ fn solve_type_specifier(ty: &[TokenSpanned<TypeSpecifier>]) -> Result<VarType, E
         ..
     }] = ty
     {
-        return Ok(VarType::Typedef(tag.clone()));
+        return Ok((None, VarType::Typedef(tag.clone())));
+    }
+
+    if let [TokenSpanned {
+        data: TypeSpecifier::TypeDecl(decl),
+        ..
+    }] = ty
+    {
+        // You can't write function as base type
+        return Ok((Some(decl.clone()), decl.var_ty().unwrap()));
     }
 
     for s in ty {
@@ -965,10 +1036,10 @@ fn solve_type_specifier(ty: &[TokenSpanned<TypeSpecifier>]) -> Result<VarType, E
             TypeSpecifier::Double => {
                 return Err(Error::BadTypeSpecifier(s.span.clone()));
             }
-            TypeSpecifier::Struct(_) | TypeSpecifier::Union(_) => {
+            TypeSpecifier::Typedef(_) => {
                 return Err(Error::BadTypeSpecifier(s.span.clone()));
             }
-            TypeSpecifier::Typedef(_) => {
+            TypeSpecifier::TypeDecl(_) => {
                 return Err(Error::BadTypeSpecifier(s.span.clone()));
             }
         }
@@ -1004,7 +1075,7 @@ fn solve_type_specifier(ty: &[TokenSpanned<TypeSpecifier>]) -> Result<VarType, E
         }
     };
 
-    Ok(base_ty.into())
+    Ok((None, base_ty.into()))
 }
 
 #[derive(Debug)]
@@ -1024,6 +1095,7 @@ enum Declarator {
 
 #[derive(Debug)]
 struct ParamInfo {
+    type_decl: Option<TypeDeclaration>,
     ty: VarType,
     decl: TokenSpanned<Declarator>,
 }
@@ -1043,6 +1115,7 @@ fn process_declarator(
         TokenSpanned<Option<EcoString>>,
         Ty,
         Vec<TokenSpanned<Option<EcoString>>>,
+        Vec<Option<TypeDeclaration>>,
     ),
     Error,
 > {
@@ -1051,6 +1124,7 @@ fn process_declarator(
         Declarator::Ident(name) => Ok((
             TokenSpanned { data: name, span },
             Ty::Var(base_type),
+            Vec::new(),
             Vec::new(),
         )),
         Declarator::Pointer(d) => {
@@ -1064,16 +1138,30 @@ fn process_declarator(
         } => {
             let mut param_names = Vec::new();
             let mut param_types = Vec::new();
+            let mut type_decl_params = Vec::new();
 
-            for ParamInfo { ty, decl } in params {
-                let (name, ty, _) = process_declarator(decl, ty)?;
+            for ParamInfo {
+                type_decl,
+                ty,
+                decl,
+            } in params
+            {
+                let (name, ty, _, decl_params) = process_declarator(decl, ty)?;
 
-                match ty {
+                let var_ty = match ty {
                     Ty::Fun(_) => return Err(Error::NotVarType(name.span.clone())),
-                    Ty::Var(var_ty) => {
-                        param_types.push(var_ty);
-                    }
+                    Ty::Var(var_ty) => var_ty,
+                };
+
+                if var_ty.contains_function() {
+                    type_decl_params.push(Some(TypeDeclaration::Fun {
+                        ret: type_decl.map(Box::new),
+                        params: decl_params,
+                    }));
+                } else {
+                    type_decl_params.push(type_decl);
                 }
+                param_types.push(var_ty);
                 param_names.push(name);
             }
             match *decl.data {
@@ -1084,7 +1172,12 @@ fn process_declarator(
                         ret: base_type,
                     });
 
-                    Ok((TokenSpanned { data: name, span }, derived_type, param_names))
+                    Ok((
+                        TokenSpanned { data: name, span },
+                        derived_type,
+                        param_names,
+                        type_decl_params,
+                    ))
                 }
                 Declarator::Pointer(decl) => {
                     let fun_ptr = VarType::Pointer(Box::new(Ty::Fun(FunType {
@@ -1093,8 +1186,8 @@ fn process_declarator(
                         ret: base_type,
                     })));
 
-                    let (name, ty, _) = process_declarator(decl.map(|d| *d), fun_ptr)?;
-                    Ok((name, ty, param_names))
+                    let (name, ty, _, _) = process_declarator(decl.map(|d| *d), fun_ptr)?;
+                    Ok((name, ty, param_names, type_decl_params))
                 }
                 Declarator::Fun { .. } => Err(Error::NotVarType(decl.span.clone())),
                 Declarator::Array { .. } => {
@@ -1113,6 +1206,12 @@ fn process_declarator(
 }
 
 impl<'a> Parser<'a> {
+    fn anon_symbol(&mut self, prefix: &str) -> EcoString {
+        let name = format!("_anon_{}.{}", prefix, self.counter);
+        self.counter += 1;
+        name.into()
+    }
+
     fn atomic<T, E>(&mut self, f: impl FnOnce(&mut Self) -> Result<T, E>) -> Result<T, E> {
         let index = self.index;
         match f(self) {
@@ -1624,9 +1723,13 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_param(&mut self) -> Result<ParamInfo, Error> {
-        let ty = self.parse_specifiers(false)?.0;
+        let (type_decl, ty, _) = self.parse_specifiers(false)?;
         let decl = self.parse_declarator()?;
-        Ok(ParamInfo { ty, decl })
+        Ok(ParamInfo {
+            type_decl,
+            ty,
+            decl,
+        })
     }
 
     fn parse_simple_declarator(&mut self) -> Result<TokenSpanned<Declarator>, Error> {
@@ -1667,7 +1770,7 @@ impl<'a> Parser<'a> {
     fn parse_specifiers(
         &mut self,
         allow_storage_class: bool,
-    ) -> Result<(VarType, Option<StorageClass>), Error> {
+    ) -> Result<(Option<TypeDeclaration>, VarType, Option<StorageClass>), Error> {
         let mut ty = Vec::new();
         let mut storage_class = None;
         let start = self.peek()?.span.start;
@@ -1712,24 +1815,22 @@ impl<'a> Parser<'a> {
                     self.advance();
                 }
                 Token::Struct => {
-                    self.advance();
-                    let tag = self.expect_ident()?;
-                    end = tag.span.end;
+                    let start = self.index;
+                    let decl = self.parse_struct_decl()?;
                     ty.push(TokenSpanned {
-                        data: TypeSpecifier::Struct(tag.data.clone()),
-                        span: tag.span,
+                        data: TypeSpecifier::TypeDecl(TypeDeclaration::Struct(decl)),
+                        span: start..self.index,
                     });
                 }
                 Token::Union => {
-                    self.advance();
-                    let tag = self.expect_ident()?;
-                    end = tag.span.end;
+                    let start = self.index;
+                    let decl = self.parse_union_decl()?;
                     ty.push(TokenSpanned {
-                        data: TypeSpecifier::Union(tag.data.clone()),
-                        span: tag.span,
+                        data: TypeSpecifier::TypeDecl(TypeDeclaration::Union(decl)),
+                        span: start..self.index,
                     });
                 }
-                Token::Ident(ident) if self.scope.is_typedef(ident) => {
+                Token::Ident(ident) if self.scope.is_typedef_symbol(ident) => {
                     if ty.is_empty() {
                         ty.push(TokenSpanned {
                             data: TypeSpecifier::Typedef(TokenSpanned {
@@ -1773,7 +1874,10 @@ impl<'a> Parser<'a> {
 
         match ty.len() {
             0 => Err(Error::NoTypeSpecifier(start..end)),
-            _ => Ok((solve_type_specifier(&ty)?, storage_class)),
+            _ => {
+                let (decl, ty) = solve_type_specifier(&ty)?;
+                Ok((decl, ty, storage_class))
+            }
         }
     }
 
@@ -1806,57 +1910,63 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_var_decl(&mut self) -> Result<VarDecl, Error> {
-        let (ty, storage_class) = self.parse_specifiers(true)?;
+    fn parse_var_decl_body(&mut self) -> Result<VarDecl, Error> {
+        let (type_decl, ty, storage_class) = self.parse_specifiers(true)?;
         let decl = self.parse_declarator()?;
-        let (ident, ty, _) = process_declarator(decl, ty)?;
+        let (ident, ty, _, type_decl_params) = process_declarator(decl, ty)?;
         let span = ident.span.clone();
-        let ident = if let TokenSpanned {
-            data: Some(data),
-            span,
-        } = ident
-        {
-            TokenSpanned { data, span }
-        } else {
-            return Err(Error::NoVariableName(ident.span));
-        };
 
         let ty = match ty {
             Ty::Var(ty) => ty,
             Ty::Fun(_) => return Err(Error::NotVarType(span)),
         };
 
-        self.scope.insert(
-            ident.data.clone(),
-            storage_class == Some(StorageClass::Typedef),
-        );
+        let type_decl = if ty.contains_function() {
+            Some(TypeDeclaration::Fun {
+                ret: type_decl.map(Box::new),
+                params: type_decl_params,
+            })
+        } else {
+            type_decl
+        };
+
+        if let Some(ident) = ident.data.as_ref() {
+            self.scope
+                .insert(ident.clone(), storage_class == Some(StorageClass::Typedef));
+        }
 
         if self.expect(Token::Equal).is_ok() {
             let init = self.parse_initializer()?;
-            self.expect(Token::SemiColon)?;
             Ok(VarDecl {
-                ident,
-                ty,
-                init: Some(init),
                 storage_class,
+                type_decl,
+                ty,
+                ident,
+                init: Some(init),
             })
         } else {
-            self.expect(Token::SemiColon)?;
             Ok(VarDecl {
-                ident,
-                ty,
-                init: None,
                 storage_class,
+                type_decl,
+                ty,
+                ident,
+                init: None,
             })
         }
     }
 
+    fn parse_var_decl(&mut self) -> Result<VarDecl, Error> {
+        let decl = self.parse_var_decl_body()?;
+        self.expect(Token::SemiColon)?;
+        Ok(decl)
+    }
+
     fn parse_fun_decl(&mut self) -> Result<FunDecl, Error> {
-        let (return_type, storage_class) = self.parse_specifiers(true)?;
+        let (type_decl, return_type, storage_class) = self.parse_specifiers(true)?;
         let decl = self.parse_declarator()?;
         let span = decl.span.clone();
 
-        let (name, ty, params) = process_declarator(decl, return_type)?;
+        let (name, ty, params, type_decl_params) = process_declarator(decl, return_type)?;
         let name = if let TokenSpanned {
             data: Some(data),
             span,
@@ -1904,6 +2014,8 @@ impl<'a> Parser<'a> {
         );
 
         Ok(FunDecl {
+            type_decl_ret: type_decl,
+            type_decl_params,
             name,
             params,
             ty,
@@ -1923,24 +2035,12 @@ impl<'a> Parser<'a> {
                     Ok(decl) => Ok(Declaration::Fun(decl)),
                     Err(fun_err) => {
                         let fun_decl_fail = self.index;
-                        self.index = index;
-                        match self.peek()? {
-                            TokenSpanned {
-                                data: Token::Struct,
-                                ..
-                            } => Ok(Declaration::Struct(self.parse_struct_decl()?)),
-                            TokenSpanned {
-                                data: Token::Union, ..
-                            } => Ok(Declaration::Union(self.parse_union_decl()?)),
-                            _ => {
-                                if var_decl_fail > fun_decl_fail {
-                                    self.index = var_decl_fail;
-                                    Err(var_err)
-                                } else {
-                                    self.index = fun_decl_fail;
-                                    Err(fun_err)
-                                }
-                            }
+                        if var_decl_fail > fun_decl_fail {
+                            self.index = var_decl_fail;
+                            Err(var_err)
+                        } else {
+                            self.index = fun_decl_fail;
+                            Err(fun_err)
                         }
                     }
                 }
@@ -2172,11 +2272,12 @@ impl<'a> Parser<'a> {
     fn parse_cast_exp(&mut self) -> Result<Expression, Error> {
         self.atomic(|s| {
             s.expect(Token::OpenParen)?;
-            let ty = s.parse_type_name()?;
+            let var_decl = s.parse_var_decl_body()?;
+            var_decl.assert_just_type()?;
             s.expect(Token::CloseParen)?;
             let exp = s.parse_cast_exp()?;
             Ok::<_, Error>(Expression::Cast {
-                target: ty,
+                target: Box::new(var_decl),
                 exp: Box::new(exp),
             })
         })
@@ -2214,16 +2315,17 @@ impl<'a> Parser<'a> {
             }
             Token::Sizeof => {
                 self.advance();
-                if let Ok(ty) = self.atomic(|s| {
+                if let Ok(var_decl) = self.atomic(|s| {
                     let start = s.expect(Token::OpenParen)?.span.start;
-                    let ty = s.parse_type_name()?;
+                    let var_decl = s.parse_var_decl_body()?;
+                    var_decl.assert_just_type()?;
                     let end = s.expect(Token::CloseParen)?.span.end;
                     Ok::<_, Error>(TokenSpanned {
-                        data: ty,
+                        data: var_decl,
                         span: start..end,
                     })
                 }) {
-                    Ok(Expression::SizeofType(ty))
+                    Ok(Expression::SizeofType(var_decl.map(Box::new)))
                 } else {
                     Ok(Expression::Sizeof(Box::new(self.parse_unary_exp()?)))
                 }
@@ -2247,26 +2349,6 @@ impl<'a> Parser<'a> {
                 })
             }
             _ => self.parse_postfix_exp(),
-        }
-    }
-
-    fn parse_type_name(&mut self) -> Result<VarType, Error> {
-        let base_type = self.parse_specifiers(false)?.0;
-        if let Ok(decl) = self.atomic(|s| s.parse_declarator()) {
-            let span = decl.span.clone();
-
-            let (ident, ty, _) = process_declarator(decl, base_type)?;
-
-            if ident.data.is_some() {
-                return Err(Error::VariableNameNotAllowed(ident.span));
-            }
-
-            match ty {
-                Ty::Var(ty) => Ok(ty),
-                Ty::Fun(_) => Err(Error::NotVarType(span)),
-            }
-        } else {
-            Ok(base_type)
         }
     }
 
@@ -2363,15 +2445,23 @@ impl<'a> Parser<'a> {
 
     fn parse_struct_decl(&mut self) -> Result<StructDecl, Error> {
         self.expect(Token::Struct)?;
-        let tag = self.expect_ident()?;
+        let tag = self.expect_ident().unwrap_or_else(|_| TokenSpanned {
+            data: self.anon_symbol("struct"),
+            span: self.index..self.index + 1,
+        });
 
         let member_decls = self.atomic(|s| {
             s.expect(Token::OpenBrace)?;
-            let member_decls = s.many1(|s| s.parse_member())?;
+            let member_decls = s.many1(|s| s.parse_var_decl())?;
+            if member_decls
+                .iter()
+                .any(|decl| decl.storage_class.is_some() || decl.init.is_some())
+            {
+                todo!()
+            }
             s.expect(Token::CloseBrace)?;
             Ok::<_, Error>(member_decls)
         });
-        self.expect(Token::SemiColon)?;
 
         Ok(StructDecl {
             tag,
@@ -2381,45 +2471,27 @@ impl<'a> Parser<'a> {
 
     fn parse_union_decl(&mut self) -> Result<UnionDecl, Error> {
         self.expect(Token::Union)?;
-        let tag = self.expect_ident()?;
+        let tag = self.expect_ident().unwrap_or_else(|_| TokenSpanned {
+            data: self.anon_symbol("union"),
+            span: self.index..self.index + 1,
+        });
 
         let member_decls = self.atomic(|s| {
             s.expect(Token::OpenBrace)?;
-            let member_decls = s.many1(|s| s.parse_member())?;
+            let member_decls = s.many1(|s| s.parse_var_decl())?;
+            if member_decls
+                .iter()
+                .any(|decl| decl.storage_class.is_some() || decl.init.is_some())
+            {
+                todo!()
+            }
             s.expect(Token::CloseBrace)?;
             Ok::<_, Error>(member_decls)
         });
-        self.expect(Token::SemiColon)?;
 
         Ok(UnionDecl {
             tag,
             member_decls: member_decls.unwrap_or_default(),
-        })
-    }
-
-    fn parse_member(&mut self) -> Result<MemberDecl, Error> {
-        let ty = self.parse_specifiers(false)?.0;
-        let decl = self.parse_declarator()?;
-        let (ident, ty, _) = process_declarator(decl, ty)?;
-        let ident = if let TokenSpanned {
-            data: Some(data),
-            span,
-        } = ident
-        {
-            TokenSpanned { data, span }
-        } else {
-            return Err(Error::NoVariableName(ident.span));
-        };
-        self.expect(Token::SemiColon)?;
-
-        let ty = match ty {
-            Ty::Fun(_) => return Err(Error::NotVarType(ident.span.clone())),
-            Ty::Var(ty) => ty,
-        };
-
-        Ok(MemberDecl {
-            name: ident.data,
-            ty,
         })
     }
 }

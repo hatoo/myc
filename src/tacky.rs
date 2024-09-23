@@ -232,8 +232,6 @@ impl<'a> InstructionGenerator<'a> {
                     self.add_var_declaration(decl);
                 }
                 ast::Declaration::Fun(_) => {}
-                ast::Declaration::Struct(_) => {}
-                ast::Declaration::Union(_) => {}
             },
             ast::BlockItem::Statement(stmt) => {
                 self.add_statement(stmt);
@@ -343,7 +341,13 @@ impl<'a> InstructionGenerator<'a> {
         }
 
         if let Some(init) = decl.init.as_ref() {
-            self.copy_initializers(init, decl.ident.data.clone(), &decl.ty, &mut 0, 0);
+            self.copy_initializers(
+                init,
+                decl.ident.data.as_ref().unwrap().clone(),
+                &decl.ty,
+                &mut 0,
+                0,
+            );
         }
     }
 
@@ -973,6 +977,7 @@ impl<'a> InstructionGenerator<'a> {
                 ExpResult::PlainOperand(dst.unwrap_or(Val::Var("DUMMY_VAR".into())))
             }
             ast::Expression::Cast { target, exp } => {
+                let target = &target.ty;
                 let val = self.add_expression_and_convert(exp);
                 if target == &ast::VarType::Void {
                     return ExpResult::PlainOperand(Val::Var("DUMMY_VAR".into()));
@@ -1075,7 +1080,7 @@ impl<'a> InstructionGenerator<'a> {
                 ExpResult::PlainOperand(Val::Constant(ast::Const::Ulong(size as _)))
             }
             ast::Expression::SizeofType(ty) => {
-                let size = self.symbol_table.size(&ty.data);
+                let size = self.symbol_table.size(&ty.data.ty);
                 ExpResult::PlainOperand(Val::Constant(ast::Const::Ulong(size as _)))
             }
             ast::Expression::Dot {

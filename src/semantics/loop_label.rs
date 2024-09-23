@@ -34,8 +34,6 @@ impl LoopLabel {
         for decl in &mut program.decls {
             match decl {
                 ast::Declaration::Var(_) => {}
-                ast::Declaration::Struct(_) => {}
-                ast::Declaration::Union(_) => {}
                 ast::Declaration::Fun(fun_decl) => {
                     if let Some(body) = &mut fun_decl.body {
                         self.label_block(None, None, body)?;
