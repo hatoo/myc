@@ -236,7 +236,7 @@ impl VarResolver {
         } = decl;
 
         if let Some(type_decl) = type_decl_ret {
-            self.resolve_type_declaration(type_decl)?;
+            self.resolve_type_declaration(type_decl, false)?;
         }
 
         self.resolve_var_type(&mut ty.ret, name.span.clone())?;
@@ -285,7 +285,7 @@ impl VarResolver {
             param.data = unique_name;
             self.push();
             if let Some(type_decl) = decl {
-                self.resolve_type_declaration(type_decl)?;
+                self.resolve_type_declaration(type_decl, false)?;
             }
             self.resolve_var_type(param_ty, name.span.clone())?;
             self.pop();
@@ -302,6 +302,7 @@ impl VarResolver {
     }
 
     fn resolve_var_decl_file_scope(&mut self, decl: &mut ast::VarDecl) -> Result<(), Error> {
+        let is_type_only = decl.is_type_only();
         let ast::VarDecl {
             type_decl,
             ident,
@@ -311,7 +312,7 @@ impl VarResolver {
         } = decl;
 
         if let Some(type_decl) = type_decl {
-            self.resolve_type_declaration(type_decl)?;
+            self.resolve_type_declaration(type_decl, is_type_only)?;
         }
         self.resolve_var_type(ty, ident.span.clone())?;
 
@@ -335,6 +336,7 @@ impl VarResolver {
         decl: &mut ast::VarDecl,
         look_up_only: bool,
     ) -> Result<(), Error> {
+        let is_type_only = decl.is_type_only();
         let ast::VarDecl {
             type_decl,
             ident,
@@ -344,7 +346,7 @@ impl VarResolver {
         } = decl;
 
         if let Some(type_decl) = type_decl {
-            self.resolve_type_declaration(type_decl)?;
+            self.resolve_type_declaration(type_decl, !look_up_only && is_type_only)?;
         }
         self.resolve_var_type(ty, ident.span.clone())?;
 
@@ -562,18 +564,24 @@ impl VarResolver {
         }
     }
 
-    fn resolve_type_declaration(&mut self, decl: &mut ast::TypeDeclaration) -> Result<(), Error> {
+    fn resolve_type_declaration(
+        &mut self,
+        decl: &mut ast::TypeDeclaration,
+        force_decl: bool,
+    ) -> Result<(), Error> {
         match decl {
-            ast::TypeDeclaration::Struct(decl) => self.resolve_structure_declaration(decl),
-            ast::TypeDeclaration::Union(decl) => self.resolve_union_declaration(decl),
+            ast::TypeDeclaration::Struct(decl) => {
+                self.resolve_structure_declaration(decl, force_decl)
+            }
+            ast::TypeDeclaration::Union(decl) => self.resolve_union_declaration(decl, force_decl),
             ast::TypeDeclaration::Fun { ret, params } => {
                 if let Some(ret) = ret {
-                    self.resolve_type_declaration(ret)?;
+                    self.resolve_type_declaration(ret, force_decl)?;
                 }
 
                 for param in params {
                     if let Some(param) = param {
-                        self.resolve_type_declaration(param)?;
+                        self.resolve_type_declaration(param, force_decl)?;
                     }
                 }
 
@@ -582,10 +590,14 @@ impl VarResolver {
         }
     }
 
-    fn resolve_structure_declaration(&mut self, decl: &mut StructDecl) -> Result<(), Error> {
+    fn resolve_structure_declaration(
+        &mut self,
+        decl: &mut StructDecl,
+        force_decl: bool,
+    ) -> Result<(), Error> {
         let StructDecl { tag, member_decls } = decl;
 
-        if member_decls.is_empty() {
+        if member_decls.is_empty() && !force_decl {
             match self.lookup_type(&tag.data) {
                 None => {
                     let new_name = self.new_var(&tag.data);
@@ -618,7 +630,7 @@ impl VarResolver {
 
             for member_decl in member_decls {
                 if let Some(type_decl) = &mut member_decl.type_decl {
-                    self.resolve_type_declaration(type_decl)?;
+                    self.resolve_type_declaration(type_decl, false)?;
                 }
                 self.resolve_var_type(&mut member_decl.ty, tag.span.clone())?;
             }
@@ -627,10 +639,14 @@ impl VarResolver {
         Ok(())
     }
 
-    fn resolve_union_declaration(&mut self, decl: &mut UnionDecl) -> Result<(), Error> {
+    fn resolve_union_declaration(
+        &mut self,
+        decl: &mut UnionDecl,
+        force_decl: bool,
+    ) -> Result<(), Error> {
         let UnionDecl { tag, member_decls } = decl;
 
-        if member_decls.is_empty() {
+        if member_decls.is_empty() && !force_decl {
             match self.lookup_type(&tag.data) {
                 None => {
                     let new_name = self.new_var(&tag.data);
@@ -663,7 +679,7 @@ impl VarResolver {
 
             for member_decl in member_decls {
                 if let Some(type_decl) = &mut member_decl.type_decl {
-                    self.resolve_type_declaration(type_decl)?;
+                    self.resolve_type_declaration(type_decl, false)?;
                 }
                 self.resolve_var_type(&mut member_decl.ty, tag.span.clone())?;
             }

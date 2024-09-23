@@ -63,6 +63,10 @@ impl VarDecl {
             Ok(())
         }
     }
+
+    pub fn is_type_only(&self) -> bool {
+        self.ident.data.is_none() && self.init.is_none() && self.storage_class.is_none()
+    }
 }
 
 #[derive(Debug)]
