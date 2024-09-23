@@ -660,6 +660,21 @@ impl VarType {
         matches!(self, Self::Pointer(ty) if matches!(**ty, Ty::Fun(_)))
     }
 
+    pub fn contains_function(&self) -> bool {
+        match self {
+            Self::Base(_) => false,
+            Self::Pointer(ty) => match ty.as_ref() {
+                Ty::Var(ty) => ty.contains_function(),
+                Ty::Fun(_) => true,
+            },
+            Self::Array { element, .. } => element.contains_function(),
+            Self::Struct(_) => false,
+            Self::Union(_) => false,
+            Self::Void => false,
+            Self::Typedef(_) => panic!("Typedef should be removed before tacky generation"),
+        }
+    }
+
     pub fn contains_void_array(&self) -> bool {
         match self {
             Self::Base(_) => false,
@@ -1139,7 +1154,7 @@ fn process_declarator(
                     Ty::Var(var_ty) => var_ty,
                 };
 
-                if var_ty.is_function_pointer() {
+                if var_ty.contains_function() {
                     type_decl_params.push(Some(TypeDeclaration::Fun {
                         ret: type_decl.map(Box::new),
                         params: decl_params,
