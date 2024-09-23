@@ -1720,7 +1720,6 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_param(&mut self) -> Result<ParamInfo, Error> {
-        // TODO
         let (type_decl, ty, _) = self.parse_specifiers(false)?;
         let decl = self.parse_declarator()?;
         Ok(ParamInfo {
@@ -1939,15 +1938,11 @@ impl<'a> Parser<'a> {
             Ty::Fun(_) => return Err(Error::NotVarType(span)),
         };
 
-        let type_decl = if let VarType::Pointer(target) = &ty {
-            if let Ty::Fun(_) = target.as_ref() {
-                Some(TypeDeclaration::Fun {
-                    ret: type_decl.map(Box::new),
-                    params: type_decl_params,
-                })
-            } else {
-                type_decl
-            }
+        let type_decl = if ty.contains_function() {
+            Some(TypeDeclaration::Fun {
+                ret: type_decl.map(Box::new),
+                params: type_decl_params,
+            })
         } else {
             type_decl
         };
