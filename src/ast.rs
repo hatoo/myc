@@ -51,6 +51,20 @@ pub struct VarDecl {
     pub init: Option<Initializer>,
 }
 
+impl VarDecl {
+    fn assert_just_type(&self) -> Result<(), Error> {
+        if self.ident.data.is_some() {
+            Err(Error::VariableNameNotAllowed(self.ident.span.clone()))
+        } else if self.init.is_some() {
+            Err(Error::InitializerNotAllowed(self.ident.span.clone()))
+        } else if self.storage_class.is_some() {
+            Err(Error::TypeSpecifierNotAllowed(self.ident.span.clone()))
+        } else {
+            Ok(())
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct FunDecl {
     pub type_decl_ret: Option<TypeDeclaration>,
@@ -900,6 +914,10 @@ pub enum Error {
     NoVariableName(std::ops::Range<usize>),
     #[error("Variable name is not allowed here")]
     VariableNameNotAllowed(std::ops::Range<usize>),
+    #[error("Initializer is not allowed here")]
+    InitializerNotAllowed(std::ops::Range<usize>),
+    #[error("Type specifier is not allowed here")]
+    TypeSpecifierNotAllowed(std::ops::Range<usize>),
 }
 
 impl From<Error> for () {
@@ -924,6 +942,8 @@ impl MayHasTokenSpan for Error {
             Error::FunctionCantBeArrayElement(span) => Some(span.clone()),
             Error::NoVariableName(span) => Some(span.clone()),
             Error::VariableNameNotAllowed(span) => Some(span.clone()),
+            Error::InitializerNotAllowed(span) => Some(span.clone()),
+            Error::TypeSpecifierNotAllowed(span) => Some(span.clone()),
         }
     }
 }
@@ -2290,9 +2310,7 @@ impl<'a> Parser<'a> {
         self.atomic(|s| {
             s.expect(Token::OpenParen)?;
             let var_decl = s.parse_var_decl_body()?;
-            if var_decl.storage_class.is_some() || var_decl.init.is_some() {
-                todo!()
-            }
+            var_decl.assert_just_type()?;
             s.expect(Token::CloseParen)?;
             let exp = s.parse_cast_exp()?;
             Ok::<_, Error>(Expression::Cast {
@@ -2336,11 +2354,8 @@ impl<'a> Parser<'a> {
                 self.advance();
                 if let Ok(var_decl) = self.atomic(|s| {
                     let start = s.expect(Token::OpenParen)?.span.start;
-                    // TODO: check var_decl
                     let var_decl = s.parse_var_decl_body()?;
-                    if var_decl.storage_class.is_some() || var_decl.init.is_some() {
-                        todo!()
-                    }
+                    var_decl.assert_just_type()?;
                     let end = s.expect(Token::CloseParen)?.span.end;
                     Ok::<_, Error>(TokenSpanned {
                         data: var_decl,
