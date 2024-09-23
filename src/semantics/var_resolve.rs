@@ -180,7 +180,7 @@ impl VarResolver {
                 if let Some(for_init) = init {
                     match for_init {
                         ast::ForInit::VarDecl(decl) => {
-                            self.resolve_var_decl_local(decl)?;
+                            self.resolve_var_decl_local(decl, false)?;
                         }
                         ast::ForInit::Expression(exp) => {
                             self.resolve_expression(exp)?;
@@ -220,7 +220,7 @@ impl VarResolver {
 
     fn resolve_decl(&mut self, decl: &mut ast::Declaration) -> Result<(), Error> {
         match decl {
-            ast::Declaration::Var(decl) => self.resolve_var_decl_local(decl),
+            ast::Declaration::Var(decl) => self.resolve_var_decl_local(decl, false),
             ast::Declaration::Fun(decl) => self.resolve_fun_decl(decl, false),
         }
     }
@@ -354,7 +354,11 @@ impl VarResolver {
         Ok(())
     }
 
-    fn resolve_var_decl_local(&mut self, decl: &mut ast::VarDecl) -> Result<(), Error> {
+    fn resolve_var_decl_local(
+        &mut self,
+        decl: &mut ast::VarDecl,
+        look_up_only: bool,
+    ) -> Result<(), Error> {
         let ast::VarDecl {
             type_decl,
             ident,
@@ -417,24 +421,28 @@ impl VarResolver {
                 }
             }
         } else {
-            match ty {
-                VarType::Struct(name) => {
-                    let mut decl = StructDecl {
-                        tag: ident.clone().map(|_| name.clone()),
-                        member_decls: Vec::new(),
-                    };
-                    self.resolve_structure_declaration(&mut decl)?;
-                    *name = decl.tag.data.clone();
+            if look_up_only {
+                self.resolve_var_type(ty, ident.span.clone())?;
+            } else {
+                match ty {
+                    VarType::Struct(name) => {
+                        let mut decl = StructDecl {
+                            tag: ident.clone().map(|_| name.clone()),
+                            member_decls: Vec::new(),
+                        };
+                        self.resolve_structure_declaration(&mut decl)?;
+                        *name = decl.tag.data.clone();
+                    }
+                    VarType::Union(name) => {
+                        let mut decl = UnionDecl {
+                            tag: ident.clone().map(|_| name.clone()),
+                            member_decls: Vec::new(),
+                        };
+                        self.resolve_union_declaration(&mut decl)?;
+                        *name = decl.tag.data.clone();
+                    }
+                    _ => {}
                 }
-                VarType::Union(name) => {
-                    let mut decl = UnionDecl {
-                        tag: ident.clone().map(|_| name.clone()),
-                        member_decls: Vec::new(),
-                    };
-                    self.resolve_union_declaration(&mut decl)?;
-                    *name = decl.tag.data.clone();
-                }
-                _ => {}
             }
         }
 
@@ -493,7 +501,7 @@ impl VarResolver {
                 Ok(())
             }
             ast::Expression::Cast { target, exp } => {
-                self.resolve_var_decl_local(target)?;
+                self.resolve_var_decl_local(target, true)?;
                 self.resolve_expression(exp)?;
                 Ok(())
             }
@@ -516,7 +524,7 @@ impl VarResolver {
                 Ok(())
             }
             ast::Expression::SizeofType(ty) => {
-                self.resolve_var_decl_local(&mut ty.data)?;
+                self.resolve_var_decl_local(&mut ty.data, true)?;
                 Ok(())
             }
             ast::Expression::Dot { structure, .. } => {
