@@ -330,7 +330,7 @@ pub enum Error {
     #[error("Function declaration in block scope has a body")]
     BlockScopeFunWithBody(TokenSpanned<EcoString>),
     #[error("For loop init must not has storage class")]
-    BadForInit(TokenSpanned<EcoString>),
+    BadForInit(std::ops::Range<usize>),
     #[error("Case expression is not constant")]
     CaseExpIsNotConstant(std::ops::Range<usize>),
     #[error("Expression is not an lvalue")]
@@ -350,7 +350,7 @@ impl HasTokenSpan for Error {
             Error::BadInitializer(ident) => ident.span.clone(),
             Error::IncompatibleLinkage(ident) => ident.span.clone(),
             Error::BlockScopeFunWithBody(ident) => ident.span.clone(),
-            Error::BadForInit(ident) => ident.span.clone(),
+            Error::BadForInit(span) => span.clone(),
             Error::CaseExpIsNotConstant(span) => span.clone(),
             Error::NotLValue(span) => span.clone(),
             Error::UnknownMember(ident) => ident.span.clone(),
@@ -471,8 +471,6 @@ impl TypeChecker {
             match decl {
                 crate::ast::Declaration::Var(decl) => self.check_var_decl_file(decl)?,
                 crate::ast::Declaration::Fun(decl) => self.check_fun_decl(decl)?,
-                crate::ast::Declaration::Struct(decl) => self.check_struct_decl(decl)?,
-                crate::ast::Declaration::Union(decl) => self.check_union_decl(decl)?,
             }
         }
 
@@ -651,12 +649,17 @@ impl TypeChecker {
 
     fn check_fun_decl(&mut self, fun_decl: &mut crate::ast::FunDecl) -> Result<(), Error> {
         let crate::ast::FunDecl {
+            type_decl,
             name,
             params,
             body,
             storage_class,
             ty,
         } = fun_decl;
+
+        if let Some(type_decl) = type_decl {
+            self.check_type_decl(type_decl)?;
+        }
 
         self.validate_fun_type(ty, body.is_none())
             .map_err(|_| Error::IncompatibleTypes(name.span.clone()))?;
@@ -737,18 +740,21 @@ impl TypeChecker {
                 }
                 self.check_fun_decl(decl)
             }
-            crate::ast::Declaration::Struct(decl) => self.check_struct_decl(decl),
-            crate::ast::Declaration::Union(decl) => self.check_union_decl(decl),
         }
     }
 
     fn check_var_decl_file(&mut self, decl: &mut crate::ast::VarDecl) -> Result<(), Error> {
         let crate::ast::VarDecl {
+            type_decl,
             ident,
             init,
             storage_class,
             ty,
         } = decl;
+
+        if let Some(type_decl) = type_decl {
+            self.check_type_decl(type_decl)?;
+        }
 
         self.validate_var_type(ty, storage_class == &Some(crate::ast::StorageClass::Extern))
             .map_err(|_| Error::IncompatibleTypes(ident.span.clone()))?;
@@ -756,8 +762,29 @@ impl TypeChecker {
             return Err(Error::IncompatibleTypes(ident.span.clone()));
         }
         if storage_class == &Some(ast::StorageClass::Typedef) && init.is_some() {
-            return Err(Error::BadInitializer(ident.clone()));
+            return Err(Error::BadInitializer(
+                ident.clone().map(|i| i.unwrap_or_default()),
+            ));
         }
+
+        let ident = if let TokenSpanned {
+            data: Some(ident),
+            span,
+        } = ident
+        {
+            TokenSpanned {
+                data: ident.clone(),
+                span: span.clone(),
+            }
+        } else {
+            if init.is_some() {
+                return Err(Error::BadInitializer(
+                    ident.clone().map(|i| i.unwrap_or_default()),
+                ));
+            } else {
+                return Ok(());
+            }
+        };
 
         let mut init = match init {
             Some(init) => InitialValue::Initial(self.static_init_from_initializer(ty, init)?),
@@ -827,17 +854,47 @@ impl TypeChecker {
 
     fn check_var_decl_local(&mut self, decl: &mut crate::ast::VarDecl) -> Result<(), Error> {
         let crate::ast::VarDecl {
+            type_decl,
             ident,
             init,
             storage_class,
             ty,
         } = decl;
 
+        if let Some(type_decl) = type_decl {
+            self.check_type_decl(type_decl)?;
+        }
+
         self.validate_var_type(ty, storage_class == &Some(crate::ast::StorageClass::Extern))
             .map_err(|_| Error::IncompatibleTypes(ident.span.clone()))?;
         if ty == &ast::VarType::Void {
             return Err(Error::IncompatibleTypes(ident.span.clone()));
         }
+
+        if storage_class == &Some(ast::StorageClass::Typedef) && init.is_some() {
+            return Err(Error::BadInitializer(
+                ident.clone().map(|i| i.unwrap_or_default()),
+            ));
+        }
+
+        let ident = if let TokenSpanned {
+            data: Some(ident),
+            span,
+        } = ident
+        {
+            TokenSpanned {
+                data: ident.clone(),
+                span: span.clone(),
+            }
+        } else {
+            if init.is_some() {
+                return Err(Error::BadInitializer(
+                    ident.clone().map(|i| i.unwrap_or_default()),
+                ));
+            } else {
+                return Ok(());
+            }
+        };
 
         match storage_class {
             Some(crate::ast::StorageClass::Extern) => {
@@ -1581,7 +1638,7 @@ impl TypeChecker {
                     match init {
                         crate::ast::ForInit::VarDecl(decl) => {
                             if decl.storage_class.is_some() {
-                                return Err(Error::BadForInit(decl.ident.clone()));
+                                return Err(Error::BadForInit(decl.ident.span.clone()));
                             }
                             self.check_var_decl_local(decl)?;
                         }
@@ -1656,6 +1713,13 @@ impl TypeChecker {
                 self.check_statement(statement, ret_type)?;
                 Ok(())
             }
+        }
+    }
+
+    fn check_type_decl(&mut self, decl: &mut ast::TypeDeclaration) -> Result<(), Error> {
+        match decl {
+            ast::TypeDeclaration::Struct(decl) => self.check_struct_decl(decl),
+            ast::TypeDeclaration::Union(decl) => self.check_union_decl(decl),
         }
     }
 
