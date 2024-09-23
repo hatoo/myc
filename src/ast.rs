@@ -25,11 +25,18 @@ pub enum Declaration {
 }
 
 #[derive(Debug)]
+pub enum TypeDeclaration {
+    Struct(StructDecl),
+    Union(UnionDecl),
+}
+
+#[derive(Debug)]
 pub struct VarDecl {
-    pub ident: TokenSpanned<EcoString>,
-    pub init: Option<Initializer>,
-    pub ty: VarType,
     pub storage_class: Option<StorageClass>,
+    pub type_decl: Option<TypeDeclaration>,
+    pub ty: VarType,
+    pub ident: TokenSpanned<Option<EcoString>>,
+    pub init: Option<Initializer>,
 }
 
 #[derive(Debug)]
