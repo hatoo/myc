@@ -669,10 +669,8 @@ impl TypeChecker {
             self.check_type_decl(type_decl)?;
         }
 
-        for decl in type_decl_params {
-            if let Some(decl) = decl {
-                self.check_type_decl(decl)?;
-            }
+        for decl in type_decl_params.iter_mut().flatten() {
+            self.check_type_decl(decl)?;
         }
 
         self.validate_fun_type(ty, body.is_none())

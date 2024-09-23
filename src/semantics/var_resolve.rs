@@ -579,10 +579,8 @@ impl VarResolver {
                     self.resolve_type_declaration(ret, force_decl)?;
                 }
 
-                for param in params {
-                    if let Some(param) = param {
-                        self.resolve_type_declaration(param, force_decl)?;
-                    }
+                for param in params.iter_mut().flatten() {
+                    self.resolve_type_declaration(param, force_decl)?;
                 }
 
                 Ok(())
