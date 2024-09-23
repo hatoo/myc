@@ -29,13 +29,6 @@ pub enum TypeDeclaration {
 }
 
 impl TypeDeclaration {
-    fn name(&self) -> &EcoString {
-        match self {
-            Self::Struct(decl) => &decl.tag.data,
-            Self::Union(decl) => &decl.tag.data,
-        }
-    }
-
     fn ty(&self) -> VarType {
         match self {
             Self::Struct(decl) => VarType::Struct(decl.tag.data.clone()),
@@ -400,7 +393,7 @@ pub enum Expression {
     },
     String(TokenSpanned<Vec<u8>>, VarType),
     Sizeof(Box<Expression>),
-    SizeofType(TokenSpanned<VarType>),
+    SizeofType(TokenSpanned<Box<VarDecl>>),
     Dot {
         structure: Box<Expression>,
         member: TokenSpanned<EcoString>,
@@ -1866,7 +1859,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_var_decl(&mut self) -> Result<VarDecl, Error> {
+    fn parse_var_decl_body(&mut self) -> Result<VarDecl, Error> {
         let (type_decl, ty, storage_class) = self.parse_specifiers(true)?;
         let decl = self.parse_declarator()?;
         let (ident, ty, _) = process_declarator(decl, ty)?;
@@ -1884,7 +1877,6 @@ impl<'a> Parser<'a> {
 
         if self.expect(Token::Equal).is_ok() {
             let init = self.parse_initializer()?;
-            self.expect(Token::SemiColon)?;
             Ok(VarDecl {
                 storage_class,
                 type_decl,
@@ -1893,7 +1885,6 @@ impl<'a> Parser<'a> {
                 init: Some(init),
             })
         } else {
-            self.expect(Token::SemiColon)?;
             Ok(VarDecl {
                 storage_class,
                 type_decl,
@@ -1902,6 +1893,12 @@ impl<'a> Parser<'a> {
                 init: None,
             })
         }
+    }
+
+    fn parse_var_decl(&mut self) -> Result<VarDecl, Error> {
+        let decl = self.parse_var_decl_body()?;
+        self.expect(Token::SemiColon)?;
+        Ok(decl)
     }
 
     fn parse_fun_decl(&mut self) -> Result<FunDecl, Error> {
@@ -2256,16 +2253,17 @@ impl<'a> Parser<'a> {
             }
             Token::Sizeof => {
                 self.advance();
-                if let Ok(ty) = self.atomic(|s| {
+                if let Ok(var_decl) = self.atomic(|s| {
                     let start = s.expect(Token::OpenParen)?.span.start;
-                    let ty = s.parse_type_name()?;
+                    // TODO: check var_decl
+                    let var_decl = s.parse_var_decl_body()?;
                     let end = s.expect(Token::CloseParen)?.span.end;
                     Ok::<_, Error>(TokenSpanned {
-                        data: ty,
+                        data: var_decl,
                         span: start..end,
                     })
                 }) {
-                    Ok(Expression::SizeofType(ty))
+                    Ok(Expression::SizeofType(var_decl.map(Box::new)))
                 } else {
                     Ok(Expression::Sizeof(Box::new(self.parse_unary_exp()?)))
                 }

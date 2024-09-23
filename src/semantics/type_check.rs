@@ -1429,11 +1429,10 @@ impl TypeChecker {
                 Ok(ast::BaseType::Ulong.into())
             }
             ast::Expression::SizeofType(ty) => {
-                if !self.sym_table.is_complete(&ty.data) {
+                self.check_var_decl_local(&mut ty.data)?;
+                if !self.sym_table.is_complete(&ty.data.ty) {
                     return Err(Error::IncompatibleTypes(exp.token_span()));
                 }
-                self.validate_var_type(&mut ty.data, false)
-                    .map_err(|_| Error::IncompatibleTypes(exp.token_span()))?;
                 Ok(ast::BaseType::Ulong.into())
             }
             ast::Expression::Dot {

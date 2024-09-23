@@ -1079,7 +1079,7 @@ impl<'a> InstructionGenerator<'a> {
                 ExpResult::PlainOperand(Val::Constant(ast::Const::Ulong(size as _)))
             }
             ast::Expression::SizeofType(ty) => {
-                let size = self.symbol_table.size(&ty.data);
+                let size = self.symbol_table.size(&ty.data.ty);
                 ExpResult::PlainOperand(Val::Constant(ast::Const::Ulong(size as _)))
             }
             ast::Expression::Dot {
