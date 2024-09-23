@@ -424,24 +424,28 @@ impl VarResolver {
             if look_up_only {
                 self.resolve_var_type(ty, ident.span.clone())?;
             } else {
-                match ty {
-                    VarType::Struct(name) => {
-                        let mut decl = StructDecl {
-                            tag: ident.clone().map(|_| name.clone()),
-                            member_decls: Vec::new(),
-                        };
-                        self.resolve_structure_declaration(&mut decl)?;
-                        *name = decl.tag.data.clone();
+                if let Some(type_decl) = type_decl {
+                    self.resolve_type_declaration(type_decl)?;
+                } else {
+                    match ty {
+                        VarType::Struct(name) => {
+                            let mut decl = StructDecl {
+                                tag: ident.clone().map(|_| name.clone()),
+                                member_decls: Vec::new(),
+                            };
+                            self.resolve_structure_declaration(&mut decl)?;
+                            *name = decl.tag.data.clone();
+                        }
+                        VarType::Union(name) => {
+                            let mut decl = UnionDecl {
+                                tag: ident.clone().map(|_| name.clone()),
+                                member_decls: Vec::new(),
+                            };
+                            self.resolve_union_declaration(&mut decl)?;
+                            *name = decl.tag.data.clone();
+                        }
+                        _ => {}
                     }
-                    VarType::Union(name) => {
-                        let mut decl = UnionDecl {
-                            tag: ident.clone().map(|_| name.clone()),
-                            member_decls: Vec::new(),
-                        };
-                        self.resolve_union_declaration(&mut decl)?;
-                        *name = decl.tag.data.clone();
-                    }
-                    _ => {}
                 }
             }
         }
