@@ -816,7 +816,7 @@ impl Scope {
         self.vars.last_mut().unwrap().insert(name, is_typedef);
     }
 
-    fn is_typedef(&self, name: &EcoString) -> bool {
+    fn is_typedef_symbol(&self, name: &EcoString) -> bool {
         for scope in self.vars.iter().rev() {
             if let Some(is_typedef) = scope.get(name) {
                 return *is_typedef;
@@ -974,14 +974,11 @@ fn solve_type_specifier(
 
     if let [TokenSpanned {
         data: TypeSpecifier::TypeDecl(decl),
-        span,
+        ..
     }] = ty
     {
-        return Ok((
-            Some(decl.clone()),
-            decl.var_ty()
-                .ok_or_else(|| Error::BadTypeSpecifier(span.clone()))?,
-        ));
+        // You can't write function as base type
+        return Ok((Some(decl.clone()), decl.var_ty().unwrap()));
     }
 
     for s in ty {
@@ -1840,7 +1837,7 @@ impl<'a> Parser<'a> {
                         });
                     }
                 }
-                Token::Ident(ident) if self.scope.is_typedef(ident) => {
+                Token::Ident(ident) if self.scope.is_typedef_symbol(ident) => {
                     if ty.is_empty() {
                         ty.push(TokenSpanned {
                             data: TypeSpecifier::Typedef(TokenSpanned {
