@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use ecow::EcoString;
 
 use crate::{
-    ast::{self, Expression, StructDecl, UnionDecl},
+    ast::{self, Expression, StructDecl, UnionDecl, VarType},
     lexer::{HasTokenSpan, TokenSpanned},
 };
 
@@ -310,13 +310,15 @@ impl VarResolver {
             ty,
         } = decl;
 
-        if let Some(type_decl) = type_decl {
-            self.resolve_type_declaration(type_decl)?;
-        }
-
-        self.resolve_var_type(ty, ident.span.clone())?;
-
-        if let Some(ident) = &ident.data {
+        if let TokenSpanned {
+            data: Some(ident),
+            span,
+        } = &ident
+        {
+            if let Some(type_decl) = type_decl {
+                self.resolve_type_declaration(type_decl)?;
+            }
+            self.resolve_var_type(ty, span.clone())?;
             self.current_scope_var().insert(
                 ident.clone(),
                 VarInfo {
@@ -324,6 +326,30 @@ impl VarResolver {
                     has_linkage: true,
                 },
             );
+        } else {
+            if let Some(type_decl) = type_decl {
+                self.resolve_type_declaration(type_decl)?;
+            } else {
+                match ty {
+                    VarType::Struct(name) => {
+                        let mut decl = StructDecl {
+                            tag: ident.clone().map(|_| name.clone()),
+                            member_decls: Vec::new(),
+                        };
+                        self.resolve_structure_declaration(&mut decl)?;
+                        *name = decl.tag.data.clone();
+                    }
+                    VarType::Union(name) => {
+                        let mut decl = UnionDecl {
+                            tag: ident.clone().map(|_| name.clone()),
+                            member_decls: Vec::new(),
+                        };
+                        self.resolve_union_declaration(&mut decl)?;
+                        *name = decl.tag.data.clone();
+                    }
+                    _ => {}
+                }
+            }
         }
         Ok(())
     }
@@ -337,17 +363,16 @@ impl VarResolver {
             ty,
         } = decl;
 
-        if let Some(type_decl) = type_decl {
-            self.resolve_type_declaration(type_decl)?;
-        }
-
-        self.resolve_var_type(ty, ident.span.clone())?;
-
         if let TokenSpanned {
             data: Some(ident),
             span,
         } = ident
         {
+            if let Some(type_decl) = type_decl {
+                self.resolve_type_declaration(type_decl)?;
+            }
+            self.resolve_var_type(ty, span.clone())?;
+
             let old_ident = ident;
             let ident = TokenSpanned {
                 data: old_ident.clone(),
@@ -390,6 +415,26 @@ impl VarResolver {
                 if let Some(init) = init {
                     self.resolve_initializer(init)?;
                 }
+            }
+        } else {
+            match ty {
+                VarType::Struct(name) => {
+                    let mut decl = StructDecl {
+                        tag: ident.clone().map(|_| name.clone()),
+                        member_decls: Vec::new(),
+                    };
+                    self.resolve_structure_declaration(&mut decl)?;
+                    *name = decl.tag.data.clone();
+                }
+                VarType::Union(name) => {
+                    let mut decl = UnionDecl {
+                        tag: ident.clone().map(|_| name.clone()),
+                        member_decls: Vec::new(),
+                    };
+                    self.resolve_union_declaration(&mut decl)?;
+                    *name = decl.tag.data.clone();
+                }
+                _ => {}
             }
         }
 

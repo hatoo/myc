@@ -2442,18 +2442,11 @@ impl<'a> Parser<'a> {
             span: self.index..self.index + 1,
         });
 
-        let member_decls = self.atomic(|s| {
-            s.expect(Token::OpenBrace)?;
-            let member_decls = s.many1(|s| s.parse_var_decl())?;
-            s.expect(Token::CloseBrace)?;
-            Ok::<_, Error>(member_decls)
-        });
-        // self.expect(Token::SemiColon)?;
+        self.expect(Token::OpenBrace)?;
+        let member_decls = self.many1(|s| s.parse_var_decl())?;
+        self.expect(Token::CloseBrace)?;
 
-        Ok(StructDecl {
-            tag,
-            member_decls: member_decls.unwrap_or_default(),
-        })
+        Ok(StructDecl { tag, member_decls })
     }
 
     fn parse_union_decl(&mut self) -> Result<UnionDecl, Error> {
@@ -2463,18 +2456,11 @@ impl<'a> Parser<'a> {
             span: self.index..self.index + 1,
         });
 
-        let member_decls = self.atomic(|s| {
-            s.expect(Token::OpenBrace)?;
-            let member_decls = s.many1(|s| s.parse_var_decl())?;
-            s.expect(Token::CloseBrace)?;
-            Ok::<_, Error>(member_decls)
-        });
-        // self.expect(Token::SemiColon)?;
+        self.expect(Token::OpenBrace)?;
+        let member_decls = self.many1(|s| s.parse_var_decl())?;
+        self.expect(Token::CloseBrace)?;
 
-        Ok(UnionDecl {
-            tag,
-            member_decls: member_decls.unwrap_or_default(),
-        })
+        Ok(UnionDecl { tag, member_decls })
     }
 }
 

@@ -769,6 +769,10 @@ impl TypeChecker {
             self.check_type_decl(type_decl)?;
         }
 
+        if ident.data.is_none() {
+            return Ok(());
+        }
+
         self.validate_var_type(ty, storage_class == &Some(crate::ast::StorageClass::Extern))
             .map_err(|_| Error::IncompatibleTypes(ident.span.clone()))?;
         if ty == &ast::VarType::Void {
@@ -876,6 +880,10 @@ impl TypeChecker {
 
         if let Some(type_decl) = type_decl {
             self.check_type_decl(type_decl)?;
+        }
+
+        if ident.data.is_none() {
+            return Ok(());
         }
 
         self.validate_var_type(ty, storage_class == &Some(crate::ast::StorageClass::Extern))
