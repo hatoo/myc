@@ -656,10 +656,6 @@ impl VarType {
         matches!(self, Self::Union(_))
     }
 
-    pub fn is_function_pointer(&self) -> bool {
-        matches!(self, Self::Pointer(ty) if matches!(**ty, Ty::Fun(_)))
-    }
-
     pub fn contains_function(&self) -> bool {
         match self {
             Self::Base(_) => false,
