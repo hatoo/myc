@@ -1733,6 +1733,17 @@ impl TypeChecker {
         match decl {
             ast::TypeDeclaration::Struct(decl) => self.check_struct_decl(decl),
             ast::TypeDeclaration::Union(decl) => self.check_union_decl(decl),
+            ast::TypeDeclaration::Fun { ret, params } => {
+                if let Some(ret) = ret {
+                    self.check_type_decl(ret)?;
+                }
+                for param in params {
+                    if let Some(param) = param.as_mut() {
+                        self.check_type_decl(param)?;
+                    }
+                }
+                Ok(())
+            }
         }
     }
 

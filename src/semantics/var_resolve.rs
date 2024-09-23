@@ -561,6 +561,19 @@ impl VarResolver {
         match decl {
             ast::TypeDeclaration::Struct(decl) => self.resolve_structure_declaration(decl),
             ast::TypeDeclaration::Union(decl) => self.resolve_union_declaration(decl),
+            ast::TypeDeclaration::Fun { ret, params } => {
+                if let Some(ret) = ret {
+                    self.resolve_type_declaration(ret)?;
+                }
+
+                for param in params {
+                    if let Some(param) = param {
+                        self.resolve_type_declaration(param)?;
+                    }
+                }
+
+                Ok(())
+            }
         }
     }
 

@@ -26,13 +26,18 @@ pub enum Declaration {
 pub enum TypeDeclaration {
     Struct(StructDecl),
     Union(UnionDecl),
+    Fun {
+        ret: Option<Box<TypeDeclaration>>,
+        params: Vec<Option<TypeDeclaration>>,
+    },
 }
 
 impl TypeDeclaration {
-    fn ty(&self) -> VarType {
+    fn var_ty(&self) -> Option<VarType> {
         match self {
-            Self::Struct(decl) => VarType::Struct(decl.tag.data.clone()),
-            Self::Union(decl) => VarType::Union(decl.tag.data.clone()),
+            Self::Struct(decl) => Some(VarType::Struct(decl.tag.data.clone())),
+            Self::Union(decl) => Some(VarType::Union(decl.tag.data.clone())),
+            Self::Fun { .. } => None,
         }
     }
 }
@@ -650,6 +655,10 @@ impl VarType {
     pub fn is_union(&self) -> bool {
         matches!(self, Self::Union(_))
     }
+
+    pub fn is_function_pointer(&self) -> bool {
+        matches!(self, Self::Pointer(ty) if matches!(**ty, Ty::Fun(_)))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -944,10 +953,14 @@ fn solve_type_specifier(
 
     if let [TokenSpanned {
         data: TypeSpecifier::TypeDecl(decl),
-        ..
+        span,
     }] = ty
     {
-        return Ok((Some(decl.clone()), decl.ty()));
+        return Ok((
+            Some(decl.clone()),
+            decl.var_ty()
+                .ok_or_else(|| Error::BadTypeSpecifier(span.clone()))?,
+        ));
     }
 
     for s in ty {
@@ -1101,16 +1114,23 @@ fn process_declarator(
                 decl,
             } in params
             {
-                let (name, ty, _, _) = process_declarator(decl, ty)?;
+                let (name, ty, _, decl_params) = process_declarator(decl, ty)?;
 
-                match ty {
+                let var_ty = match ty {
                     Ty::Fun(_) => return Err(Error::NotVarType(name.span.clone())),
-                    Ty::Var(var_ty) => {
-                        param_types.push(var_ty);
-                    }
+                    Ty::Var(var_ty) => var_ty,
+                };
+
+                if var_ty.is_function_pointer() {
+                    type_decl_params.push(Some(TypeDeclaration::Fun {
+                        ret: type_decl.map(Box::new),
+                        params: decl_params,
+                    }));
+                } else {
+                    type_decl_params.push(type_decl);
                 }
+                param_types.push(var_ty);
                 param_names.push(name);
-                type_decl_params.push(type_decl);
             }
             match *decl.data {
                 Declarator::Ident(name) => {
@@ -1882,12 +1902,25 @@ impl<'a> Parser<'a> {
     fn parse_var_decl_body(&mut self) -> Result<VarDecl, Error> {
         let (type_decl, ty, storage_class) = self.parse_specifiers(true)?;
         let decl = self.parse_declarator()?;
-        let (ident, ty, _, _) = process_declarator(decl, ty)?;
+        let (ident, ty, _, type_decl_params) = process_declarator(decl, ty)?;
         let span = ident.span.clone();
 
         let ty = match ty {
             Ty::Var(ty) => ty,
             Ty::Fun(_) => return Err(Error::NotVarType(span)),
+        };
+
+        let type_decl = if let VarType::Pointer(target) = &ty {
+            if let Ty::Fun(_) = target.as_ref() {
+                Some(TypeDeclaration::Fun {
+                    ret: type_decl.map(Box::new),
+                    params: type_decl_params,
+                })
+            } else {
+                type_decl
+            }
+        } else {
+            type_decl
         };
 
         if let Some(ident) = ident.data.as_ref() {
