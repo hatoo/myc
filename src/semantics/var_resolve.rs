@@ -110,8 +110,6 @@ impl VarResolver {
             match decl {
                 ast::Declaration::Var(decl) => self.resolve_var_decl_file_scope(decl)?,
                 ast::Declaration::Fun(decl) => self.resolve_fun_decl(decl, true)?,
-                ast::Declaration::Struct(decl) => self.resolve_structure_declaration(decl)?,
-                ast::Declaration::Union(decl) => self.resolve_union_declaration(decl)?,
             }
         }
         self.pop();
@@ -224,18 +222,21 @@ impl VarResolver {
         match decl {
             ast::Declaration::Var(decl) => self.resolve_var_decl_local(decl),
             ast::Declaration::Fun(decl) => self.resolve_fun_decl(decl, false),
-            ast::Declaration::Struct(decl) => self.resolve_structure_declaration(decl),
-            ast::Declaration::Union(decl) => self.resolve_union_declaration(decl),
         }
     }
     fn resolve_fun_decl(&mut self, decl: &mut ast::FunDecl, file_scope: bool) -> Result<(), Error> {
         let ast::FunDecl {
+            type_decl,
             name,
             params,
             body,
             storage_class,
             ty,
         } = decl;
+
+        if let Some(type_decl) = type_decl {
+            self.resolve_type_declaration(type_decl)?;
+        }
 
         self.resolve_fun_type(ty, name.span.clone())?;
 
@@ -291,75 +292,97 @@ impl VarResolver {
 
     fn resolve_var_decl_file_scope(&mut self, decl: &mut ast::VarDecl) -> Result<(), Error> {
         let ast::VarDecl {
+            type_decl,
             ident,
             init: _,
             storage_class: _,
             ty,
         } = decl;
 
+        if let Some(type_decl) = type_decl {
+            self.resolve_type_declaration(type_decl)?;
+        }
+
         self.resolve_var_type(ty, ident.span.clone())?;
 
-        self.current_scope_var().insert(
-            ident.data.clone(),
-            VarInfo {
-                new_name: ident.data.clone(),
-                has_linkage: true,
-            },
-        );
+        if let Some(ident) = &ident.data {
+            self.current_scope_var().insert(
+                ident.clone(),
+                VarInfo {
+                    new_name: ident.clone(),
+                    has_linkage: true,
+                },
+            );
+        }
         Ok(())
     }
 
     fn resolve_var_decl_local(&mut self, decl: &mut ast::VarDecl) -> Result<(), Error> {
         let ast::VarDecl {
+            type_decl,
             ident,
             init,
             storage_class,
             ty,
         } = decl;
 
+        if let Some(type_decl) = type_decl {
+            self.resolve_type_declaration(type_decl)?;
+        }
+
         self.resolve_var_type(ty, ident.span.clone())?;
 
-        if let Some(var) = self.current_scope_var().get(&ident.data) {
-            if !(var.has_linkage && storage_class == &Some(ast::StorageClass::Extern)) {
-                return Err(Error::VariableAlreadyDeclared(ident.clone()));
+        if let TokenSpanned {
+            data: Some(ident),
+            span,
+        } = ident
+        {
+            let old_ident = ident;
+            let ident = TokenSpanned {
+                data: old_ident.clone(),
+                span: span.clone(),
+            };
+            if let Some(var) = self.current_scope_var().get(&ident.data) {
+                if !(var.has_linkage && storage_class == &Some(ast::StorageClass::Extern)) {
+                    return Err(Error::VariableAlreadyDeclared(ident.clone()));
+                }
+            }
+
+            if storage_class == &Some(ast::StorageClass::Extern) {
+                self.current_scope_var().insert(
+                    ident.data.clone(),
+                    VarInfo {
+                        new_name: ident.data.clone(),
+                        has_linkage: true,
+                    },
+                );
+            } else if storage_class == &Some(ast::StorageClass::Typedef) {
+                let new_name = self.new_var(&ident.data);
+                self.current_scope_var().insert(
+                    ident.data.clone(),
+                    VarInfo {
+                        new_name: new_name.clone(),
+                        has_linkage: false,
+                    },
+                );
+                *old_ident = new_name;
+            } else {
+                let unique_name = self.new_var(&ident.data);
+                self.current_scope_var().insert(
+                    ident.data.clone(),
+                    VarInfo {
+                        new_name: unique_name.clone(),
+                        has_linkage: false,
+                    },
+                );
+                *old_ident = unique_name;
+                if let Some(init) = init {
+                    self.resolve_initializer(init)?;
+                }
             }
         }
 
-        if storage_class == &Some(ast::StorageClass::Extern) {
-            self.current_scope_var().insert(
-                ident.data.clone(),
-                VarInfo {
-                    new_name: ident.data.clone(),
-                    has_linkage: true,
-                },
-            );
-            Ok(())
-        } else if storage_class == &Some(ast::StorageClass::Typedef) {
-            let new_name = self.new_var(&ident.data);
-            self.current_scope_var().insert(
-                ident.data.clone(),
-                VarInfo {
-                    new_name: new_name.clone(),
-                    has_linkage: false,
-                },
-            );
-            ident.data = new_name;
-            Ok(())
-        } else {
-            let unique_name = self.new_var(&ident.data);
-            self.current_scope_var().insert(
-                ident.data.clone(),
-                VarInfo {
-                    new_name: unique_name.clone(),
-                    has_linkage: false,
-                },
-            );
-            ident.data = unique_name;
-            if let Some(init) = init {
-                self.resolve_initializer(init)?;
-            }
-            Ok(())
-        }
+        Ok(())
     }
 
     fn resolve_initializer(&mut self, init: &mut ast::Initializer) -> Result<(), Error> {
@@ -520,6 +543,13 @@ impl VarResolver {
                 Ok(())
             }
             _ => Ok(()),
+        }
+    }
+
+    fn resolve_type_declaration(&mut self, decl: &mut ast::TypeDeclaration) -> Result<(), Error> {
+        match decl {
+            ast::TypeDeclaration::Struct(decl) => self.resolve_structure_declaration(decl),
+            ast::TypeDeclaration::Union(decl) => self.resolve_union_declaration(decl),
         }
     }
 
