@@ -151,6 +151,7 @@ impl SymbolTable {
     pub fn is_complete(&self, ty: &ast::VarType) -> bool {
         match ty {
             ast::VarType::Void => false,
+            ast::VarType::Array { element, .. } => self.is_complete(element),
             ast::VarType::Struct(tag) => {
                 matches!(self.get(tag), Some(Attr::Struct(_)))
             }

@@ -2266,6 +2266,9 @@ impl<'a> Parser<'a> {
         self.atomic(|s| {
             s.expect(Token::OpenParen)?;
             let var_decl = s.parse_var_decl_body()?;
+            if var_decl.storage_class.is_some() || var_decl.init.is_some() {
+                todo!()
+            }
             s.expect(Token::CloseParen)?;
             let exp = s.parse_cast_exp()?;
             Ok::<_, Error>(Expression::Cast {
@@ -2311,6 +2314,9 @@ impl<'a> Parser<'a> {
                     let start = s.expect(Token::OpenParen)?.span.start;
                     // TODO: check var_decl
                     let var_decl = s.parse_var_decl_body()?;
+                    if var_decl.storage_class.is_some() || var_decl.init.is_some() {
+                        todo!()
+                    }
                     let end = s.expect(Token::CloseParen)?.span.end;
                     Ok::<_, Error>(TokenSpanned {
                         data: var_decl,
@@ -2444,6 +2450,12 @@ impl<'a> Parser<'a> {
 
         self.expect(Token::OpenBrace)?;
         let member_decls = self.many1(|s| s.parse_var_decl())?;
+        if member_decls
+            .iter()
+            .any(|decl| decl.storage_class.is_some() || decl.init.is_some())
+        {
+            todo!()
+        }
         self.expect(Token::CloseBrace)?;
 
         Ok(StructDecl { tag, member_decls })
@@ -2458,6 +2470,12 @@ impl<'a> Parser<'a> {
 
         self.expect(Token::OpenBrace)?;
         let member_decls = self.many1(|s| s.parse_var_decl())?;
+        if member_decls
+            .iter()
+            .any(|decl| decl.storage_class.is_some() || decl.init.is_some())
+        {
+            todo!()
+        }
         self.expect(Token::CloseBrace)?;
 
         Ok(UnionDecl { tag, member_decls })

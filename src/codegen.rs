@@ -1554,7 +1554,7 @@ impl<'a> CodeGen<'a> {
                     dst,
                 } => {
                     if let Val::Constant(c) = index {
-                        if let Ok(offset) = i32::try_from(c.get_ulong() * *scale as u64) {
+                        if let Ok(offset) = i32::try_from(c.get_long() * *scale as i64) {
                             body.push(Instruction::Mov {
                                 ty: AssemblyType::QuadWord,
                                 src: ptr.into(),
