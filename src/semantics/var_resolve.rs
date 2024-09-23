@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use ecow::EcoString;
 
 use crate::{
-    ast::{self, Expression, StructDecl, UnionDecl, VarType},
+    ast::{self, Expression, StructDecl, UnionDecl},
     lexer::{HasTokenSpan, TokenSpanned},
 };
 

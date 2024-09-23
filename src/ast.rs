@@ -880,8 +880,6 @@ enum TypeSpecifier {
     Unsigned,
     Signed,
     Double,
-    Struct(EcoString),
-    Union(EcoString),
     Typedef(TokenSpanned<EcoString>),
     TypeDecl(TypeDeclaration),
 }
@@ -984,22 +982,6 @@ fn solve_type_specifier(
     }
 
     if let [TokenSpanned {
-        data: TypeSpecifier::Struct(tag),
-        ..
-    }] = ty
-    {
-        return Ok((None, VarType::Struct(tag.clone())));
-    }
-
-    if let [TokenSpanned {
-        data: TypeSpecifier::Union(tag),
-        ..
-    }] = ty
-    {
-        return Ok((None, VarType::Union(tag.clone())));
-    }
-
-    if let [TokenSpanned {
         data: TypeSpecifier::Typedef(tag),
         ..
     }] = ty
@@ -1052,9 +1034,6 @@ fn solve_type_specifier(
                 unsigned = true;
             }
             TypeSpecifier::Double => {
-                return Err(Error::BadTypeSpecifier(s.span.clone()));
-            }
-            TypeSpecifier::Struct(_) | TypeSpecifier::Union(_) => {
                 return Err(Error::BadTypeSpecifier(s.span.clone()));
             }
             TypeSpecifier::Typedef(_) => {
