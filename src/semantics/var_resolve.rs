@@ -437,7 +437,7 @@ impl VarResolver {
                 Ok(())
             }
             ast::Expression::Cast { target, exp } => {
-                self.resolve_var_type(target, exp.token_span())?;
+                self.resolve_var_decl_local(target)?;
                 self.resolve_expression(exp)?;
                 Ok(())
             }

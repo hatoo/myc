@@ -351,7 +351,7 @@ impl Const {
 pub enum Expression {
     Var(TokenSpanned<EcoString>, VarType),
     Cast {
-        target: VarType,
+        target: Box<VarDecl>,
         exp: Box<Expression>,
     },
     Constant(TokenSpanned<Const>),
@@ -418,7 +418,7 @@ impl Expression {
     pub fn ty(&self) -> &VarType {
         match self {
             Self::Var(_, ty) => ty,
-            Self::Cast { target, .. } => target,
+            Self::Cast { target, .. } => &target.ty,
             Self::Constant(TokenSpanned { data, .. }) => match data {
                 Const::Int(_) => &VarType::Base(BaseType::Int),
                 Const::Long(_) => &VarType::Base(BaseType::Long),
@@ -2211,11 +2211,11 @@ impl<'a> Parser<'a> {
     fn parse_cast_exp(&mut self) -> Result<Expression, Error> {
         self.atomic(|s| {
             s.expect(Token::OpenParen)?;
-            let ty = s.parse_type_name()?;
+            let var_decl = s.parse_var_decl_body()?;
             s.expect(Token::CloseParen)?;
             let exp = s.parse_cast_exp()?;
             Ok::<_, Error>(Expression::Cast {
-                target: ty,
+                target: Box::new(var_decl),
                 exp: Box::new(exp),
             })
         })
@@ -2287,27 +2287,6 @@ impl<'a> Parser<'a> {
                 })
             }
             _ => self.parse_postfix_exp(),
-        }
-    }
-
-    fn parse_type_name(&mut self) -> Result<VarType, Error> {
-        // TODO
-        let base_type = self.parse_specifiers(false)?.1;
-        if let Ok(decl) = self.atomic(|s| s.parse_declarator()) {
-            let span = decl.span.clone();
-
-            let (ident, ty, _) = process_declarator(decl, base_type)?;
-
-            if ident.data.is_some() {
-                return Err(Error::VariableNameNotAllowed(ident.span));
-            }
-
-            match ty {
-                Ty::Var(ty) => Ok(ty),
-                Ty::Fun(_) => Err(Error::NotVarType(span)),
-            }
-        } else {
-            Ok(base_type)
         }
     }
 

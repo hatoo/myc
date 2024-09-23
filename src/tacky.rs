@@ -977,6 +977,7 @@ impl<'a> InstructionGenerator<'a> {
                 ExpResult::PlainOperand(dst.unwrap_or(Val::Var("DUMMY_VAR".into())))
             }
             ast::Expression::Cast { target, exp } => {
+                let target = &target.ty;
                 let val = self.add_expression_and_convert(exp);
                 if target == &ast::VarType::Void {
                     return ExpResult::PlainOperand(Val::Var("DUMMY_VAR".into()));

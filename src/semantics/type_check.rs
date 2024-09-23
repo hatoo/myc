@@ -416,7 +416,13 @@ fn convert_to(exp: &mut ast::Expression, ty: &ast::VarType) {
     if exp.ty() != ty {
         *exp = ast::Expression::Cast {
             exp: Box::new(exp.clone()),
-            target: ty.clone(),
+            target: Box::new(ast::VarDecl {
+                type_decl: None,
+                ident: TokenSpanned::new_null(None),
+                init: None,
+                storage_class: None,
+                ty: ty.clone(),
+            }),
         };
     }
 }
@@ -1332,9 +1338,10 @@ impl TypeChecker {
             }
 
             crate::ast::Expression::Cast { target, exp } => {
-                self.validate_var_type(target, false)
-                    .map_err(|_| Error::IncompatibleTypes(exp.token_span()))?;
+                self.check_var_decl_local(target)?;
                 let ty = self.check_expression_and_convert(exp)?;
+
+                let target = &target.ty;
 
                 if (target.is_pointer() && ty == ast::BaseType::Double.into())
                     || (ty.is_pointer() && target == &VarType::Base(ast::BaseType::Double))
