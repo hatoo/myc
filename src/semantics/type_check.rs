@@ -794,14 +794,12 @@ impl TypeChecker {
                 data: ident.clone(),
                 span: span.clone(),
             }
+        } else if init.is_some() {
+            return Err(Error::BadInitializer(
+                ident.clone().map(|i| i.unwrap_or_default()),
+            ));
         } else {
-            if init.is_some() {
-                return Err(Error::BadInitializer(
-                    ident.clone().map(|i| i.unwrap_or_default()),
-                ));
-            } else {
-                return Ok(());
-            }
+            return Ok(());
         };
 
         let mut init = match init {
@@ -908,14 +906,12 @@ impl TypeChecker {
                 data: ident.clone(),
                 span: span.clone(),
             }
+        } else if init.is_some() {
+            return Err(Error::BadInitializer(
+                ident.clone().map(|i| i.unwrap_or_default()),
+            ));
         } else {
-            if init.is_some() {
-                return Err(Error::BadInitializer(
-                    ident.clone().map(|i| i.unwrap_or_default()),
-                ));
-            } else {
-                return Ok(());
-            }
+            return Ok(());
         };
 
         match storage_class {
