@@ -20,8 +20,6 @@ pub struct Program {
 pub enum Declaration {
     Var(VarDecl),
     Fun(FunDecl),
-    Struct(StructDecl),
-    Union(UnionDecl),
 }
 
 #[derive(Debug, Clone)]
@@ -1985,24 +1983,12 @@ impl<'a> Parser<'a> {
                     Ok(decl) => Ok(Declaration::Fun(decl)),
                     Err(fun_err) => {
                         let fun_decl_fail = self.index;
-                        self.index = index;
-                        match self.peek()? {
-                            TokenSpanned {
-                                data: Token::Struct,
-                                ..
-                            } => Ok(Declaration::Struct(self.parse_struct_decl()?)),
-                            TokenSpanned {
-                                data: Token::Union, ..
-                            } => Ok(Declaration::Union(self.parse_union_decl()?)),
-                            _ => {
-                                if var_decl_fail > fun_decl_fail {
-                                    self.index = var_decl_fail;
-                                    Err(var_err)
-                                } else {
-                                    self.index = fun_decl_fail;
-                                    Err(fun_err)
-                                }
-                            }
+                        if var_decl_fail > fun_decl_fail {
+                            self.index = var_decl_fail;
+                            Err(var_err)
+                        } else {
+                            self.index = fun_decl_fail;
+                            Err(fun_err)
                         }
                     }
                 }
