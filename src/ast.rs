@@ -1050,6 +1050,7 @@ enum Declarator {
 
 #[derive(Debug)]
 struct ParamInfo {
+    type_decl: Option<TypeDeclaration>,
     ty: VarType,
     decl: TokenSpanned<Declarator>,
 }
@@ -1069,6 +1070,7 @@ fn process_declarator(
         TokenSpanned<Option<EcoString>>,
         Ty,
         Vec<TokenSpanned<Option<EcoString>>>,
+        Vec<Option<TypeDeclaration>>,
     ),
     Error,
 > {
@@ -1077,6 +1079,7 @@ fn process_declarator(
         Declarator::Ident(name) => Ok((
             TokenSpanned { data: name, span },
             Ty::Var(base_type),
+            Vec::new(),
             Vec::new(),
         )),
         Declarator::Pointer(d) => {
@@ -1090,9 +1093,15 @@ fn process_declarator(
         } => {
             let mut param_names = Vec::new();
             let mut param_types = Vec::new();
+            let mut type_decl_params = Vec::new();
 
-            for ParamInfo { ty, decl } in params {
-                let (name, ty, _) = process_declarator(decl, ty)?;
+            for ParamInfo {
+                type_decl,
+                ty,
+                decl,
+            } in params
+            {
+                let (name, ty, _, _) = process_declarator(decl, ty)?;
 
                 match ty {
                     Ty::Fun(_) => return Err(Error::NotVarType(name.span.clone())),
@@ -1101,6 +1110,7 @@ fn process_declarator(
                     }
                 }
                 param_names.push(name);
+                type_decl_params.push(type_decl);
             }
             match *decl.data {
                 Declarator::Ident(name) => {
@@ -1110,7 +1120,12 @@ fn process_declarator(
                         ret: base_type,
                     });
 
-                    Ok((TokenSpanned { data: name, span }, derived_type, param_names))
+                    Ok((
+                        TokenSpanned { data: name, span },
+                        derived_type,
+                        param_names,
+                        type_decl_params,
+                    ))
                 }
                 Declarator::Pointer(decl) => {
                     let fun_ptr = VarType::Pointer(Box::new(Ty::Fun(FunType {
@@ -1119,8 +1134,8 @@ fn process_declarator(
                         ret: base_type,
                     })));
 
-                    let (name, ty, _) = process_declarator(decl.map(|d| *d), fun_ptr)?;
-                    Ok((name, ty, param_names))
+                    let (name, ty, _, _) = process_declarator(decl.map(|d| *d), fun_ptr)?;
+                    Ok((name, ty, param_names, type_decl_params))
                 }
                 Declarator::Fun { .. } => Err(Error::NotVarType(decl.span.clone())),
                 Declarator::Array { .. } => {
@@ -1657,9 +1672,13 @@ impl<'a> Parser<'a> {
 
     fn parse_param(&mut self) -> Result<ParamInfo, Error> {
         // TODO
-        let ty = self.parse_specifiers(false)?.1;
+        let (type_decl, ty, _) = self.parse_specifiers(false)?;
         let decl = self.parse_declarator()?;
-        Ok(ParamInfo { ty, decl })
+        Ok(ParamInfo {
+            type_decl,
+            ty,
+            decl,
+        })
     }
 
     fn parse_simple_declarator(&mut self) -> Result<TokenSpanned<Declarator>, Error> {
@@ -1863,7 +1882,7 @@ impl<'a> Parser<'a> {
     fn parse_var_decl_body(&mut self) -> Result<VarDecl, Error> {
         let (type_decl, ty, storage_class) = self.parse_specifiers(true)?;
         let decl = self.parse_declarator()?;
-        let (ident, ty, _) = process_declarator(decl, ty)?;
+        let (ident, ty, _, _) = process_declarator(decl, ty)?;
         let span = ident.span.clone();
 
         let ty = match ty {
@@ -1907,7 +1926,7 @@ impl<'a> Parser<'a> {
         let decl = self.parse_declarator()?;
         let span = decl.span.clone();
 
-        let (name, ty, params) = process_declarator(decl, return_type)?;
+        let (name, ty, params, type_decl_params) = process_declarator(decl, return_type)?;
         let name = if let TokenSpanned {
             data: Some(data),
             span,
@@ -1956,6 +1975,7 @@ impl<'a> Parser<'a> {
 
         Ok(FunDecl {
             type_decl_ret: type_decl,
+            type_decl_params,
             name,
             params,
             ty,

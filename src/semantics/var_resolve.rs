@@ -226,7 +226,8 @@ impl VarResolver {
     }
     fn resolve_fun_decl(&mut self, decl: &mut ast::FunDecl, file_scope: bool) -> Result<(), Error> {
         let ast::FunDecl {
-            type_decl_ret: type_decl,
+            type_decl_ret,
+            type_decl_params,
             name,
             params,
             body,
@@ -234,11 +235,11 @@ impl VarResolver {
             ty,
         } = decl;
 
-        if let Some(type_decl) = type_decl {
+        if let Some(type_decl) = type_decl_ret {
             self.resolve_type_declaration(type_decl)?;
         }
 
-        self.resolve_fun_type(ty, name.span.clone())?;
+        self.resolve_var_type(&mut ty.ret, name.span.clone())?;
 
         if !file_scope && storage_class == &Some(ast::StorageClass::Static) {
             return Err(Error::StaticFunInBlock(name.clone()));
@@ -261,7 +262,11 @@ impl VarResolver {
 
         self.push();
 
-        for param in params {
+        for ((param, decl), param_ty) in params
+            .iter_mut()
+            .zip(type_decl_params.iter_mut())
+            .zip(ty.params.iter_mut())
+        {
             let unique_name = self.new_var(&param.data);
             if self
                 .current_scope_var()
@@ -278,6 +283,12 @@ impl VarResolver {
                 return Err(Error::VariableAlreadyDeclared(param.clone()));
             }
             param.data = unique_name;
+            self.push();
+            if let Some(type_decl) = decl {
+                self.resolve_type_declaration(type_decl)?;
+            }
+            self.resolve_var_type(param_ty, name.span.clone())?;
+            self.pop();
         }
 
         if let Some(body) = body {
